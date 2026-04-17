@@ -193,7 +193,7 @@ export default function AppointmentsPage() {
 
                 <div>
                   <label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Status</label>
-                  <Select value={editStatus} onValueChange={setEditStatus}>
+                  <Select value={editStatus} onValueChange={(v: string) => setEditStatus(v)}>
                     <SelectTrigger style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
                       <SelectValue />
                     </SelectTrigger>

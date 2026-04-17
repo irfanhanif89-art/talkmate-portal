@@ -26,22 +26,25 @@ export default function CallsPage() {
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Call | null>(null)
-  const [filters, setFilters] = useState({ outcome: '', transferred: '', search: '' })
+  const [outcomeFilter, setOutcomeFilter] = useState('')
+  const [transferredFilter, setTransferredFilter] = useState('')
+  const [search, setSearch] = useState('')
 
   const fetchCalls = useCallback(async () => {
     setLoading(true)
-    let query = supabase.from('calls').select('*', { count: 'exact' })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any = supabase.from('calls').select('*', { count: 'exact' })
       .eq('business_id', businessId)
       .order('created_at', { ascending: false })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    if (filters.outcome) query = query.eq('outcome', filters.outcome)
-    if (filters.transferred === 'true') query = query.eq('transferred', true)
-    if (filters.search) query = query.ilike('caller_number', `%${filters.search}%`)
+    if (outcomeFilter) query = query.eq('outcome', outcomeFilter)
+    if (transferredFilter === 'true') query = query.eq('transferred', true)
+    if (search) query = query.ilike('caller_number', `%${search}%`)
     const { data, count } = await query
     setCalls(data ?? [])
     setTotal(count ?? 0)
     setLoading(false)
-  }, [businessId, page, filters])
+  }, [businessId, page, outcomeFilter, transferredFilter, search])
 
   useEffect(() => { fetchCalls() }, [fetchCalls])
 
@@ -90,10 +93,10 @@ export default function CallsPage() {
 
       {/* Filters */}
       <div className="flex gap-3 mb-6 flex-wrap">
-        <Input placeholder="Search caller…" value={filters.search}
-          onChange={e => { setFilters(f => ({ ...f, search: e.target.value })); setPage(0) }}
+        <Input placeholder="Search caller…" value={search}
+          onChange={e => { setSearch(e.target.value); setPage(0) }}
           style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 200 }} />
-        <Select onValueChange={v => { setFilters(f => ({ ...f, outcome: v === 'all' ? '' : v })); setPage(0) }}>
+        <Select onValueChange={v => { setOutcomeFilter(v === 'all' ? '' : v); setPage(0) }}>
           <SelectTrigger style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 180 }}>
             <SelectValue placeholder="All outcomes" />
           </SelectTrigger>
@@ -102,7 +105,7 @@ export default function CallsPage() {
             {config.callOutcomeTypes.map(o => <SelectItem key={o} value={o} style={{ color: 'white' }}>{o}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select onValueChange={v => { setFilters(f => ({ ...f, transferred: v === 'all' ? '' : v })); setPage(0) }}>
+        <Select onValueChange={v => { setTransferredFilter(v === 'all' ? '' : v); setPage(0) }}>
           <SelectTrigger style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 160 }}>
             <SelectValue placeholder="All calls" />
           </SelectTrigger>
@@ -131,9 +134,7 @@ export default function CallsPage() {
             ) : calls.map((call, i) => (
               <tr key={call.id} onClick={() => setSelected(call)}
                 className="cursor-pointer transition-colors border-t"
-                style={{ background: i % 2 === 0 ? '#0A1E38' : '#071829', borderColor: 'rgba(255,255,255,0.04)' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(232,98,42,0.06)')}
-                onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? '#0A1E38' : '#071829')}>
+                style={{ background: i % 2 === 0 ? '#0A1E38' : '#071829', borderColor: 'rgba(255,255,255,0.04)' }}>
                 <td className="px-4 py-3" style={{ color: '#7BAED4' }}>
                   {new Date(call.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </td>
@@ -147,15 +148,12 @@ export default function CallsPage() {
                 <td className="px-4 py-3" style={{ color: '#7BAED4' }}>
                   <div className="flex items-center gap-1"><Clock size={13} />{formatDuration(call.duration_seconds)}</div>
                 </td>
-                <td className="px-4 py-3">
-                  <Badge variant={outcomeBadge(call.outcome)}>{call.outcome || '—'}</Badge>
-                </td>
+                <td className="px-4 py-3"><Badge variant={outcomeBadge(call.outcome)}>{call.outcome || '—'}</Badge></td>
                 <td className="px-4 py-3">
                   {call.transferred ? <span style={{ color: '#f59e0b' }}>↗ Yes</span> : <span style={{ color: '#4A7FBB' }}>No</span>}
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={e => { e.stopPropagation(); flagCall(call.id, call.flagged) }}
-                    style={{ color: call.flagged ? '#f59e0b' : '#4A7FBB' }}>
+                  <button onClick={e => { e.stopPropagation(); flagCall(call.id, call.flagged) }} style={{ color: call.flagged ? '#f59e0b' : '#4A7FBB' }}>
                     <Flag size={14} />
                   </button>
                 </td>
@@ -170,10 +168,8 @@ export default function CallsPage() {
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm" style={{ color: '#4A7FBB' }}>Page {page + 1} of {totalPages}</p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 0}
-              style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronLeft size={14} /></Button>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
-              style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronRight size={14} /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 0} style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronLeft size={14} /></Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1} style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronRight size={14} /></Button>
           </div>
         </div>
       )}
@@ -183,18 +179,10 @@ export default function CallsPage() {
         <SheetContent style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.1)', color: 'white', width: '500px' }}>
           {selected && (
             <>
-              <SheetHeader>
-                <SheetTitle className="text-white">Call Detail</SheetTitle>
-              </SheetHeader>
+              <SheetHeader><SheetTitle className="text-white">Call Detail</SheetTitle></SheetHeader>
               <div className="mt-4 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    ['Caller', selected.caller_number || 'Unknown'],
-                    ['Duration', formatDuration(selected.duration_seconds)],
-                    ['Outcome', selected.outcome || '—'],
-                    ['Transferred', selected.transferred ? 'Yes' : 'No'],
-                    ['Time', new Date(selected.created_at).toLocaleString('en-AU')],
-                  ].map(([l, v]) => (
+                  {[['Caller', selected.caller_number || 'Unknown'], ['Duration', formatDuration(selected.duration_seconds)], ['Outcome', selected.outcome || '—'], ['Transferred', selected.transferred ? 'Yes' : 'No'], ['Time', new Date(selected.created_at).toLocaleString('en-AU')]].map(([l, v]) => (
                     <div key={l} className="p-3 rounded-lg" style={{ background: '#071829' }}>
                       <p className="text-xs mb-1" style={{ color: '#4A7FBB' }}>{l}</p>
                       <p className="font-semibold text-white text-sm">{v}</p>
@@ -204,15 +192,13 @@ export default function CallsPage() {
                 {selected.recording_url && (
                   <div>
                     <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: '#4A7FBB' }}>Recording</p>
-                    <audio controls src={selected.recording_url} className="w-full" style={{ accentColor: '#E8622A' }} />
+                    <audio controls src={selected.recording_url} className="w-full" />
                   </div>
                 )}
                 {selected.transcript && (
                   <div>
                     <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: '#4A7FBB' }}>Transcript</p>
-                    <div className="p-3 rounded-lg text-sm leading-relaxed max-h-64 overflow-y-auto" style={{ background: '#071829', color: '#7BAED4' }}>
-                      {selected.transcript}
-                    </div>
+                    <div className="p-3 rounded-lg text-sm leading-relaxed max-h-64 overflow-y-auto" style={{ background: '#071829', color: '#7BAED4' }}>{selected.transcript}</div>
                   </div>
                 )}
                 <Button onClick={() => flagCall(selected.id, selected.flagged)} variant="outline" className="w-full gap-2"

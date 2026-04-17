@@ -224,7 +224,7 @@ export default function OnboardingPage() {
             <div>
               <h2 className="text-xl font-bold text-white mb-2">Escalation rules</h2>
               <p className="text-sm mb-6" style={{ color: '#4A7FBB' }}>When should your AI transfer a call to you?</p>
-              <Textarea value={(responses.escalationRules as string) || config.escalationTemplate}
+              <Textarea value={(typeof responses.escalationRules === "string" ? responses.escalationRules : config.escalationTemplate) || config.escalationTemplate}
                 onChange={e => setResponse('escalationRules', e.target.value)} rows={6}
                 style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
               {config.complianceRule && (
@@ -243,7 +243,7 @@ export default function OnboardingPage() {
               {[['emailOnTransfer', 'Email me when a call is transferred'], ['dailySummary', 'Daily summary email'], ['weeklyReport', 'Weekly report email']].map(([key, label]) => (
                 <div key={key} className="flex items-center justify-between p-4 rounded-xl" style={{ background: '#071829' }}>
                   <span className="text-sm text-white">{label}</span>
-                  <Switch checked={!!(responses.notifications as Record<string, boolean>)?.[key]} onCheckedChange={v => setResponse('notifications', { ...(responses.notifications as object || {}), [key]: v })} />
+                  <Switch checked={!!(responses.notifications as Record<string, boolean> | undefined)?.[key]} onCheckedChange={v => setResponse('notifications', { ...(responses.notifications as object || {}), [key]: v })} />
                 </div>
               ))}
             </div>

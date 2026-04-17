@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-01-27.acacia' })
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2026-03-25.dahlia' })
 
 export async function POST(request: NextRequest) {
   const body = await request.text()
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
             stripe_customer_id: customerId,
             plan: (sub.items.data[0]?.price.nickname || 'starter').toLowerCase(),
             status: sub.status,
-            current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+            current_period_end: new Date((sub as unknown as { current_period_end: number }).current_period_end * 1000).toISOString(),
           }, { onConflict: 'stripe_subscription_id' })
           await supabase.from('businesses').update({ plan: (sub.items.data[0]?.price.nickname || 'starter').toLowerCase() }).eq('id', biz.id)
         }
@@ -40,10 +40,11 @@ export async function POST(request: NextRequest) {
     }
     case 'customer.subscription.updated': {
       const sub = event.data.object as Stripe.Subscription
+      const subData = sub as unknown as { current_period_end: number }
       await supabase.from('subscriptions').update({
         status: sub.status,
         plan: (sub.items.data[0]?.price.nickname || 'starter').toLowerCase(),
-        current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+        current_period_end: new Date(subData.current_period_end * 1000).toISOString(),
       }).eq('stripe_subscription_id', sub.id)
       break
     }
@@ -53,21 +54,19 @@ export async function POST(request: NextRequest) {
       break
     }
     case 'invoice.payment_succeeded': {
-      const invoice = event.data.object as Stripe.Invoice
-      const customerId = invoice.customer as string
-      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', customerId).single()
+      const invoice = event.data.object as Stripe.Invoice & { customer: string; amount_paid: number; subscription?: string }
+      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', invoice.customer).single()
       if (biz) {
         await supabase.from('notifications').insert({ business_id: biz.id, type: 'payment_success', message: `✅ Payment successful: $${((invoice.amount_paid || 0) / 100).toFixed(2)} AUD` })
       }
       break
     }
     case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice
-      const customerId = invoice.customer as string
-      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', customerId).single()
+      const invoice = event.data.object as Stripe.Invoice & { customer: string; subscription?: string }
+      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', invoice.customer).single()
       if (biz) {
         await supabase.from('notifications').insert({ business_id: biz.id, type: 'payment_failed', message: `❌ Payment failed — please update your billing details` })
-        if (invoice.subscription) await supabase.from('subscriptions').update({ status: 'past_due' }).eq('stripe_subscription_id', invoice.subscription as string)
+        if (invoice.subscription) await supabase.from('subscriptions').update({ status: 'past_due' }).eq('stripe_subscription_id', invoice.subscription)
       }
       break
     }

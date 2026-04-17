@@ -163,7 +163,7 @@ export default function CatalogPage() {
             </div>
             <div>
               <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Category</Label>
-              <Select value={editing.category || ''} onValueChange={v => setEditing(e => ({ ...e, category: v }))}>
+              <Select value={editing.category || ''} onValueChange={(v: string) => setEditing(e => ({ ...e, category: v }))}>
                 <SelectTrigger style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
                   <SelectValue placeholder="Select category…" />
                 </SelectTrigger>
