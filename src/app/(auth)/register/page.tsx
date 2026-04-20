@@ -102,10 +102,10 @@ export default function RegisterPage() {
           <div>
             <Label className="text-sm mb-2 block" style={{ color: '#4A7FBB' }}>Business type</Label>
             <Select onValueChange={val => setForm(f => ({ ...f, businessType: val as BusinessType }))}>
-              <SelectTrigger style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
+              <SelectTrigger style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: '100%' }}>
                 <SelectValue placeholder="Select your business type…" />
               </SelectTrigger>
-              <SelectContent style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <SelectContent style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', minWidth: '100%', width: '100%' }}>
                 {Object.entries(BUSINESS_TYPE_LABELS).map(([key, label]) => (
                   <SelectItem key={key} value={key} style={{ color: 'white' }}>{label}</SelectItem>
                 ))}
