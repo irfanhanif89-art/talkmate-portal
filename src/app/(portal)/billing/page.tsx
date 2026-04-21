@@ -9,7 +9,7 @@ const upsells = [
 ]
 
 const invoices = [
-  { date: '21 Apr 2026', desc: 'Talkmate Starter — April 2026', amount: '$299.00', status: 'Paid' },
+  { date: '21 Apr 2026', desc: 'Talkmate Premium — April 2026', amount: '$499.00', status: 'Paid' },
   { date: '21 Apr 2026', desc: 'Implementation Fee', amount: '$299.00', status: 'Paid' },
 ]
 
@@ -30,11 +30,11 @@ export default function BillingPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Current Plan</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>Starter</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>Premium</div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>Active</span>
           </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>$299<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span></div>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>$499<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span></div>
           <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Next billing: 21 May 2026</div>
           <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
             style={{ width: '100%', padding: '11px', background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -47,10 +47,10 @@ export default function BillingPage() {
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
               <span style={{ color: 'white' }}>AI Calls Used</span>
-              <span style={{ fontWeight: 700, color: 'white' }}>247 <span style={{ color: '#4A7FBB' }}>/ 500</span></span>
+              <span style={{ fontWeight: 700, color: 'white' }}>0 <span style={{ color: '#4A7FBB' }}>/ unlimited</span></span>
             </div>
             <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ width: '49%', height: '100%', background: '#22c55e', borderRadius: 4 }} />
+              <div style={{ width: '0%', height: '100%', background: '#22c55e', borderRadius: 4 }} />
             </div>
           </div>
           <div style={{ marginBottom: 16 }}>

@@ -20,10 +20,10 @@ const lbl = { fontSize: 12, color: '#4A7FBB', fontWeight: 600, display: 'block',
 const card = { background: '#071829', borderRadius: 14, padding: 16, marginBottom: 12 } as React.CSSProperties
 
 const voices = [
-  { id: 'sarah', name: 'Sarah', desc: 'Professional Female', sample: 'Hi, thank you for calling! How can I help you today?' },
-  { id: 'james', name: 'James', desc: 'Professional Male', sample: 'Good day, thanks for calling. What can I do for you?' },
-  { id: 'emma', name: 'Emma', desc: 'Friendly Female', sample: "Hey there! I'm Emma. How can I help?" },
-  { id: 'liam', name: 'Liam', desc: 'Casual Male', sample: "Hey, what's up! How can I help you out today?" },
+  { id: 'sarah', name: 'Sarah', desc: 'Professional Female', sample: "Hi, thank you for calling! How can I help you today? My name is Sarah and I'm here to assist you with anything you need." },
+  { id: 'james', name: 'James', desc: 'Professional Male', sample: "Good day, thanks for calling. My name is James. What can I do for you today? I'm happy to help with bookings, questions, or anything else." },
+  { id: 'emma', name: 'Emma', desc: 'Friendly Female', sample: "Hey there, welcome! I'm Emma. So great that you called — how can I help you out today? I'm here for whatever you need!" },
+  { id: 'liam', name: 'Liam', desc: 'Casual Male', sample: "Hey! Thanks for calling, I'm Liam. What can I do for you today? Whether it's a booking or a question, I've got you covered." },
 ]
 
 export default function SettingsPage() {
@@ -99,7 +99,7 @@ export default function SettingsPage() {
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Business Information</h3>
           <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Used by your AI agent when speaking to callers.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Email', 'email'], ['Website', 'website'], ['Address', 'address'], ['ABN', 'abn']].map(([label, key]) => (
+            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Notification Email', 'notification_email'], ['Website', 'website'], ['Address', 'address'], ['ABN', 'abn']].map(([label, key]) => (
               <div key={key}>
                 <label style={lbl}>{label}</label>
                 <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} style={inp} />
@@ -245,11 +245,9 @@ export default function SettingsPage() {
       {tab === 'integrations' && (
         <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Integrations</h3>
-          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Connect external tools to your AI agent.</p>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Connect your booking system and other tools to your AI agent.</p>
           <div style={{ maxWidth: 560 }}>
             {[
-              { label: 'Vapi Agent ID', key: 'vapi_agent_id', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
-              { label: 'Make.com Webhook URL', key: 'make_webhook_url', placeholder: 'https://hook.eu1.make.com/...' },
               { label: 'Booking Page URL', key: 'booking_url', placeholder: 'https://calendly.com/yourbusiness' },
             ].map(({ label, key, placeholder }) => (
               <div key={key} style={{ marginBottom: 16 }}>
@@ -261,11 +259,12 @@ export default function SettingsPage() {
               </div>
             ))}
             <div style={{ marginTop: 8 }}>
-              <label style={lbl}>Your API Key</label>
+              <label style={lbl}>Your Talkmate API Key</label>
               <div style={{ display: 'flex', gap: 10 }}>
-                <input value={biz.api_key || 'tm_live_••••••••••••'} readOnly style={{ ...inp, flex: 1, fontFamily: 'monospace', fontSize: 12, opacity: 0.7 }} />
+                <input value={biz.api_key ? 'tm_live_' + biz.api_key.substring(0,8) + '••••••••' : 'tm_live_••••••••••••'} readOnly style={{ ...inp, flex: 1, fontFamily: 'monospace', fontSize: 12, opacity: 0.7 }} />
                 <button onClick={() => navigator.clipboard.writeText(biz.api_key || '')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', padding: '0 16px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', flexShrink: 0 }}>Copy</button>
               </div>
+              <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 6 }}>Use this key if you need to connect Talkmate to third-party tools via our API.</p>
             </div>
           </div>
         </div>
