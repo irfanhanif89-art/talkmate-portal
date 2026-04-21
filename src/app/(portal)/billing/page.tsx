@@ -1,148 +1,129 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { CreditCard, ExternalLink, CheckCircle } from 'lucide-react'
+import { useState } from 'react'
 
-const PLANS = [
-  { id: 'starter', name: 'Starter', price: 299, calls: 300, features: ['1 location', 'Up to 300 calls/month', 'Order taking + FAQs', 'SMS confirmations', 'Call transcripts', 'Email support'] },
-  { id: 'growth', name: 'Growth', price: 499, calls: 800, features: ['Up to 3 locations', 'Up to 800 calls/month', 'Everything in Starter', 'Live order dashboard', 'Call analytics', 'Priority support'], featured: true },
-  { id: 'enterprise', name: 'Enterprise', price: null, calls: null, features: ['Unlimited locations', 'Custom integrations', 'POS system sync', 'Dedicated account manager', 'Custom AI training', 'SLA guarantee'] },
+const upsells = [
+  { emoji: '⭐', title: 'Google Review Requests', desc: 'After every positive call, your AI automatically SMS the customer asking for a Google review. More 5-star reviews = more customers finding you.', price: '+$49', popular: true },
+  { emoji: '💬', title: 'SMS Follow-Ups', desc: 'Automatically follow up missed calls, enquiry no-responses, or appointment no-shows with a personalised SMS. Never lose a lead again.', price: '+$39', popular: false },
+  { emoji: '📤', title: 'Outbound AI Calls', desc: 'Your AI proactively calls leads, confirms bookings, and chases quotes so you don\'t have to. Works 24/7 while you sleep.', price: '+$79', popular: false },
 ]
 
+const invoices = [
+  { date: '21 Apr 2026', desc: 'Talkmate Starter — April 2026', amount: '$299.00', status: 'Paid' },
+  { date: '21 Apr 2026', desc: 'Implementation Fee', amount: '$299.00', status: 'Paid' },
+]
+
+const inp = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '11px 14px', width: '100%', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none' } as React.CSSProperties
+
 export default function BillingPage() {
-  const supabase = createClient()
-  const [subscription, setSubscription] = useState<{ plan: string; status: string; current_period_end: string } | null>(null)
-  const [callsUsed, setCallsUsed] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [showCancelModal, setShowCancelModal] = useState(false)
-  const [cancelReason, setCancelReason] = useState('')
-  const [showDiscount, setShowDiscount] = useState(false)
-
-  useEffect(() => {
-    async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
-      if (!biz) return
-      const { data: sub } = await supabase.from('subscriptions').select('*').eq('business_id', biz.id).single()
-      setSubscription(sub)
-      const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
-      const { count } = await supabase.from('calls').select('id', { count: 'exact', head: true }).eq('business_id', biz.id).gte('created_at', startOfMonth.toISOString())
-      setCallsUsed(count || 0)
-    }
-    load()
-  }, [])
-
-  async function openStripePortal() {
-    setLoading(true)
-    const res = await fetch('/api/stripe/portal', { method: 'POST' })
-    if (res.ok) { const { url } = await res.json(); window.open(url, '_blank') }
-    setLoading(false)
-  }
-
-  const currentPlan = PLANS.find(p => p.id === (subscription?.plan || 'starter')) || PLANS[0]
-  const usagePercent = currentPlan.calls ? Math.min(100, Math.round((callsUsed / currentPlan.calls) * 100)) : 0
+  const [cancelling, setCancelling] = useState(false)
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-8">Billing & Subscription</h1>
+    <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>Billing</h1>
+      </div>
 
-      {/* Current plan */}
-      <div className="p-6 rounded-2xl border mb-8" style={{ background: '#0A1E38', borderColor: 'rgba(232,98,42,0.25)' }}>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#4A7FBB' }}>Current Plan</span>
-            <h2 className="text-xl font-bold text-white mt-1">{currentPlan.name} — ${currentPlan.price}/mo</h2>
-          </div>
-          <span className="px-3 py-1 rounded-full text-sm font-semibold" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-            {subscription?.status || 'Active'}
-          </span>
-        </div>
-        {currentPlan.calls && (
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span style={{ color: '#4A7FBB' }}>Calls this month</span>
-              <span className="text-white">{callsUsed} / {currentPlan.calls}</span>
+      {/* Plan + Usage */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 }}>
+        <div style={{ background: 'linear-gradient(135deg,rgba(232,98,42,0.1),rgba(10,30,56,1))', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Current Plan</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>Starter</div>
             </div>
-            <Progress value={usagePercent} className="h-2" style={{ background: 'rgba(255,255,255,0.08)' }} />
-            {usagePercent >= 80 && <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>⚠️ {100 - usagePercent}% of your monthly calls remaining</p>}
+            <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>Active</span>
           </div>
-        )}
-        {subscription?.current_period_end && (
-          <p className="text-xs mt-3" style={{ color: '#4A7FBB' }}>Renews {new Date(subscription.current_period_end).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-        )}
-        <div className="flex gap-3 mt-4">
-          <Button onClick={openStripePortal} disabled={loading} variant="outline" className="gap-2"
-            style={{ borderColor: '#1565C0', color: '#4A9FE8' }}>
-            <CreditCard size={14} /> Manage Billing <ExternalLink size={12} />
-          </Button>
-          <Button variant="outline" onClick={() => setShowCancelModal(true)}
-            style={{ borderColor: 'rgba(239,68,68,0.3)', color: '#ef4444', background: 'transparent' }}>
-            Cancel plan
-          </Button>
+          <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>$299<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span></div>
+          <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Next billing: 21 May 2026</div>
+          <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
+            style={{ width: '100%', padding: '11px', background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            Manage Payment Method
+          </button>
+        </div>
+
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24 }}>
+          <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Usage This Month</div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: 'white' }}>AI Calls Used</span>
+              <span style={{ fontWeight: 700, color: 'white' }}>247 <span style={{ color: '#4A7FBB' }}>/ 500</span></span>
+            </div>
+            <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: '49%', height: '100%', background: '#22c55e', borderRadius: 4 }} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+              <span style={{ color: 'white' }}>SMS Sent</span>
+              <span style={{ fontWeight: 700, color: 'white' }}>0 <span style={{ color: '#4A7FBB' }}>/ 0</span></span>
+            </div>
+            <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4 }} />
+          </div>
+          <div style={{ fontSize: 12, color: '#4A7FBB', padding: 10, background: '#071829', borderRadius: 8 }}>
+            💡 At this rate you&apos;ll use ~60% of your monthly calls.
+          </div>
         </div>
       </div>
 
-      {/* Plan comparison */}
-      <h2 className="text-lg font-bold text-white mb-4">Plans</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {PLANS.map(plan => (
-          <div key={plan.id} className="p-6 rounded-2xl border relative" style={{ background: plan.featured ? 'linear-gradient(160deg,#0D2B4A,#071829)' : '#0A1E38', borderColor: plan.featured ? '#E8622A' : 'rgba(255,255,255,0.06)' }}>
-            {plan.featured && <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-bold" style={{ background: '#E8622A', color: 'white' }}>Most Popular</div>}
-            <h3 className="font-bold text-white text-lg mb-1">{plan.name}</h3>
-            {plan.price ? (
-              <p className="text-3xl font-bold mb-4" style={{ color: plan.featured ? '#E8622A' : 'white' }}>${plan.price}<span className="text-sm font-normal" style={{ color: '#4A7FBB' }}>/mo</span></p>
-            ) : (
-              <p className="text-2xl font-bold mb-4 text-white">Custom</p>
-            )}
-            <ul className="space-y-2 mb-6">
-              {plan.features.map(f => (
-                <li key={f} className="flex items-start gap-2 text-sm" style={{ color: '#7BAED4' }}>
-                  <CheckCircle size={14} className="mt-0.5 flex-shrink-0" style={{ color: plan.featured ? '#E8622A' : '#22c55e' }} /> {f}
-                </li>
-              ))}
-            </ul>
-            {plan.id === subscription?.plan ? (
-              <div className="text-center text-sm font-semibold py-2" style={{ color: '#22c55e' }}>✓ Current plan</div>
-            ) : plan.price ? (
-              <Button onClick={openStripePortal} className="w-full" style={{ background: plan.featured ? '#E8622A' : 'transparent', color: plan.featured ? 'white' : '#4A9FE8', border: plan.featured ? 'none' : '1px solid #1565C0' }}>
-                {plan.price > (currentPlan.price || 0) ? 'Upgrade' : 'Downgrade'}
-              </Button>
-            ) : (
-              <a href="mailto:hello@talkmate.com.au" className="block text-center py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB' }}>Contact Us</a>
-            )}
+      {/* Upsells */}
+      <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 16 }}>💡 Grow your business with these add-ons</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 28 }}>
+        {upsells.map(u => (
+          <div key={u.title} style={{ background: '#0A1E38', border: `1px solid ${u.popular ? 'rgba(232,98,42,0.3)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 16, padding: 24, position: 'relative', overflow: 'hidden' }}>
+            {u.popular && <div style={{ position: 'absolute', top: 12, right: 12, background: '#E8622A', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99 }}>MOST POPULAR</div>}
+            <div style={{ fontSize: 28, marginBottom: 10 }}>{u.emoji}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: 'white', marginBottom: 8 }}>{u.title}</div>
+            <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 16, lineHeight: 1.6 }}>{u.desc}</div>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'white', marginBottom: 14 }}>{u.price}<span style={{ fontSize: 13, fontWeight: 400, color: '#4A7FBB' }}>/mo</span></div>
+            <button style={{ width: '100%', padding: '10px', background: u.popular ? '#E8622A' : 'transparent', color: u.popular ? 'white' : '#4A9FE8', border: u.popular ? 'none' : '1px solid rgba(74,159,232,0.3)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              Upgrade to unlock →
+            </button>
           </div>
         ))}
       </div>
 
-      {/* Cancel modal */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
-          <div className="w-full max-w-md p-8 rounded-2xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.1)' }}>
-            <h3 className="text-xl font-bold text-white mb-2">Cancel subscription</h3>
-            <p className="text-sm mb-6" style={{ color: '#4A7FBB' }}>We're sorry to see you go. What's the reason?</p>
-            {[['too_expensive', 'Too expensive'], ['not_using', 'Not using it enough'], ['missing_features', 'Missing features I need'], ['switching', 'Switching to another solution'], ['other', 'Other']].map(([val, label]) => (
-              <button key={val} onClick={() => { setCancelReason(val); if (val === 'too_expensive') setShowDiscount(true) }} className="w-full text-left px-4 py-3 rounded-lg mb-2 text-sm transition-all"
-                style={{ background: cancelReason === val ? 'rgba(232,98,42,0.15)' : 'rgba(255,255,255,0.04)', color: cancelReason === val ? '#E8622A' : '#7BAED4', border: `1px solid ${cancelReason === val ? 'rgba(232,98,42,0.3)' : 'transparent'}` }}>
-                {label}
-              </button>
+      {/* Invoices */}
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24, marginBottom: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 16 }}>🧾 Invoices</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#4A7FBB' }}>
+              {['Date', 'Description', 'Amount', 'Status', ''].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '8px 0', fontWeight: 600 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map((inv, i) => (
+              <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 14, color: 'white' }}>
+                <td style={{ padding: '14px 0', color: '#4A7FBB' }}>{inv.date}</td>
+                <td style={{ padding: '14px 0' }}>{inv.desc}</td>
+                <td style={{ padding: '14px 0', fontWeight: 600 }}>{inv.amount}</td>
+                <td style={{ padding: '14px 0' }}><span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>Paid</span></td>
+                <td style={{ padding: '14px 0', textAlign: 'right' }}><a href="#" style={{ color: '#4A9FE8', fontSize: 13, textDecoration: 'none' }}>Download PDF</a></td>
+              </tr>
             ))}
-            {showDiscount && cancelReason === 'too_expensive' && (
-              <div className="p-4 rounded-xl mb-4 border" style={{ background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.25)' }}>
-                <p className="font-bold text-white mb-1">We'd love to keep you 💚</p>
-                <p className="text-sm" style={{ color: '#7BAED4' }}>Use code <strong style={{ color: '#22c55e' }}>STAY20</strong> for 20% off your next 3 months. Apply it in the billing portal.</p>
-              </div>
-            )}
-            <div className="flex gap-3 mt-4">
-              <Button variant="outline" onClick={() => { setShowCancelModal(false); setShowDiscount(false); setCancelReason('') }} className="flex-1" style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A7FBB' }}>Keep my plan</Button>
-              <Button onClick={openStripePortal} className="flex-1" style={{ background: '#ef4444', color: 'white', border: 'none' }}>Cancel anyway</Button>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Cancel */}
+      <div style={{ textAlign: 'center' }}>
+        <button onClick={() => setCancelling(!cancelling)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
+          Cancel subscription
+        </button>
+        {cancelling && (
+          <div style={{ marginTop: 16, padding: 20, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 14, maxWidth: 400, margin: '16px auto 0' }}>
+            <div style={{ fontWeight: 600, marginBottom: 8, color: 'white' }}>Before you go...</div>
+            <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 16 }}>Use code <strong style={{ color: '#E8622A' }}>STAY20</strong> for 20% off your next 3 months.</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button style={{ flex: 1, padding: 10, background: '#E8622A', color: 'white', border: 'none', borderRadius: 8, fontFamily: 'Outfit,sans-serif', fontWeight: 600, cursor: 'pointer' }}>Apply Discount</button>
+              <button onClick={() => setCancelling(false)} style={{ flex: 1, padding: 10, background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontFamily: 'Outfit,sans-serif', cursor: 'pointer' }}>Cancel Anyway</button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

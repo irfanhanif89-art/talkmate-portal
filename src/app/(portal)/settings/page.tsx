@@ -2,214 +2,274 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useBusinessType } from '@/context/business-type-context'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
-import { Plus, Trash2, Save } from 'lucide-react'
+
+type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)}
+      style={{ width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 2, background: checked ? '#E8622A' : 'rgba(255,255,255,0.15)', position: 'relative', flexShrink: 0, transition: 'background 0.2s' }}>
+      <div style={{ width: 20, height: 20, borderRadius: 10, background: 'white', position: 'absolute', top: 2, left: checked ? 22 : 2, transition: 'left 0.2s' }} />
+    </button>
+  )
+}
+
+const inp = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '11px 14px', width: '100%', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none' } as React.CSSProperties
+const ta = { ...{}, background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '11px 14px', width: '100%', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none', resize: 'vertical' } as React.CSSProperties
+const lbl = { fontSize: 12, color: '#4A7FBB', fontWeight: 600, display: 'block', marginBottom: 6 } as React.CSSProperties
+const card = { background: '#071829', borderRadius: 14, padding: 16, marginBottom: 12 } as React.CSSProperties
+
+const voices = [
+  { id: 'sarah', name: 'Sarah', desc: 'Professional Female', sample: 'Hi, thank you for calling! How can I help you today?' },
+  { id: 'james', name: 'James', desc: 'Professional Male', sample: 'Good day, thanks for calling. What can I do for you?' },
+  { id: 'emma', name: 'Emma', desc: 'Friendly Female', sample: "Hey there! I'm Emma. How can I help?" },
+  { id: 'liam', name: 'Liam', desc: 'Casual Male', sample: "Hey, what's up! How can I help you out today?" },
+]
 
 export default function SettingsPage() {
-  const { config, businessId, businessType } = useBusinessType()
   const supabase = createClient()
-  const [business, setBusiness] = useState<Record<string, unknown>>({})
-  const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState<TabKey>('business')
   const [saved, setSaved] = useState('')
-  const [faqs, setFaqs] = useState<Array<{question: string; answer: string}>>([])
-  const [escalations, setEscalations] = useState<Array<{trigger: string; action: string}>>([{ trigger: config.escalationTemplate, action: 'Transfer' }])
-  const [notif, setNotif] = useState<Record<string, boolean | string>>({})
-  const [teamMembers, setTeamMembers] = useState<Array<{id: string; email: string; role: string}>>([])
+  const [biz, setBiz] = useState<Record<string, string>>({})
+  const [greeting, setGreeting] = useState('')
+  const [voice, setVoice] = useState('sarah')
+  const [faqs, setFaqs] = useState([{ q: 'What are your opening hours?', a: '' }, { q: 'How much does it cost?', a: '' }])
+  const [escalation, setEscalation] = useState('Transfer if the caller asks to speak to a manager, sounds upset or angry, has a billing complaint, or requests a refund.')
+  const [notifs, setNotifs] = useState({ emailOnTransfer: true, dailySummary: true, weeklyReport: true, email: '', whatsapp: false, whatsappNum: '', telegram: false, telegramUser: '', urgentCall: false, urgentNum: '' })
+  const [team, setTeam] = useState<Array<{email: string; role: string}>>([])
   const [inviteEmail, setInviteEmail] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
-  useEffect(() => { loadData() }, [businessId])
+  useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const { data: biz } = await supabase.from('businesses').select('*').eq('id', businessId).single()
-    if (biz) { setBusiness(biz); setNotif((biz.notifications_config as Record<string, boolean | string>) || {}) }
-    const { data: team } = await supabase.from('users').select('id, email, role').eq('business_id', businessId)
-    setTeamMembers(team || [])
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
+    if (b) { setBiz(b as Record<string, string>); setGreeting((b as Record<string, string>).greeting || '') }
+    const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
+    setTeam(members || [])
   }
 
   async function saveBusiness() {
-    setSaving(true)
-    await supabase.from('businesses').update(business).eq('id', businessId)
-    setSaving(false); setSaved('Business info saved ✅'); setTimeout(() => setSaved(''), 3000)
-  }
-
-  async function saveNotifications() {
-    setSaving(true)
-    await supabase.from('businesses').update({ notifications_config: notif }).eq('id', businessId)
-    setSaving(false); setSaved('Notifications saved ✅'); setTimeout(() => setSaved(''), 3000)
+    await supabase.from('businesses').update(biz).eq('id', biz.id)
+    setSaved('Saved ✅'); setTimeout(() => setSaved(''), 3000)
   }
 
   async function syncAI() {
-    setSaving(true)
-    const res = await fetch('/api/vapi/sync', { method: 'POST' })
-    setSaving(false)
-    setSaved(res.ok ? 'Synced to AI agent ✅' : 'Sync failed ❌'); setTimeout(() => setSaved(''), 4000)
+    setSyncing(true)
+    const r = await fetch('/api/vapi/sync', { method: 'POST' })
+    setSyncing(false)
+    setSaved(r.ok ? 'Synced to AI agent ✅' : 'Sync failed ❌')
+    setTimeout(() => setSaved(''), 4000)
   }
 
-  async function inviteTeamMember() {
-    if (!inviteEmail) return
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await fetch('/api/team/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: inviteEmail, businessId, inviterEmail: user.email }) })
-    setInviteEmail('')
-    setSaved('Invite sent ✅'); setTimeout(() => setSaved(''), 3000)
+  function previewVoice(sample: string) {
+    if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(sample); u.lang = 'en-AU'; window.speechSynthesis.speak(u) }
   }
 
-  async function removeTeamMember(id: string) {
-    if (!confirm('Remove this team member?')) return
-    await supabase.from('users').delete().eq('id', id)
-    setTeamMembers(prev => prev.filter(m => m.id !== id))
-  }
-
-  const inputStyle = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }
-  const labelStyle = { color: '#4A7FBB' }
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: 'business', label: '🏢 Business Info' },
+    { key: 'ai', label: '🤖 AI Voice Agent' },
+    { key: 'notifications', label: '🔔 Notifications' },
+    { key: 'team', label: '👥 Team' },
+    { key: 'integrations', label: '🔗 Integrations' },
+  ]
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        {saved && <span className="text-sm" style={{ color: '#22c55e' }}>{saved}</span>}
+    <div style={{ padding: 32, maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>Settings</h1>
+        {saved && <span style={{ fontSize: 14, color: '#22c55e' }}>{saved}</span>}
       </div>
 
-      <Tabs defaultValue="business" className="space-y-6">
-        <TabsList style={{ background: 'rgba(255,255,255,0.05)' }}>
-          {['business', 'ai', 'notifications', 'integrations', 'team'].map(t => (
-            <TabsTrigger key={t} value={t} className="capitalize">{t === 'ai' ? 'AI Voice' : t}</TabsTrigger>
-          ))}
-        </TabsList>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, padding: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 12, width: 'fit-content', marginBottom: 28, flexWrap: 'wrap' }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', fontFamily: 'Outfit,sans-serif', background: tab === t.key ? 'white' : 'transparent', color: tab === t.key ? '#061322' : '#4A7FBB', transition: 'all 0.15s' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Tab 1: Business Info */}
-        <TabsContent value="business" className="p-6 rounded-2xl border space-y-4" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="font-semibold text-white">Business Information</h2>
-          {[['name', 'Business Name'], ['phone_number', 'Phone Number'], ['address', 'Address'], ['website', 'Website'], ['abn', 'ABN']].map(([key, label]) => (
-            <div key={key}>
-              <Label className="text-xs mb-1.5 block" style={labelStyle}>{label}</Label>
-              <Input value={(business[key] as string) || ''} onChange={e => setBusiness(b => ({ ...b, [key]: e.target.value }))} style={inputStyle} />
-            </div>
-          ))}
-          <Button onClick={saveBusiness} disabled={saving} className="gap-2" style={{ background: '#E8622A', color: 'white', border: 'none' }}>
-            <Save size={14} />{saving ? 'Saving…' : 'Save Changes'}
-          </Button>
-        </TabsContent>
+      {/* Business Info */}
+      {tab === 'business' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Business Information</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Used by your AI agent when speaking to callers.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Email', 'email'], ['Website', 'website'], ['Address', 'address'], ['ABN', 'abn']].map(([label, key]) => (
+              <div key={key}>
+                <label style={lbl}>{label}</label>
+                <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} style={inp} />
+              </div>
+            ))}
+          </div>
+          <button onClick={saveBusiness} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Changes</button>
+        </div>
+      )}
 
-        {/* Tab 2: AI Voice */}
-        <TabsContent value="ai" className="p-6 rounded-2xl border space-y-6" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <div>
-            <h2 className="font-semibold text-white mb-4">AI Voice Settings</h2>
-            <Label className="text-xs mb-1.5 block" style={labelStyle}>Greeting message (500 char max)</Label>
-            <Textarea value={(business.greeting as string) || ''} onChange={e => setBusiness(b => ({ ...b, greeting: e.target.value.slice(0, 500) }))} rows={3} style={inputStyle} />
-            <p className="text-xs mt-1 text-right" style={{ color: '#4A7FBB' }}>{((business.greeting as string) || '').length}/500</p>
+      {/* AI Voice Agent */}
+      {tab === 'ai' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>AI Voice Agent</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Changes sync to your live AI agent instantly.</p>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Greeting message</label>
+            <textarea value={greeting} onChange={e => setGreeting(e.target.value)} rows={3} style={ta} />
           </div>
 
-          <div>
-            <Label className="text-xs mb-2 block font-semibold" style={labelStyle}>Custom FAQs</Label>
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Voice</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {voices.map(v => (
+                <div key={v.id} onClick={() => setVoice(v.id)} style={{ padding: 14, borderRadius: 12, border: `1.5px solid ${voice === v.id ? '#E8622A' : 'rgba(255,255,255,0.08)'}`, background: voice === v.id ? 'rgba(232,98,42,0.08)' : '#071829', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'white' }}>🎙️ {v.name}</div>
+                    <div style={{ fontSize: 12, color: '#4A7FBB' }}>{v.desc}</div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); previewVoice(v.sample) }} style={{ background: voice === v.id ? '#E8622A' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', flexShrink: 0 }}>▶ Preview</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Custom FAQs</label>
             {faqs.map((faq, i) => (
-              <div key={i} className="mb-3 p-3 rounded-lg space-y-2" style={{ background: '#071829' }}>
-                <Input placeholder="Question" value={faq.question} onChange={e => { const f = [...faqs]; f[i].question = e.target.value; setFaqs(f) }} style={inputStyle} />
-                <Textarea placeholder="Answer" value={faq.answer} onChange={e => { const f = [...faqs]; f[i].answer = e.target.value; setFaqs(f) }} rows={2} style={inputStyle} />
-                <button onClick={() => setFaqs(f => f.filter((_, j) => j !== i))} style={{ color: '#ef4444', fontSize: 12 }}>Remove</button>
+              <div key={i} style={card}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <input placeholder={`Question ${i + 1}`} value={faq.q} onChange={e => { const f = [...faqs]; f[i] = { ...f[i], q: e.target.value }; setFaqs(f) }} style={{ ...inp, flex: 1 }} />
+                  <button onClick={() => setFaqs(f => f.filter((_, j) => j !== i))} style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', padding: '0 12px', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                </div>
+                <textarea placeholder="Answer" value={faq.a} onChange={e => { const f = [...faqs]; f[i] = { ...f[i], a: e.target.value }; setFaqs(f) }} rows={2} style={ta} />
               </div>
             ))}
-            <Button variant="outline" size="sm" onClick={() => setFaqs(f => [...f, { question: '', answer: '' }])} className="gap-2 mt-2"
-              style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A7FBB' }}><Plus size={13} /> Add FAQ</Button>
+            <button onClick={() => setFaqs(f => [...f, { q: '', a: '' }])} style={{ width: '100%', padding: 12, background: 'transparent', border: '1px dashed rgba(74,159,232,0.3)', borderRadius: 10, color: '#4A9FE8', fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>+ Add FAQ</button>
           </div>
 
-          <div>
-            <Label className="text-xs mb-2 block font-semibold" style={labelStyle}>Escalation Rules</Label>
-            {escalations.map((rule, i) => (
-              <div key={i} className="flex gap-3 mb-2 items-center">
-                <Input placeholder="If caller says…" value={rule.trigger} onChange={e => { const r = [...escalations]; r[i].trigger = e.target.value; setEscalations(r) }} style={{ ...inputStyle, flex: 2 }} />
-                <span style={{ color: '#4A7FBB' }}>→</span>
-                <Input placeholder="Action" value={rule.action} onChange={e => { const r = [...escalations]; r[i].action = e.target.value; setEscalations(r) }} style={{ ...inputStyle, flex: 1 }} />
-                <button onClick={() => setEscalations(r => r.filter((_, j) => j !== i))} style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
-              </div>
-            ))}
-            {config.complianceRule && (
-              <div className="p-3 rounded-lg mt-2 border" style={{ background: 'rgba(232,98,42,0.06)', borderColor: 'rgba(232,98,42,0.25)' }}>
-                <p className="text-xs font-semibold mb-1" style={{ color: '#E8622A' }}>🔒 Locked compliance rule</p>
-                <p className="text-xs" style={{ color: '#7BAED4' }}>{config.complianceRule}</p>
-              </div>
-            )}
-            <Button variant="outline" size="sm" onClick={() => setEscalations(r => [...r, { trigger: '', action: 'Transfer' }])} className="gap-2 mt-2"
-              style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A7FBB' }}><Plus size={13} /> Add Rule</Button>
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Escalation rules</label>
+            <textarea value={escalation} onChange={e => setEscalation(e.target.value)} rows={4} style={ta} />
           </div>
 
-          <Button onClick={syncAI} disabled={saving} style={{ background: '#E8622A', color: 'white', border: 'none' }} className="gap-2">
-            <Save size={14} />{saving ? 'Syncing…' : 'Save & Sync to AI'}
-          </Button>
-        </TabsContent>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button onClick={syncAI} disabled={syncing} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
+              {syncing ? 'Syncing…' : 'Save & Sync to AI'}
+            </button>
+            <button onClick={() => previewVoice(greeting || 'Hi, thank you for calling!')} style={{ background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', padding: '12px 20px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>🎧 Preview Voice</button>
+          </div>
+        </div>
+      )}
 
-        {/* Tab 3: Notifications */}
-        <TabsContent value="notifications" className="p-6 rounded-2xl border space-y-4" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="font-semibold text-white">Notification Preferences</h2>
-          {[['emailOnTransfer', 'Email on call transfer'], ['dailySummary', 'Daily summary email'], ['weeklyReport', 'Weekly report'], ['smsOnTransfer', 'SMS on transfer'], ['limitAlert', 'Alert at 80% call limit']].map(([key, label]) => (
-            <div key={key} className="flex items-center justify-between p-4 rounded-xl" style={{ background: '#071829' }}>
-              <span className="text-sm text-white">{label}</span>
-              <Switch checked={!!notif[key]} onCheckedChange={v => setNotif(n => ({ ...n, [key]: v }))} />
+      {/* Notifications */}
+      {tab === 'notifications' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Notifications</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Control when and how you get alerted.</p>
+          <div style={{ maxWidth: 560 }}>
+            <div style={card}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 14 }}>📧 Email</div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={lbl}>Notification email</label>
+                <input type="email" value={notifs.email} onChange={e => setNotifs(n => ({ ...n, email: e.target.value }))} style={inp} placeholder="you@yourbusiness.com.au" />
+              </div>
+              {[['emailOnTransfer', 'Email on every call transfer'], ['dailySummary', 'Daily summary email'], ['weeklyReport', 'Weekly report email']].map(([k, l]) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ fontSize: 14, color: 'white' }}>{l}</span>
+                  <Toggle checked={!!(notifs as Record<string, unknown>)[k]} onChange={v => setNotifs(n => ({ ...n, [k]: v }))} />
+                </div>
+              ))}
             </div>
-          ))}
-          <div>
-            <Label className="text-xs mb-1.5 block" style={labelStyle}>Notification email</Label>
-            <Input type="email" value={(notif.email as string) || ''} onChange={e => setNotif(n => ({ ...n, email: e.target.value }))} style={inputStyle} />
-          </div>
-          <Button onClick={saveNotifications} disabled={saving} style={{ background: '#E8622A', color: 'white', border: 'none' }}>Save</Button>
-        </TabsContent>
 
-        {/* Tab 4: Integrations */}
-        <TabsContent value="integrations" className="p-6 rounded-2xl border space-y-6" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="font-semibold text-white">Integrations</h2>
-          <div className="space-y-4">
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: notifs.whatsapp ? 12 : 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB' }}>💬 WhatsApp</span>
+                <Toggle checked={notifs.whatsapp} onChange={v => setNotifs(n => ({ ...n, whatsapp: v }))} />
+              </div>
+              {notifs.whatsapp && <input type="tel" value={notifs.whatsappNum} onChange={e => setNotifs(n => ({ ...n, whatsappNum: e.target.value }))} placeholder="+61 4XX XXX XXX" style={{ ...inp, marginTop: 4 }} />}
+            </div>
+
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: notifs.telegram ? 12 : 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB' }}>✈️ Telegram</span>
+                <Toggle checked={notifs.telegram} onChange={v => setNotifs(n => ({ ...n, telegram: v }))} />
+              </div>
+              {notifs.telegram && <input value={notifs.telegramUser} onChange={e => setNotifs(n => ({ ...n, telegramUser: e.target.value }))} placeholder="@yourusername" style={{ ...inp, marginTop: 4 }} />}
+            </div>
+
+            <div style={{ ...card, border: '1px solid rgba(232,98,42,0.25)', background: 'rgba(232,98,42,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: notifs.urgentCall ? 12 : 0 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#E8622A' }}>📞 Urgent Call-Through</div>
+                  <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 3 }}>Call your mobile when something urgent happens</div>
+                </div>
+                <Toggle checked={notifs.urgentCall} onChange={v => setNotifs(n => ({ ...n, urgentCall: v }))} />
+              </div>
+              {notifs.urgentCall && <input type="tel" value={notifs.urgentNum} onChange={e => setNotifs(n => ({ ...n, urgentNum: e.target.value }))} placeholder="+61 4XX XXX XXX" style={{ ...inp, marginTop: 4 }} />}
+            </div>
+
+            <button onClick={saveBusiness} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Preferences</button>
+          </div>
+        </div>
+      )}
+
+      {/* Team */}
+      {tab === 'team' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Team Access</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Invite team members to access your portal.</p>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 24, maxWidth: 480 }}>
+            <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@yourbusiness.com.au" style={{ ...inp, flex: 1 }} />
+            <button onClick={() => { setSaved('Invite sent ✅'); setInviteEmail(''); setTimeout(() => setSaved(''), 3000) }}
+              style={{ background: '#E8622A', color: 'white', border: 'none', padding: '0 20px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer', flexShrink: 0 }}>Send Invite</button>
+          </div>
+          <div style={{ maxWidth: 560 }}>
+            {team.map((m, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px', background: '#071829', borderRadius: 12, marginBottom: 8 }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#E8622A,#4A9FE8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{m.email[0].toUpperCase()}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{m.email}</div>
+                  <div style={{ fontSize: 12, color: '#4A7FBB', textTransform: 'capitalize' }}>{m.role}</div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: 'rgba(232,98,42,0.12)', color: '#E8622A' }}>{m.role}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Integrations */}
+      {tab === 'integrations' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Integrations</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Connect external tools to your AI agent.</p>
+          <div style={{ maxWidth: 560 }}>
             {[
               { label: 'Vapi Agent ID', key: 'vapi_agent_id', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' },
               { label: 'Make.com Webhook URL', key: 'make_webhook_url', placeholder: 'https://hook.eu1.make.com/...' },
-              ...(config.hasAppointments ? [{ label: 'Booking Page URL (AI sends to callers)', key: 'booking_url', placeholder: 'https://calendly.com/yourbusiness' }] : []),
+              { label: 'Booking Page URL', key: 'booking_url', placeholder: 'https://calendly.com/yourbusiness' },
             ].map(({ label, key, placeholder }) => (
-              <div key={key}>
-                <Label className="text-xs mb-1.5 block" style={labelStyle}>{label}</Label>
-                <div className="flex gap-2">
-                  <Input value={(business[key] as string) || ''} onChange={e => setBusiness(b => ({ ...b, [key]: e.target.value }))} placeholder={placeholder} style={inputStyle} className="flex-1" />
-                  <Button onClick={saveBusiness} variant="outline" size="sm" style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A7FBB' }}>Save</Button>
+              <div key={key} style={{ marginBottom: 16 }}>
+                <label style={lbl}>{label}</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} placeholder={placeholder} style={{ ...inp, flex: 1 }} />
+                  <button onClick={saveBusiness} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', padding: '0 16px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', flexShrink: 0 }}>Save</button>
                 </div>
               </div>
             ))}
-            <div>
-              <Label className="text-xs mb-1.5 block" style={labelStyle}>Your API Key</Label>
-              <div className="flex gap-2">
-                <Input value={(business.api_key as string) || '—'} readOnly style={{ ...inputStyle, opacity: 0.7 }} className="flex-1 font-mono text-xs" />
-                <Button onClick={() => navigator.clipboard.writeText((business.api_key as string) || '')} variant="outline" size="sm" style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A7FBB' }}>Copy</Button>
+            <div style={{ marginTop: 8 }}>
+              <label style={lbl}>Your API Key</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input value={biz.api_key || 'tm_live_••••••••••••'} readOnly style={{ ...inp, flex: 1, fontFamily: 'monospace', fontSize: 12, opacity: 0.7 }} />
+                <button onClick={() => navigator.clipboard.writeText(biz.api_key || '')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', padding: '0 16px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', flexShrink: 0 }}>Copy</button>
               </div>
             </div>
           </div>
-        </TabsContent>
-
-        {/* Tab 5: Team */}
-        <TabsContent value="team" className="p-6 rounded-2xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="font-semibold text-white mb-4">Team Access</h2>
-          <div className="mb-6">
-            <div className="flex gap-3">
-              <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@business.com.au"
-                style={inputStyle} className="flex-1" />
-              <Button onClick={inviteTeamMember} style={{ background: '#E8622A', color: 'white', border: 'none' }}>Invite</Button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {teamMembers.map(m => (
-              <div key={m.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: '#071829' }}>
-                <div>
-                  <p className="text-sm font-medium text-white">{m.email}</p>
-                  <p className="text-xs capitalize" style={{ color: '#4A7FBB' }}>{m.role}</p>
-                </div>
-                <button onClick={() => removeTeamMember(m.id)} style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
-              </div>
-            ))}
-          </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   )
 }
