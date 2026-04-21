@@ -21,22 +21,37 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // IMPORTANT: must call getUser() to refresh session
   const { data: { user } } = await supabase.auth.getUser()
 
+  const path = request.nextUrl.pathname
   const protectedPaths = ['/dashboard', '/calls', '/catalog', '/appointments', '/analytics', '/settings', '/billing', '/admin', '/onboarding']
-  const isProtected = protectedPaths.some(p => request.nextUrl.pathname.startsWith(p))
+  const isProtected = protectedPaths.some(p => path.startsWith(p))
+  const isAuthPage = path === '/login' || path === '/register'
 
   if (!user && isProtected) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    const redirectUrl = new URL('/login', request.url)
+    const redirectResponse = NextResponse.redirect(redirectUrl)
+    // Copy all cookies from supabaseResponse to the redirect
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      redirectResponse.cookies.set(cookie.name, cookie.value)
+    })
+    return redirectResponse
   }
 
-  if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+  if (user && isAuthPage) {
+    const redirectUrl = new URL('/dashboard', request.url)
+    const redirectResponse = NextResponse.redirect(redirectUrl)
+    // Copy all cookies from supabaseResponse to the redirect
+    supabaseResponse.cookies.getAll().forEach(cookie => {
+      redirectResponse.cookies.set(cookie.name, cookie.value)
+    })
+    return redirectResponse
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }

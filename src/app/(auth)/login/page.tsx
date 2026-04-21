@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client' // still used for magic link
+import { createClient } from '@/lib/supabase/client'
 
 const Logo = () => (
   <svg width="160" height="48" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -46,14 +46,8 @@ export default function LoginPage() {
   async function handlePassword(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError('')
-    // Use server-side signin so cookie is set by the server (not client)
-    const res = await fetch('/api/auth/signin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setError(data.error ?? 'Invalid email or password'); setLoading(false); return }
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) { setError(error.message); setLoading(false); return }
     window.location.href = '/dashboard'
   }
 
