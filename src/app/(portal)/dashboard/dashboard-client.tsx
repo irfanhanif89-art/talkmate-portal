@@ -118,7 +118,7 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
   return (
     <div style={{ padding: 32, flex: 1, overflowY: 'auto' }}>
       {/* Setup banner */}
-      {!business.onboarding_complete && (
+      {!business.onboarding_completed && (
         <div onClick={() => router.push('/onboarding')} style={{ background: 'linear-gradient(135deg,rgba(232,98,42,0.15),rgba(74,159,232,0.08))', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: '20px 24px', marginBottom: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16 }}>
           <span style={{ fontSize: 32 }}>⚡</span>
           <div style={{ flex: 1 }}>

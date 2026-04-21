@@ -46,7 +46,7 @@ export default function SettingsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
-    if (b) { setBiz(b as Record<string, string>); setGreeting((b as Record<string, string>).greeting || '') }
+    if (b) { setBiz(b as Record<string, string>); setGreeting((b as Record<string, string>).greeting || 'Thank you for calling. How can I help you today?') }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
   }
