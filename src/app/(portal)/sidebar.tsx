@@ -7,7 +7,7 @@ import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
 import {
   LayoutDashboard, Phone, BookOpen, Calendar, BarChart2,
   Settings, CreditCard, Shield, LogOut, TrendingUp, Lock,
-  Star, MessageSquare, PhoneOutgoing, Building2,
+  Star, MessageSquare, PhoneOutgoing, Building2, X,
 } from 'lucide-react'
 
 interface Props {
@@ -19,26 +19,61 @@ interface Props {
 }
 
 const PRO_ITEMS = [
-  { label: 'Review Requests', icon: Star, description: 'SMS customers asking for a Google review after every positive call. More 5-star reviews = more customers.' },
-  { label: 'SMS Follow-Ups', icon: MessageSquare, description: 'Auto-follow up missed calls and enquiries with personalised SMS. Never lose a lead again.' },
-  { label: 'Outbound AI Calls', icon: PhoneOutgoing, description: 'AI proactively calls leads, confirms bookings, and chases quotes while you sleep.' },
-  { label: 'Multi-Location', icon: Building2, description: 'Manage multiple business locations with separate AI agents, numbers, and dashboards.' },
-]
-
-const PRO_FEATURES_LIST = [
-  'Unlimited AI calls',
-  'Google Review SMS after every call',
-  'Automated SMS follow-up sequences',
-  'Outbound AI calling campaigns',
-  'Multi-location support',
-  'Priority onboarding & support',
+  {
+    label: 'Star Review Requests',
+    icon: Star,
+    price: 49,
+    features: [
+      'Automated SMS review requests after every call',
+      'Google & Facebook review deep links',
+      'Customer name personalisation',
+      'Review response templates',
+      'Monthly review performance report',
+    ],
+  },
+  {
+    label: 'SMS Follow-Ups',
+    icon: MessageSquare,
+    price: 49,
+    features: [
+      'Auto-SMS sent after every missed or transferred call',
+      'Custom message templates per call type',
+      'Two-way reply inbox',
+      'Opt-out compliance (Spam Act 2003)',
+      'Campaign drip sequences',
+    ],
+  },
+  {
+    label: 'Outbound AI Calls',
+    icon: PhoneOutgoing,
+    price: 79,
+    features: [
+      'AI proactively calls your leads & customers',
+      'Appointment confirmation & reminder calls',
+      'Quote follow-up campaigns',
+      'Voice drop messages',
+      'Full call transcripts & outcomes',
+    ],
+  },
+  {
+    label: 'Multi-Location',
+    icon: Building2,
+    price: 99,
+    features: [
+      'Manage up to 10 business locations',
+      'Separate AI agents per location',
+      'Centralised reporting dashboard',
+      'Shared knowledge base across locations',
+      'Location-specific routing & hours',
+    ],
+  },
 ]
 
 export default function PortalSidebar({ businessName, businessType, userEmail, userRole, onboardingCompleted }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const config = BUSINESS_TYPE_CONFIG[businessType]
-  const [modal, setModal] = useState<string | null>(null)
+  const [modal, setModal] = useState<typeof PRO_ITEMS[0] | null>(null)
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
@@ -63,12 +98,11 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
   }
 
   const initials = businessName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
-  const activeFeature = PRO_ITEMS.find(f => f.label === modal)
 
-  const navLink = (href: string, label: string, Icon: React.ElementType) => {
+  function NavLink({ href, label, Icon }: { href: string; label: string; Icon: React.ElementType }) {
     const active = pathname === href || pathname.startsWith(href + '/')
     return (
-      <a key={href} href={href} style={{
+      <a href={href} style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
         borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
         background: active ? 'rgba(232,98,42,0.13)' : 'transparent',
@@ -117,7 +151,9 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
         {/* Nav */}
         <nav style={{ flex: 1, padding: 12, overflowY: 'auto' }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.25)', padding: '10px 14px 6px' }}>Main</div>
-          {navItems.filter(i => i.show && !['Settings', 'Billing', 'Admin'].includes(i.label)).map(item => navLink(item.href, item.label, item.icon))}
+          {navItems.filter(i => i.show && !['Settings', 'Billing', 'Admin'].includes(i.label)).map(item => (
+            <NavLink key={item.href} href={item.href} label={item.label} Icon={item.icon} />
+          ))}
 
           {/* Grow — locked PRO section */}
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
@@ -127,14 +163,14 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
             {PRO_ITEMS.map(item => {
               const Icon = item.icon
               return (
-                <button key={item.label} type="button" onClick={() => setModal(item.label)} style={{
+                <button key={item.label} type="button" onClick={() => setModal(item)} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10,
                   fontSize: 14, fontWeight: 500, cursor: 'pointer', background: 'transparent',
-                  color: '#4A7FBB', border: 'none', width: '100%', marginBottom: 2, transition: 'all 0.15s',
+                  color: '#4A7FBB', border: 'none', width: '100%', marginBottom: 2,
                 }}>
                   <Lock size={14} style={{ flexShrink: 0, color: '#4A7FBB' }} />
                   <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
-                  <span style={{ fontSize: 10, background: 'rgba(232,98,42,0.18)', color: '#E8622A', padding: '2px 7px', borderRadius: 99, fontWeight: 700 }}>PRO</span>
+                  <span style={{ fontSize: 9, background: 'rgba(232,98,42,0.2)', color: '#E8622A', padding: '2px 6px', borderRadius: 99, fontWeight: 800, letterSpacing: '0.05em' }}>PRO</span>
                 </button>
               )
             })}
@@ -143,7 +179,9 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
           {/* Account */}
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.25)', padding: '0 14px 6px' }}>Account</div>
-            {navItems.filter(i => i.show && ['Settings', 'Billing', 'Admin'].includes(i.label)).map(item => navLink(item.href, item.label, item.icon))}
+            {navItems.filter(i => i.show && ['Settings', 'Billing', 'Admin'].includes(i.label)).map(item => (
+              <NavLink key={item.href} href={item.href} label={item.label} Icon={item.icon} />
+            ))}
           </div>
         </nav>
 
@@ -176,32 +214,38 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
         })}
       </nav>
 
-      {/* Upgrade Modal */}
-      {modal && activeFeature && (
+      {/* PRO Upgrade Modal */}
+      {modal && (
         <div onClick={() => setModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, maxWidth: 460, width: '100%', textAlign: 'center' }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>🔒</div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'white', marginBottom: 8 }}>{activeFeature.label}</h2>
-            <p style={{ color: '#7BAED4', fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>{activeFeature.description}</p>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: 36, maxWidth: 440, width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'white', margin: 0 }}>{modal.label}</h2>
+                <p style={{ color: '#4A7FBB', fontSize: 13, margin: '4px 0 0' }}>Pro add-on feature</p>
+              </div>
+              <button onClick={() => setModal(null)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', cursor: 'pointer', padding: 4 }}>
+                <X size={20} />
+              </button>
+            </div>
 
-            <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 24, textAlign: 'left' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 12 }}>Pro plan includes:</div>
-              {PRO_FEATURES_LIST.map(f => (
-                <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, marginBottom: 8, color: '#e2e8f0' }}>
-                  <span style={{ color: '#E8622A', fontWeight: 700 }}>✓</span>{f}
+            <div style={{ background: '#071829', borderRadius: 14, padding: 18, marginBottom: 22 }}>
+              {modal.features.map(f => (
+                <div key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, marginBottom: 10, color: '#e2e8f0', lineHeight: 1.4 }}>
+                  <span style={{ color: '#E8622A', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>✓</span>{f}
                 </div>
               ))}
             </div>
 
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 6 }}>
-              $249<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <span style={{ fontSize: '2rem', fontWeight: 800, color: 'white' }}>${modal.price}</span>
+              <span style={{ fontSize: 14, color: '#4A7FBB' }}>/mo add-on</span>
             </div>
-            <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 22 }}>Add-on to your existing plan · Cancel anytime</p>
 
-            <button style={{ width: '100%', padding: 14, background: '#E8622A', color: 'white', border: 'none', borderRadius: 12, fontFamily: 'Outfit,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10 }}>
+            <a href="/billing" style={{ display: 'block', width: '100%', padding: '14px 0', background: '#E8622A', color: 'white', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 10, textAlign: 'center', textDecoration: 'none' }}>
               Upgrade to Pro →
-            </button>
-            <button onClick={() => setModal(null)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', fontFamily: 'Outfit,sans-serif', fontSize: 14, cursor: 'pointer', width: '100%', padding: 6 }}>
+            </a>
+            <button onClick={() => setModal(null)} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', borderRadius: 12, fontSize: 14, cursor: 'pointer', width: '100%', padding: '10px 0' }}>
               Maybe later
             </button>
           </div>
