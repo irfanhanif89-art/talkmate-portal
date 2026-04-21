@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // Map our voice IDs to ElevenLabs voice IDs — all Australian accents
 const VOICE_MAP: Record<string, string> = {
-  sarah: 'gEdKKVxVhNCulBgRQ9GW',  // Charlotte — Friendly & Professional, Australian Female
-  james: 'hIreuBly94QFepU63yel',  // Scotty — Friendly Australian Male
-  emma:  'ZkDZ5VCyH0GGbxO7o4aO',  // Anne — Friendly & Relaxed Australian Female
+  sarah: 'cvpTJfe9LINpHIOmB2Hp',  // Charlotte — Warm & Conversational, Australian Female
+  james: 'snyKKuaGYk1VUEh42zbW',  // Australian Male — Friendly, Professional
+  emma:  '56bWURjYFHyYyVf490Dp',  // Emma — Warm Australian Female
   liam:  'IKne3meq5aSn9XLyUdCD',  // Charlie — Deep, Confident, Energetic, Australian Male
 }
 

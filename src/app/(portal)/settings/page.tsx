@@ -20,10 +20,10 @@ const lbl = { fontSize: 12, color: '#4A7FBB', fontWeight: 600, display: 'block',
 const card = { background: '#071829', borderRadius: 14, padding: 16, marginBottom: 12 } as React.CSSProperties
 
 const voices = [
-  { id: 'sarah', name: 'Sarah', desc: 'Professional Female', sample: "Hi, thank you for calling! How can I help you today? My name is Sarah and I'm here to assist you with anything you need." },
-  { id: 'james', name: 'James', desc: 'Professional Male', sample: "Good day, thanks for calling. My name is James. What can I do for you today? I'm happy to help with bookings, questions, or anything else." },
-  { id: 'emma', name: 'Emma', desc: 'Friendly Female', sample: "Hey there, welcome! I'm Emma. So great that you called — how can I help you out today? I'm here for whatever you need!" },
-  { id: 'liam', name: 'Liam', desc: 'Casual Male', sample: "Hey! Thanks for calling, I'm Liam. What can I do for you today? Whether it's a booking or a question, I've got you covered." },
+  { id: 'sarah', name: 'Charlotte', desc: '🇦🇺 Warm & Conversational Australian Female' },
+  { id: 'james', name: 'James', desc: '🇦🇺 Friendly & Professional Australian Male' },
+  { id: 'emma', name: 'Emma', desc: '🇦🇺 Warm Australian Female, early 30s' },
+  { id: 'liam', name: 'Liam', desc: '🇦🇺 Deep & Energetic Australian Male' },
 ]
 
 export default function SettingsPage() {
