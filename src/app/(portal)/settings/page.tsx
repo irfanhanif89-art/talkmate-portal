@@ -38,6 +38,22 @@ export default function SettingsPage() {
   const [notifs, setNotifs] = useState({ emailOnTransfer: true, dailySummary: true, weeklyReport: true, email: '', whatsapp: false, whatsappNum: '', telegram: false, telegramUser: '', urgentCall: false, urgentNum: '' })
   const [team, setTeam] = useState<Array<{email: string; role: string}>>([])
   const [inviteEmail, setInviteEmail] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMsg, setPasswordMsg] = useState('')
+  const [changingPw, setChangingPw] = useState(false)
+
+  async function changePassword() {
+    if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match ❌'); return }
+    if (newPassword.length < 8) { setPasswordMsg('Password must be at least 8 characters ❌'); return }
+    setChangingPw(true)
+    const res = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: newPassword }) })
+    const data = await res.json()
+    setChangingPw(false)
+    if (res.ok) { setPasswordMsg('Password updated ✅'); setNewPassword(''); setConfirmPassword('') }
+    else setPasswordMsg(data.error + ' ❌')
+    setTimeout(() => setPasswordMsg(''), 4000)
+  }
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => { loadData() }, [])
@@ -239,7 +255,7 @@ export default function SettingsPage() {
           <div style={{ maxWidth: 560 }}>
             {team.map((m, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px', background: '#071829', borderRadius: 12, marginBottom: 8 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#E8622A,#4A9FE8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{m.email[0].toUpperCase()}</div>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#E8622A,#4A9FE8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white' }}>{m.email[0].toUpperCase()}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{m.email}</div>
                   <div style={{ fontSize: 12, color: '#4A7FBB', textTransform: 'capitalize' }}>{m.role}</div>
@@ -248,6 +264,29 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Change Password — shown in Team tab */}
+      {tab === 'team' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28, marginTop: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Change Password</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Update your portal login password.</p>
+          {passwordMsg && <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: passwordMsg.includes('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: passwordMsg.includes('✅') ? '#22c55e' : '#ef4444', fontSize: 13 }}>{passwordMsg}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, maxWidth: 560, marginBottom: 16 }}>
+            <div>
+              <label style={lbl}>New Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 8 characters" style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Repeat password" style={inp} />
+            </div>
+          </div>
+          <button onClick={changePassword} disabled={changingPw || !newPassword}
+            style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer', opacity: !newPassword ? 0.5 : 1 }}>
+            {changingPw ? 'Updating...' : 'Update Password'}
+          </button>
         </div>
       )}
 

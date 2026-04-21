@@ -1,215 +1,254 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useBusinessType } from '@/context/business-type-context'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Phone, Clock, Download, Flag, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Call {
-  id: string; caller_number: string; outcome: string; transferred: boolean
-  duration_seconds: number; transcript: string; recording_url: string
-  flagged: boolean; created_at: string
+  id: string
+  caller_number: string
+  outcome: string
+  duration_seconds: number
+  created_at: string
+  transferred: boolean
+  transcript: string | null
+  recording_url: string | null
+  caller_name: string | null
+  summary: string | null
 }
 
-const PAGE_SIZE = 20
+function fmt(s: number) {
+  if (!s) return '—'
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
+}
 
-export default function CallsPage() {
-  const { config, businessId } = useBusinessType()
-  const supabase = createClient()
-  const [calls, setCalls] = useState<Call[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Call | null>(null)
-  const [outcomeFilter, setOutcomeFilter] = useState('')
-  const [transferredFilter, setTransferredFilter] = useState('')
-  const [search, setSearch] = useState('')
+function timeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return d === 1 ? 'yesterday' : `${d}d ago`
+}
 
-  const fetchCalls = useCallback(async () => {
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query: any = supabase.from('calls').select('*', { count: 'exact' })
-      .eq('business_id', businessId)
-      .order('created_at', { ascending: false })
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    if (outcomeFilter) query = query.eq('outcome', outcomeFilter)
-    if (transferredFilter === 'true') query = query.eq('transferred', true)
-    if (search) query = query.ilike('caller_number', `%${search}%`)
-    const { data, count } = await query
-    setCalls(data ?? [])
-    setTotal(count ?? 0)
-    setLoading(false)
-  }, [businessId, page, outcomeFilter, transferredFilter, search])
+function outcomeBadge(outcome: string, transferred: boolean) {
+  if (transferred || outcome === 'Transferred') return { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', label: 'Transferred' }
+  if (!outcome || outcome === 'Missed') return { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', label: 'Missed' }
+  return { bg: 'rgba(34,197,94,0.12)', color: '#22c55e', label: outcome }
+}
 
-  useEffect(() => { fetchCalls() }, [fetchCalls])
+function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void }) {
+  const badge = outcomeBadge(call.outcome, call.transferred)
 
-  function exportCSV() {
-    const headers = ['Time', 'Caller', 'Duration', 'Outcome', 'Transferred']
-    const rows = calls.map(c => [
-      new Date(c.created_at).toLocaleString('en-AU'),
-      c.caller_number, formatDuration(c.duration_seconds), c.outcome, c.transferred ? 'Yes' : 'No'
-    ])
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
-    a.download = `calls-${new Date().toISOString().split('T')[0]}.csv`; a.click()
+  // Parse transcript — could be plain string or JSON array of {role, message} objects
+  let messages: Array<{ role: string; content: string }> = []
+  if (call.transcript) {
+    try {
+      const parsed = JSON.parse(call.transcript)
+      if (Array.isArray(parsed)) {
+        messages = parsed.map((m: { role?: string; content?: string; message?: string }) => ({
+          role: m.role || 'unknown',
+          content: m.content || m.message || ''
+        }))
+      }
+    } catch {
+      // Plain text transcript — split into lines
+      messages = call.transcript.split('\n').filter(Boolean).map(line => {
+        const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('assistant:') || line.toLowerCase().startsWith('aaron:')
+        return { role: isAI ? 'assistant' : 'user', content: line.replace(/^(ai|assistant|aaron|user|caller):\s*/i, '') }
+      })
+    }
   }
-
-  async function flagCall(id: string, flagged: boolean) {
-    await supabase.from('calls').update({ flagged: !flagged }).eq('id', id)
-    setCalls(prev => prev.map(c => c.id === id ? { ...c, flagged: !flagged } : c))
-    if (selected?.id === id) setSelected(s => s ? { ...s, flagged: !flagged } : null)
-  }
-
-  function formatDuration(s: number) {
-    if (!s) return '—'
-    return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
-  }
-
-  function outcomeBadge(outcome: string) {
-    if (!outcome || outcome === 'Missed') return 'destructive' as const
-    if (outcome.includes('Transfer')) return 'secondary' as const
-    return 'default' as const
-  }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Call Log</h1>
-          <p className="text-sm mt-1" style={{ color: '#4A7FBB' }}>{total} total calls</p>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+      onClick={onClose}>
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, width: '100%', maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>
+              📞 {call.caller_name || call.caller_number || 'Unknown caller'}
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#4A7FBB' }}>
+              <span>{new Date(call.created_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+              <span>·</span>
+              <span>{fmt(call.duration_seconds)}</span>
+              <span>·</span>
+              <span style={{ color: badge.color, fontWeight: 600 }}>{badge.label}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
-        <Button onClick={exportCSV} variant="outline" size="sm" className="gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}>
-          <Download size={14} /> Export CSV
-        </Button>
+
+        {/* Summary */}
+        {call.summary && (
+          <div style={{ padding: '16px 24px', background: 'rgba(74,159,232,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 6 }}>AI Summary</div>
+            <p style={{ fontSize: 14, color: '#7BAED4', lineHeight: 1.6 }}>{call.summary}</p>
+          </div>
+        )}
+
+        {/* Recording */}
+        {call.recording_url && (
+          <div style={{ padding: '12px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 8 }}>Recording</div>
+            <audio controls style={{ width: '100%', height: 36 }} src={call.recording_url} />
+          </div>
+        )}
+
+        {/* Transcript */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 16 }}>
+            {messages.length > 0 ? 'Transcript' : 'No transcript available'}
+          </div>
+          {messages.length === 0 && !call.transcript && (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: '#4A7FBB', fontSize: 14 }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+              <p>Transcript not available for this call.</p>
+              <p style={{ fontSize: 12, marginTop: 6 }}>Transcripts are saved automatically for all new calls.</p>
+            </div>
+          )}
+          {messages.length > 0 && messages.map((msg, i) => {
+            const isAI = msg.role === 'assistant' || msg.role === 'bot'
+            return (
+              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, flexDirection: isAI ? 'row' : 'row-reverse' }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: isAI ? '#E8622A' : 'rgba(74,159,232,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0, color: 'white', fontWeight: 700 }}>
+                  {isAI ? 'AI' : '👤'}
+                </div>
+                <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isAI ? '4px 14px 14px 14px' : '14px 4px 14px 14px', background: isAI ? 'rgba(232,98,42,0.1)' : 'rgba(74,159,232,0.1)', border: `1px solid ${isAI ? 'rgba(232,98,42,0.2)' : 'rgba(74,159,232,0.2)'}` }}>
+                  <p style={{ fontSize: 14, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.content}</p>
+                </div>
+              </div>
+            )
+          })}
+          {/* If transcript is plain text with no parsing */}
+          {messages.length === 0 && call.transcript && (
+            <pre style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'Outfit, sans-serif' }}>{call.transcript}</pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const OUTCOMES = ['All', 'Resolved', 'Transferred', 'Missed']
+
+export default function CallsPage() {
+  const supabase = createClient()
+  const [calls, setCalls] = useState<Call[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('All')
+  const [search, setSearch] = useState('')
+  const [selectedCall, setSelectedCall] = useState<Call | null>(null)
+  const [businessId, setBusinessId] = useState('')
+
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+      if (!biz) return
+      setBusinessId(biz.id)
+      const { data } = await supabase.from('calls').select('*').eq('business_id', biz.id).order('created_at', { ascending: false }).limit(100)
+      setCalls(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const filtered = calls.filter(c => {
+    if (filter === 'Resolved' && (c.transferred || !c.outcome || c.outcome === 'Missed')) return false
+    if (filter === 'Transferred' && !c.transferred) return false
+    if (filter === 'Missed' && c.outcome !== 'Missed') return false
+    if (search && !c.caller_number?.includes(search) && !(c.caller_name || '').toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const inp = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '10px 14px', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none' } as React.CSSProperties
+
+  return (
+    <div style={{ padding: 32, maxWidth: 1000, margin: '0 auto' }}>
+      {selectedCall && <TranscriptModal call={selectedCall} onClose={() => setSelectedCall(null)} />}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>Call Log</h1>
+          <p style={{ fontSize: 13, color: '#4A7FBB' }}>{calls.length} total calls · Click any call to view transcript</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
+          <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>Live</span>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-6 flex-wrap">
-        <Input placeholder="Search caller…" value={search}
-          onChange={e => { setSearch(e.target.value); setPage(0) }}
-          style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 200 }} />
-        <Select onValueChange={v => { setOutcomeFilter(v === 'all' ? '' : v); setPage(0) }}>
-          <SelectTrigger style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 180 }}>
-            <SelectValue placeholder="All outcomes" />
-          </SelectTrigger>
-          <SelectContent style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <SelectItem value="all">All outcomes</SelectItem>
-            {config.callOutcomeTypes.map(o => <SelectItem key={o} value={o} style={{ color: 'white' }}>{o}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select onValueChange={v => { setTransferredFilter(v === 'all' ? '' : v); setPage(0) }}>
-          <SelectTrigger style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', color: 'white', width: 160 }}>
-            <SelectValue placeholder="All calls" />
-          </SelectTrigger>
-          <SelectContent style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <SelectItem value="all">All calls</SelectItem>
-            <SelectItem value="true" style={{ color: 'white' }}>Transferred only</SelectItem>
-          </SelectContent>
-        </Select>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by number or name..." style={{ ...inp, width: 260 }} />
+        <div style={{ display: 'flex', gap: 6 }}>
+          {OUTCOMES.map(o => (
+            <button key={o} onClick={() => setFilter(o)} style={{ padding: '9px 16px', borderRadius: 10, border: 'none', fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: filter === o ? '#E8622A' : 'rgba(255,255,255,0.06)', color: filter === o ? 'white' : '#4A7FBB' }}>{o}</button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <table className="w-full text-sm">
-          <thead style={{ background: '#071829' }}>
-            <tr>
-              {['Time', 'Caller', 'Duration', 'Outcome', 'Transferred', ''].map(h => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: '#4A7FBB' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="text-center py-12" style={{ color: '#4A7FBB' }}>Loading…</td></tr>
-            ) : calls.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-12" style={{ color: '#4A7FBB' }}>No calls found</td></tr>
-            ) : calls.map((call, i) => (
-              <tr key={call.id} onClick={() => setSelected(call)}
-                className="cursor-pointer transition-colors border-t"
-                style={{ background: i % 2 === 0 ? '#0A1E38' : '#071829', borderColor: 'rgba(255,255,255,0.04)' }}>
-                <td className="px-4 py-3" style={{ color: '#7BAED4' }}>
-                  {new Date(call.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </td>
-                <td className="px-4 py-3 font-medium text-white">
-                  <div className="flex items-center gap-2">
-                    <Phone size={13} style={{ color: '#4A7FBB' }} />
-                    {call.caller_number || 'Unknown'}
-                    {call.flagged && <Flag size={12} style={{ color: '#f59e0b' }} />}
-                  </div>
-                </td>
-                <td className="px-4 py-3" style={{ color: '#7BAED4' }}>
-                  <div className="flex items-center gap-1"><Clock size={13} />{formatDuration(call.duration_seconds)}</div>
-                </td>
-                <td className="px-4 py-3"><Badge variant={outcomeBadge(call.outcome)}>{call.outcome || '—'}</Badge></td>
-                <td className="px-4 py-3">
-                  {call.transferred ? <span style={{ color: '#f59e0b' }}>↗ Yes</span> : <span style={{ color: '#4A7FBB' }}>No</span>}
-                </td>
-                <td className="px-4 py-3">
-                  <button onClick={e => { e.stopPropagation(); flagCall(call.id, call.flagged) }} style={{ color: call.flagged ? '#f59e0b' : '#4A7FBB' }}>
-                    <Flag size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm" style={{ color: '#4A7FBB' }}>Page {page + 1} of {totalPages}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 0} style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronLeft size={14} /></Button>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1} style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#4A9FE8' }}><ChevronRight size={14} /></Button>
-          </div>
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 80px 120px 100px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          {['Caller', 'Date & Time', 'Duration', 'Outcome', 'Transferred', 'Transcript'].map(h => (
+            <div key={h} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#4A7FBB' }}>{h}</div>
+          ))}
         </div>
-      )}
 
-      {/* Side drawer */}
-      <Sheet open={!!selected} onOpenChange={o => !o && setSelected(null)}>
-        <SheetContent style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.1)', color: 'white', width: '500px' }}>
-          {selected && (
-            <>
-              <SheetHeader><SheetTitle className="text-white">Call Detail</SheetTitle></SheetHeader>
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {[['Caller', selected.caller_number || 'Unknown'], ['Duration', formatDuration(selected.duration_seconds)], ['Outcome', selected.outcome || '—'], ['Transferred', selected.transferred ? 'Yes' : 'No'], ['Time', new Date(selected.created_at).toLocaleString('en-AU')]].map(([l, v]) => (
-                    <div key={l} className="p-3 rounded-lg" style={{ background: '#071829' }}>
-                      <p className="text-xs mb-1" style={{ color: '#4A7FBB' }}>{l}</p>
-                      <p className="font-semibold text-white text-sm">{v}</p>
-                    </div>
-                  ))}
-                </div>
-                {selected.recording_url && (
-                  <div>
-                    <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: '#4A7FBB' }}>Recording</p>
-                    <audio controls src={selected.recording_url} className="w-full" />
-                  </div>
-                )}
-                {selected.transcript && (
-                  <div>
-                    <p className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: '#4A7FBB' }}>Transcript</p>
-                    <div className="p-3 rounded-lg text-sm leading-relaxed max-h-64 overflow-y-auto" style={{ background: '#071829', color: '#7BAED4' }}>{selected.transcript}</div>
-                  </div>
-                )}
-                <Button onClick={() => flagCall(selected.id, selected.flagged)} variant="outline" className="w-full gap-2"
-                  style={{ borderColor: selected.flagged ? '#f59e0b' : 'rgba(255,255,255,0.1)', color: selected.flagged ? '#f59e0b' : '#4A7FBB' }}>
-                  <Flag size={14} />{selected.flagged ? 'Remove Flag' : 'Flag for Review'}
-                </Button>
+        {loading && (
+          <div style={{ textAlign: 'center', padding: '48px 0', color: '#4A7FBB', fontSize: 14 }}>Loading calls...</div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '48px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📞</div>
+            <p style={{ color: '#4A7FBB', fontSize: 14 }}>No calls yet — your AI agent is ready and waiting.</p>
+          </div>
+        )}
+
+        {filtered.map((call, i) => {
+          const badge = outcomeBadge(call.outcome, call.transferred)
+          return (
+            <div key={call.id} onClick={() => setSelectedCall(call)}
+              style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 80px 120px 100px', gap: 0, padding: '14px 20px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 2 }}>{call.caller_name || call.caller_number || 'Unknown'}</div>
+                {call.caller_name && <div style={{ fontSize: 12, color: '#4A7FBB' }}>{call.caller_number}</div>}
               </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>
+                <div>
+                  <div>{new Date(call.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                  <div style={{ fontSize: 12, color: '#4A7FBB' }}>{timeAgo(call.created_at)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>{fmt(call.duration_seconds)}</div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>{badge.label}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: call.transferred ? '#f59e0b' : '#4A7FBB' }}>
+                {call.transferred ? '✅ Yes' : '—'}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                {call.transcript ? (
+                  <button style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 8, background: 'rgba(74,159,232,0.12)', color: '#4A9FE8', border: 'none', cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>View →</button>
+                ) : (
+                  <span style={{ fontSize: 12, color: '#4A7FBB' }}>—</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
