@@ -9,10 +9,10 @@ const VOICE_MAP: Record<string, string> = {
 }
 
 const SAMPLES: Record<string, string> = {
-  sarah: "Hi, thank you for calling! My name is Sarah. How can I help you today? Whether it's a booking, a question, or something else — I'm here for you.",
-  james: "Good day, thanks for calling. James speaking. What can I do for you today? I'm happy to help with bookings, pricing, or any questions you have.",
-  emma:  "Hey there, welcome! I'm Emma. So great that you called — how can I help you out today? Whatever you need, just let me know!",
-  liam:  "Hey! Thanks for calling, Liam here. What can I do for you today? Whether it's a booking or a question, I've got you covered — just let me know.",
+  sarah: "Hi, thank you for calling! How can I help you today? Whether it's a booking, a question, or something else — I'm here for you.",
+  james: "G'day, thanks for calling. How can I help you today? Happy to help with bookings, pricing, or any questions you have.",
+  emma:  "Hey there, welcome! So great that you called — how can I help you out today? Whatever you need, just let me know!",
+  liam:  "Hey! Thanks for calling. What can I do for you today? Whether it's a booking or a question, I've got you covered!",
 }
 
 export async function GET(request: NextRequest) {
