@@ -48,8 +48,8 @@ export default function LoginPage() {
     setLoading(true); setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setLoading(false); return }
-    router.push('/dashboard')
-    router.refresh()
+    // Hard redirect so server picks up the new session cookie immediately
+    window.location.href = '/dashboard'
   }
 
   async function handleMagicLink(e: React.FormEvent) {
@@ -57,7 +57,7 @@ export default function LoginPage() {
     setLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` }
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard` }
     })
     if (error) { setError(error.message); setLoading(false); return }
     setMagicSent(true); setLoading(false)

@@ -36,9 +36,9 @@ export default function RegisterPage() {
       email: form.email,
       password: form.password,
     })
-    if (signInError) { setError('Account created — please sign in'); router.push('/login'); return }
+    if (signInError) { setError('Account created — please sign in'); window.location.href = '/login'; return }
 
-    router.push('/onboarding')
+    window.location.href = '/onboarding'
   }
 
   const inputStyle = {
