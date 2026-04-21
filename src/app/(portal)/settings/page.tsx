@@ -82,7 +82,7 @@ export default function SettingsPage() {
 
   async function previewVoice(voiceId: string) {
     try {
-      const res = await fetch(`/api/voice/preview?voice=${voiceId}`)
+      const res = await fetch(`/api/voice/preview?voice=${voiceId}&t=${Date.now()}`)
       if (!res.ok) return
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)

@@ -15,6 +15,9 @@ const SAMPLES: Record<string, string> = {
   liam:  "Hey! Thanks for calling. What can I do for you today? Whether it's a booking or a question, I've got you covered!",
 }
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const voiceId = searchParams.get('voice') || 'sarah'
@@ -50,8 +53,11 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
         'Pragma': 'no-cache',
+        'Surrogate-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+        'Vercel-CDN-Cache-Control': 'no-store',
       },
     })
   } catch (err) {
