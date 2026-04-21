@@ -201,11 +201,16 @@ export default function OnboardingPage() {
     setResponse('notifications', { ...notifs, [field]: val })
   }
 
-  function previewVoice(sample: string) {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(sample); u.lang = 'en-AU'; window.speechSynthesis.speak(u)
-    }
+  async function previewVoice(voiceId: string) {
+    try {
+      const res = await fetch(`/api/voice/preview?voice=${voiceId}`)
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audio.play()
+      audio.onended = () => URL.revokeObjectURL(url)
+    } catch (e) { console.error('Voice preview failed', e) }
   }
 
   // Styles
@@ -385,7 +390,7 @@ export default function OnboardingPage() {
                         <div style={{ fontWeight: 600, fontSize: 14, color: 'white' }}>🎙️ {v.name}</div>
                         <div style={{ fontSize: 12, color: '#4A7FBB' }}>{v.desc}</div>
                       </div>
-                      <button onClick={e => { e.stopPropagation(); previewVoice(v.sample) }}
+                      <button onClick={e => { e.stopPropagation(); previewVoice(v.id) }}
                         style={{ background: voice === v.id ? '#E8622A' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', flexShrink: 0 }}>▶ Preview</button>
                     </div>
                   ))}
