@@ -53,17 +53,19 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg p-8 rounded-2xl border" style={{ background: '#0A1E38', borderColor: 'rgba(232,98,42,0.2)' }}>
 
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#E8622A' }}>
-            <svg viewBox="0 0 36 36" width="24" height="24" fill="none">
-              <rect x="6" y="8" width="24" height="5" rx="2.5" fill="white"/>
-              <rect x="14" y="8" width="8" height="22" rx="2.5" fill="white"/>
-            </svg>
-          </div>
-          <div className="flex items-baseline">
-            <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, letterSpacing: '-1px', color: 'white', fontSize: '1.5rem' }}>talk</span>
-            <span style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 300, letterSpacing: '3px', color: '#4A9FE8', fontSize: '1.5rem' }}>mate</span>
-          </div>
+        <div className="mb-8">
+          <svg width="160" height="48" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="120" height="120" rx="22" fill="#E8622A"/>
+            <rect x="18" y="20" width="84" height="18" fill="white"/>
+            <rect x="51" y="20" width="18" height="62" fill="white"/>
+            <path d="M 108 78 A 30 30 0 0 0 78 108" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" opacity="0.3"/>
+            <path d="M 108 88 A 20 20 0 0 0 88 108" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" opacity="0.6"/>
+            <path d="M 108 98 A 10 10 0 0 0 98 108" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round"/>
+            <circle cx="108" cy="108" r="4.5" fill="white"/>
+            <rect x="140" y="16" width="1.5" height="88" fill="#E8622A" opacity="0.45"/>
+            <text x="158" y="78" fontFamily="'Outfit', sans-serif" fontSize="52" fontWeight="800" fill="white" letterSpacing="-2">Talk</text>
+            <text x="160" y="108" fontFamily="'Outfit', sans-serif" fontSize="26" fontWeight="300" fill="#4A9FE8" letterSpacing="4">Mate</text>
+          </svg>
         </div>
 
         <h1 className="text-2xl font-bold text-white mb-1">Get started free</h1>
