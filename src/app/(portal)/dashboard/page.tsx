@@ -9,7 +9,7 @@ export default async function DashboardPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, onboarding_complete, business_type')
+    .select('id, name, onboarding_completed, business_type')
     .eq('owner_user_id', user.id)
     .single()
 
@@ -66,7 +66,7 @@ export default async function DashboardPage() {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: '#071829' }}>
         <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'white' }}>Dashboard</h1>
-        {business.onboarding_complete && (
+        {business.onboarding_completed && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 99, background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 13, fontWeight: 600 }}>
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e' }} />
             AI Agent Live

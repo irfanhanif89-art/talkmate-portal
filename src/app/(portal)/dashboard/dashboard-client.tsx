@@ -16,7 +16,7 @@ interface Call {
 interface Business {
   id: string
   name: string
-  onboarding_complete: boolean
+  onboarding_completed: boolean
   business_type: string
 }
 
