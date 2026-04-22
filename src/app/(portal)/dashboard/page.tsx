@@ -62,6 +62,10 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
     .limit(5)
 
+  // Get user's first name from metadata, fallback to email prefix
+  const rawName = user.user_metadata?.full_name || user.user_metadata?.name || user.email || ''
+  const userFirstName = rawName.includes('@') ? rawName.split('@')[0] : rawName.split(' ')[0]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: '#071829' }}>
@@ -79,6 +83,7 @@ export default async function DashboardPage() {
         outcomes={{ resolved: resolvedByAI, transferred: transferredMonth, missed: missedMonth, total: totalMonth }}
         chartData={chartData}
         recentCalls={recentCalls ?? []}
+        businessName={userFirstName}
       />
     </div>
   )

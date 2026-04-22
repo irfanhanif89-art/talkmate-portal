@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState('')
   const [biz, setBiz] = useState<Record<string, string>>({})
   const [greeting, setGreeting] = useState('')
+  const [agentName, setAgentName] = useState('')
   const [voice, setVoice] = useState('sarah')
   const [faqs, setFaqs] = useState([{ q: 'What are your opening hours?', a: '' }, { q: 'How much does it cost?', a: '' }])
   const [escalation, setEscalation] = useState('Transfer if the caller asks to speak to a manager, sounds upset or angry, has a billing complaint, or requests a refund.')
@@ -62,7 +63,12 @@ export default function SettingsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
-    if (b) { setBiz(b as Record<string, string>); setGreeting((b as Record<string, string>).greeting || 'Thank you for calling. How can I help you today?') }
+    if (b) {
+      const biz = b as Record<string, string>
+      setBiz(biz)
+      setGreeting(biz.greeting || 'Thank you for calling. How can I help you today?')
+      setAgentName(biz.agent_name || '')
+    }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
   }
@@ -74,6 +80,14 @@ export default function SettingsPage() {
 
   async function syncAI() {
     setSyncing(true)
+    // save agent_name and greeting to businesses table first
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: b } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+      if (b) {
+        await supabase.from('businesses').update({ greeting, agent_name: agentName }).eq('id', b.id)
+      }
+    }
     const r = await fetch('/api/vapi/sync', { method: 'POST' })
     setSyncing(false)
     setSaved(r.ok ? 'Synced to AI agent ✅' : 'Sync failed ❌')
@@ -141,6 +155,17 @@ export default function SettingsPage() {
         <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>AI Voice Agent</h3>
           <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Changes sync to your live AI agent instantly.</p>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={lbl}>Agent name</label>
+            <input
+              value={agentName}
+              onChange={e => setAgentName(e.target.value)}
+              placeholder="e.g. Sarah, Jake, Alex — leave blank for no name"
+              style={inp}
+            />
+            <p style={{ fontSize: 11, color: '#4A7FBB', marginTop: 6, marginBottom: 0 }}>This is what your AI agent will call itself when answering calls.</p>
+          </div>
 
           <div style={{ marginBottom: 24 }}>
             <label style={lbl}>Greeting message</label>

@@ -122,7 +122,7 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
   }, [business.id, supabase])
 
   const pct = (n: number) => outcomes.total > 0 ? Math.round((n / outcomes.total) * 100) : 0
-  const firstName = (businessName || business.name || '').split(' ')[0]
+  const firstName = businessName || (business.name || '').split(' ')[0]
 
   return (
     <div style={{ padding: 32, flex: 1, overflowY: 'auto' }}>
