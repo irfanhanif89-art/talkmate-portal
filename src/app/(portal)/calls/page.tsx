@@ -32,14 +32,16 @@ function timeAgo(date: string) {
   return d === 1 ? 'yesterday' : `${d}d ago`
 }
 
-function outcomeBadge(outcome: string, transferred: boolean) {
-  if (transferred || outcome === 'Transferred') return { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', label: 'Transferred' }
-  if (!outcome || outcome === 'Missed') return { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', label: 'Missed' }
-  return { bg: 'rgba(34,197,94,0.12)', color: '#22c55e', label: outcome }
+function outcomeBadge(outcome: string) {
+  const o = (outcome || '').toLowerCase()
+  if (o === 'missed' || !o) return { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: 'Missed' }
+  if (o.includes('transfer')) return { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: 'Transferred' }
+  if (o === 'faq') return { bg: 'rgba(74,159,232,0.12)', color: '#4A9FE8', label: 'FAQ' }
+  return { bg: 'rgba(34,197,94,0.12)', color: '#22C55E', label: 'Resolved' }
 }
 
 function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void }) {
-  const badge = outcomeBadge(call.outcome, call.transferred)
+  const badge = outcomeBadge(call.outcome)
 
   // Parse transcript — could be plain string or JSON array of {role, message} objects
   let messages: Array<{ role: string; content: string }> = []
@@ -233,7 +235,7 @@ export default function CallsPage() {
         )}
 
         {filtered.map((call, i) => {
-          const badge = outcomeBadge(call.outcome, call.transferred)
+          const badge = outcomeBadge(call.outcome)
           const isExpanded = expandedCallId === call.id
           return (
             <div key={call.id}>
