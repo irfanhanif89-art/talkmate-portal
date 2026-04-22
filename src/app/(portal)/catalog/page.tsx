@@ -29,6 +29,23 @@ export default function CatalogPage() {
   const [editing, setEditing] = useState<Partial<CatalogItem>>(emptyItem())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncToast, setSyncToast] = useState(false)
+  const [lastSynced, setLastSynced] = useState<number | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('catalog_last_synced')
+    if (t) setLastSynced(parseInt(t))
+  }, [])
+
+  function timeAgoMs(ms: number) {
+    const diff = Date.now() - ms
+    const m = Math.floor(diff / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m} minute${m > 1 ? 's' : ''} ago`
+    const h = Math.floor(m / 60)
+    if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`
+    return `${Math.floor(h / 24)} day${Math.floor(h / 24) > 1 ? 's' : ''} ago`
+  }
   const [syncMsg, setSyncMsg] = useState('')
 
   useEffect(() => { fetchItems() }, [businessId])
@@ -73,8 +90,16 @@ export default function CatalogPage() {
     setSyncing(true); setSyncMsg('')
     const res = await fetch('/api/vapi/sync', { method: 'POST' })
     setSyncing(false)
-    setSyncMsg(res.ok ? '✅ Synced to AI agent' : '❌ Sync failed — check Vapi settings')
-    setTimeout(() => setSyncMsg(''), 4000)
+    if (res.ok) {
+      const now = Date.now()
+      localStorage.setItem('catalog_last_synced', now.toString())
+      setLastSynced(now)
+      setSyncToast(true)
+      setTimeout(() => setSyncToast(false), 3000)
+    } else {
+      setSyncMsg('❌ Sync failed — check Vapi settings')
+      setTimeout(() => setSyncMsg(''), 4000)
+    }
   }
 
   return (
@@ -86,10 +111,15 @@ export default function CatalogPage() {
         </div>
         <div className="flex gap-3 items-center">
           {syncMsg && <span className="text-sm">{syncMsg}</span>}
-          <Button onClick={syncToAI} disabled={syncing} variant="outline" className="gap-2"
-            style={{ borderColor: '#1565C0', color: '#4A9FE8' }}>
-            <Zap size={14} />{syncing ? 'Syncing…' : 'Save & Sync to AI'}
-          </Button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <Button onClick={syncToAI} disabled={syncing} variant="outline" className="gap-2"
+              style={{ borderColor: '#1565C0', color: '#4A9FE8' }}>
+              <Zap size={14} />{syncing ? 'Syncing…' : 'Save & Sync to AI'}
+            </Button>
+            {lastSynced && (
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Last synced to AI: {timeAgoMs(lastSynced)}</span>
+            )}
+          </div>
           <Button onClick={openAdd} className="gap-2" style={{ background: '#E8622A', color: 'white', border: 'none' }}>
             <Plus size={16} /> Add {config.catalogItemLabel}
           </Button>
@@ -208,6 +238,14 @@ export default function CatalogPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Sync success toast */}
+      {syncToast && (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000, background: '#22C55E', color: 'white', borderRadius: 10, padding: '12px 20px', fontSize: 13, fontWeight: 600, fontFamily: 'Outfit,sans-serif', boxShadow: '0 8px 32px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20,6 9,17 4,12"/></svg>
+          Changes synced to your AI agent
+        </div>
+      )}
     </div>
   )
 }

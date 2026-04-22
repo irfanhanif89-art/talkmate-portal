@@ -96,7 +96,7 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Volume chart */}
-        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
+        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)', position: 'relative' }}>
           <h2 className="text-sm font-semibold text-white mb-4">Call Volume</h2>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={volumeData}>
@@ -108,6 +108,13 @@ export default function AnalyticsPage() {
               <Line type="monotone" dataKey="count" stroke="#E8622A" strokeWidth={2} dot={false} name="Calls" />
             </LineChart>
           </ResponsiveContainer>
+          {!loading && volumeData.every(d => d.count === 0) && (
+            <div style={{ position: 'absolute', inset: '40px 0 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(7,24,41,0.75)', borderRadius: 8 }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10, textAlign: 'center' }}>Call data will appear here after your first call.</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Your agent is live — make a test call to get started.</p>
+            </div>
+          )}
         </div>
 
         {/* Outcome breakdown */}

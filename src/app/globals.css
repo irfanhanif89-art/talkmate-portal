@@ -39,3 +39,17 @@ body {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Upsell banner pulse dot */
+@keyframes upsell-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.upsell-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #E8622A;
+  animation: upsell-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}

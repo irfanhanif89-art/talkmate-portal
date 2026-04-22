@@ -145,14 +145,18 @@ export default function CallsPage() {
   const [search, setSearch] = useState('')
   const [selectedCall, setSelectedCall] = useState<Call | null>(null)
   const [businessId, setBusinessId] = useState('')
+  const [businessPhone, setBusinessPhone] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+      const { data: biz } = await supabase.from('businesses').select('id, phone').eq('owner_user_id', user.id).single()
       if (!biz) return
       setBusinessId(biz.id)
+      setBusinessPhone((biz as Record<string, string>).phone || '')
       const { data } = await supabase.from('calls').select('*').eq('business_id', biz.id).order('created_at', { ascending: false }).limit(100)
       setCalls(data || [])
       setLoading(false)
@@ -197,9 +201,9 @@ export default function CallsPage() {
 
       {/* Table */}
       <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 80px 120px 100px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {['Caller', 'Date & Time', 'Duration', 'Outcome', 'Transferred', 'Transcript'].map(h => (
-            <div key={h} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#4A7FBB' }}>{h}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 90px 80px 120px 36px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          {['Caller', 'Date & Time', 'Duration', 'Revenue', 'Outcome', 'Transferred', ''].map(h => (
+            <div key={h} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: '#4A7FBB' }}>{h}</div>
           ))}
         </div>
 
@@ -208,43 +212,88 @@ export default function CallsPage() {
         )}
 
         {!loading && filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '48px 0' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📞</div>
-            <p style={{ color: '#4A7FBB', fontSize: 14 }}>No calls yet — your AI agent is ready and waiting.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E8622A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 16 }}>
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>Your agent is live and ready</h3>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: '0 0 20px', maxWidth: 360 }}>Make a test call to your TalkMate number to see your first call appear here.</p>
+            <button
+              onClick={async () => {
+                const num = businessPhone || '+61 1800 TALK'
+                await navigator.clipboard.writeText(num)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              }}
+              style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 24px', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}
+            >
+              {copied ? 'Copied! ✓' : 'Copy your TalkMate number'}
+            </button>
           </div>
         )}
 
         {filtered.map((call, i) => {
           const badge = outcomeBadge(call.outcome, call.transferred)
+          const isExpanded = expandedCallId === call.id
           return (
-            <div key={call.id} onClick={() => setSelectedCall(call)}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 80px 120px 100px', gap: 0, padding: '14px 20px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 2 }}>{call.caller_name || call.caller_number || 'Unknown'}</div>
-                {call.caller_name && <div style={{ fontSize: 12, color: '#4A7FBB' }}>{call.caller_number}</div>}
-              </div>
-              <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>
+            <div key={call.id}>
+              <div
+                style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 90px 80px 120px 36px', gap: 0, padding: '14px 20px', borderBottom: (!isExpanded && i < filtered.length - 1) ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => setSelectedCall(call)}
+              >
                 <div>
-                  <div>{new Date(call.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
-                  <div style={{ fontSize: 12, color: '#4A7FBB' }}>{timeAgo(call.created_at)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 2 }}>{call.caller_name || call.caller_number || 'Unknown'}</div>
+                  {call.caller_name && <div style={{ fontSize: 12, color: '#4A7FBB' }}>{call.caller_number}</div>}
+                </div>
+                <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>
+                  <div>
+                    <div>{new Date(call.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+                    <div style={{ fontSize: 12, color: '#4A7FBB' }}>{timeAgo(call.created_at)}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>{fmt(call.duration_seconds)}</div>
+                {/* Revenue column — TODO: link to jobs table when call_id FK is available */}
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center' }}>—</div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' as const }}>{badge.label}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: call.transferred ? '#F59E0B' : '#4A7FBB' }}>
+                  {call.transferred ? '✅ Yes' : '—'}
+                </div>
+                {/* Inline expand chevron */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setExpandedCallId(isExpanded ? null : call.id) }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', padding: '4px', display: 'flex', alignItems: 'center' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      {isExpanded ? <polyline points="18,15 12,9 6,15"/> : <polyline points="6,9 12,15 18,9"/>}
+                    </svg>
+                  </button>
                 </div>
               </div>
-              <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>{fmt(call.duration_seconds)}</div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>{badge.label}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: call.transferred ? '#f59e0b' : '#4A7FBB' }}>
-                {call.transferred ? '✅ Yes' : '—'}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                {call.transcript ? (
-                  <button style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 8, background: 'rgba(74,159,232,0.12)', color: '#4A9FE8', border: 'none', cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>View →</button>
-                ) : (
-                  <span style={{ fontSize: 12, color: '#4A7FBB' }}>—</span>
-                )}
-              </div>
+              {/* Inline transcript preview */}
+              {isExpanded && (
+                <div style={{ padding: '0 20px 14px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '12px 14px' }}>
+                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.65, margin: '0 0 8px' }}>
+                      {call.transcript
+                        ? call.transcript.slice(0, 200) + (call.transcript.length > 200 ? '...' : '')
+                        : 'Transcript not available for this call.'}
+                    </p>
+                    {call.transcript && (
+                      <span
+                        onClick={e => { e.stopPropagation(); setSelectedCall(call) }}
+                        style={{ fontSize: 12, color: '#4A9FE8', cursor: 'pointer' }}
+                      >
+                        View full transcript →
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}

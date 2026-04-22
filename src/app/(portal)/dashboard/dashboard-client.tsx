@@ -27,6 +27,10 @@ interface Props {
   chartData: { date: string; count: number }[]
   recentCalls: Call[]
   businessName?: string
+  callsAnsweredToday?: number
+  revenueRecoveredThisMonth?: number
+  vsLastMonthPercent?: number
+  revenueIsEstimate?: boolean
 }
 
 function timeAgo(date: string) {
@@ -44,10 +48,12 @@ function fmt(s: number) {
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
 }
 
-function outcomeBg(outcome: string) {
-  if (!outcome || outcome === 'Missed') return { bg: 'rgba(239,68,68,0.12)', color: '#ef4444' }
-  if (outcome.toLowerCase().includes('transfer')) return { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' }
-  return { bg: 'rgba(34,197,94,0.12)', color: '#22c55e' }
+function outcomeBadge(outcome: string) {
+  const o = (outcome || '').toLowerCase()
+  if (!o || o === 'missed') return { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: 'Missed' }
+  if (o.includes('transfer')) return { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: 'Transferred' }
+  if (o === 'faq') return { bg: 'rgba(74,159,232,0.12)', color: '#4A9FE8', label: 'FAQ' }
+  return { bg: 'rgba(34,197,94,0.12)', color: '#22C55E', label: 'Resolved' }
 }
 
 function PhoneIcon({ color }: { color: string }) {
@@ -103,7 +109,145 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
   )
 }
 
-export function DashboardClient({ business, stats, outcomes, chartData, recentCalls: initialCalls, businessName }: Props) {
+// ── Revenue Strip ──────────────────────────────────────────────────────────────
+function RevenueStrip({ revenue, today, isEstimate, totalMonth, router }: {
+  revenue: number; today: number; isEstimate: boolean; totalMonth: number; router: ReturnType<typeof useRouter>
+}) {
+  const divider = <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+
+  const DataPoint = ({ value, label, color }: { value: string; label: string; color: string }) => (
+    <div style={{ textAlign: 'center', padding: '0 16px' }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1, letterSpacing: '-0.5px' }}>{value}</div>
+      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>{label}</div>
+    </div>
+  )
+
+  const isEmpty = totalMonth === 0
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, rgba(21,101,192,0.15), rgba(232,98,42,0.1))',
+      border: '1px solid rgba(21,101,192,0.25)',
+      borderRadius: 12,
+      padding: '14px 18px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 4,
+      marginBottom: 20,
+    }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+        {isEmpty ? (
+          <div style={{ padding: '0 16px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'white' }}>Your agent is live</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>Make a test call to see your dashboard come alive →</div>
+          </div>
+        ) : (
+          <DataPoint
+            value={`$${revenue.toLocaleString()}${isEstimate ? ' est.' : ''}`}
+            label="Revenue recovered"
+            color="#E8622A"
+          />
+        )}
+        {divider}
+        <DataPoint value={String(today)} label="Answered today" color="#4A9FE8" />
+        {divider}
+        <DataPoint value="+23%" label="Avg order lift" color="#22C55E" />
+        {divider}
+        <div style={{ textAlign: 'center', padding: '0 16px' }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'white', lineHeight: 1.1 }}>—</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>Google rating</div>
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 1 }}>connect in Settings</div>
+        </div>
+      </div>
+
+      <div
+        onClick={() => router.push('/analytics')}
+        style={{
+          background: 'rgba(232,98,42,0.15)',
+          border: '1px solid rgba(232,98,42,0.3)',
+          borderRadius: 8,
+          padding: '8px 14px',
+          cursor: 'pointer',
+          flexShrink: 0,
+          marginLeft: 12,
+        }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#E8622A' }}>See full report</div>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>Analytics →</div>
+      </div>
+    </div>
+  )
+}
+
+// ── Upsell Banner ──────────────────────────────────────────────────────────────
+function UpsellBanner({ missedMonth, totalMonth, callsAnsweredToday, router }: {
+  missedMonth: number; totalMonth: number; callsAnsweredToday: number; router: ReturnType<typeof useRouter>
+}) {
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    const t = localStorage.getItem('upsell_dismissed_at')
+    if (t && Date.now() - parseInt(t) < 7 * 24 * 60 * 60 * 1000) setDismissed(true)
+  }, [])
+
+  if (dismissed) return null
+
+  let strong: string, span: string, cta: string, href: string
+
+  if (missedMonth >= 1) {
+    strong = `You missed ${missedMonth} call${missedMonth > 1 ? 's' : ''} this month — did that customer call a competitor?`
+    span = 'Unlock SMS Follow-Ups to automatically reach out within 5 minutes of every missed call.'
+    cta = 'Unlock SMS Follow-Ups — $39/mo →'
+    href = '/billing'
+  } else if (totalMonth >= 50) {
+    strong = `You handled ${totalMonth} calls this month. Outbound AI can proactively follow up every one.`
+    span = 'Confirm jobs, chase quotes, and send reminders — automatically, while you sleep.'
+    cta = 'Learn about Outbound AI — $79/mo →'
+    href = '/billing'
+  } else {
+    strong = 'Your agent is live and ready. Make your first test call.'
+    span = 'Call your TalkMate number to see a call appear in your dashboard in real time.'
+    cta = 'View your number →'
+    href = '/settings'
+  }
+
+  return (
+    <div style={{
+      background: '#0D1F35',
+      border: '1px solid rgba(232,98,42,0.3)',
+      borderRadius: 11,
+      padding: '14px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 20,
+    }}>
+      <div className="upsell-dot" />
+      <div style={{ flex: 1 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'white', display: 'block' }}>{strong}</span>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', display: 'block', marginTop: 3 }}>{span}</span>
+      </div>
+      <button
+        onClick={() => router.push(href)}
+        style={{ background: '#E8622A', color: 'white', border: 'none', padding: '8px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', flexShrink: 0 }}
+      >
+        {cta}
+      </button>
+      <span
+        onClick={() => { localStorage.setItem('upsell_dismissed_at', Date.now().toString()); setDismissed(true) }}
+        style={{ fontSize: 14, color: 'rgba(255,255,255,0.25)', cursor: 'pointer', marginLeft: 4, flexShrink: 0, lineHeight: 1 }}
+      >
+        ✕
+      </span>
+    </div>
+  )
+}
+
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
+export function DashboardClient({
+  business, stats, outcomes, chartData, recentCalls: initialCalls, businessName,
+  callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
+}: Props) {
   const supabase = createClient()
   const router = useRouter()
   const [liveCalls, setLiveCalls] = useState<Call[]>(initialCalls)
@@ -123,12 +267,27 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
 
   const pct = (n: number) => outcomes.total > 0 ? Math.round((n / outcomes.total) * 100) : 0
   const firstName = businessName || (business.name || '').split(' ')[0]
+  const noData = stats.totalMonth === 0
+
+  // Stat card colour logic
+  const aiRateColor = noData ? 'rgba(255,255,255,0.3)' : stats.aiResolutionRate >= 85 ? '#22C55E' : stats.aiResolutionRate >= 70 ? '#F59E0B' : '#EF4444'
+  const missedColor = stats.missedMonth === 0 ? '#22C55E' : '#EF4444'
+
+  // vs last month display
+  let vsLastMonthEl: React.ReactNode = null
+  if (vsLastMonthPercent > 0) {
+    vsLastMonthEl = <span style={{ color: '#22C55E' }}>↑ {vsLastMonthPercent}% vs last month</span>
+  } else if (vsLastMonthPercent < 0) {
+    vsLastMonthEl = <span style={{ color: '#EF4444' }}>↓ {Math.abs(vsLastMonthPercent)}% vs last month</span>
+  } else {
+    vsLastMonthEl = <span style={{ color: 'rgba(255,255,255,0.3)' }}>No data from last month</span>
+  }
 
   return (
     <div style={{ padding: 32, flex: 1, overflowY: 'auto' }}>
 
       {/* Page header */}
-      <div style={{ marginBottom: 28 }}>
+      <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#E8622A', marginBottom: 6 }}>Dashboard</div>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.5px', margin: 0, lineHeight: 1.1, color: 'white' }}>
           Welcome back{firstName ? `, ${firstName}` : ''}
@@ -138,12 +297,21 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
         </p>
       </div>
 
+      {/* Revenue Strip */}
+      <RevenueStrip
+        revenue={revenueRecoveredThisMonth}
+        today={callsAnsweredToday}
+        isEstimate={revenueIsEstimate}
+        totalMonth={stats.totalMonth}
+        router={router}
+      />
+
       {/* Setup banner */}
       {!business.onboarding_completed && (
         <div onClick={() => router.push('/onboarding')} style={{
           background: 'linear-gradient(135deg,rgba(232,98,42,0.12),rgba(74,159,232,0.06))',
           border: '1px solid rgba(232,98,42,0.25)', borderRadius: 16, padding: '18px 24px',
-          marginBottom: 28, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16,
+          marginBottom: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16,
         }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(232,98,42,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8622A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -159,23 +327,62 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
       )}
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
-        {[
-          { label: 'Calls This Month', value: stats.totalMonth, sub: `${new Date().toLocaleDateString('en-AU', { month: 'long' })} total`, color: 'white', accent: '#E8622A' },
-          { label: 'AI Resolution Rate', value: `${stats.aiResolutionRate}%`, sub: 'Handled without transfer', color: stats.aiResolutionRate >= 70 ? '#22c55e' : '#f59e0b', accent: stats.aiResolutionRate >= 70 ? '#22c55e' : '#f59e0b' },
-          { label: 'Transferred', value: stats.transferredMonth, sub: 'Escalated to you', color: 'white', accent: '#4A9FE8' },
-          { label: 'Missed Calls', value: stats.missedMonth, sub: 'Not answered', color: stats.missedMonth === 0 ? '#22c55e' : '#ef4444', accent: stats.missedMonth === 0 ? '#22c55e' : '#ef4444' },
-        ].map(card => (
-          <div key={card.label} style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
-            <div style={{ height: 2, background: `linear-gradient(90deg, ${card.accent}, #1565C0)` }} />
-            <div style={{ padding: '18px 20px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 10 }}>{card.label}</div>
-              <div style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1, marginBottom: 6, color: card.color, letterSpacing: '-1px' }}>{card.value}</div>
-              <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 300 }}>{card.sub}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 20 }}>
+        {/* Calls this month */}
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ height: 2, background: 'linear-gradient(90deg, #E8622A, #1565C0)' }} />
+          <div style={{ padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 10 }}>Calls This Month</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1, marginBottom: 6, color: 'white', letterSpacing: '-1px' }}>{stats.totalMonth}</div>
+            <div style={{ fontSize: 11, fontWeight: 300 }}>{vsLastMonthEl}</div>
+          </div>
+        </div>
+
+        {/* AI Resolution Rate */}
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ height: 2, background: `linear-gradient(90deg, ${aiRateColor}, #1565C0)` }} />
+          <div style={{ padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 10 }}>AI Resolution Rate</div>
+            <div
+              title={noData ? 'Will populate after your first call' : undefined}
+              style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1, marginBottom: 6, color: aiRateColor, letterSpacing: '-1px' }}
+            >
+              {noData ? '—' : `${stats.aiResolutionRate}%`}
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 300, color: 'rgba(255,255,255,0.35)' }}>handled without transfer</div>
+          </div>
+        </div>
+
+        {/* Transferred */}
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ height: 2, background: 'linear-gradient(90deg, #4A9FE8, #1565C0)' }} />
+          <div style={{ padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 10 }}>Transferred</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1, marginBottom: 6, color: noData ? 'rgba(255,255,255,0.3)' : 'white', letterSpacing: '-1px' }}>{noData ? '—' : stats.transferredMonth}</div>
+            <div style={{ fontSize: 11, fontWeight: 300, color: 'rgba(255,255,255,0.35)' }}>escalated to you</div>
+          </div>
+        </div>
+
+        {/* Missed calls */}
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ height: 2, background: `linear-gradient(90deg, ${missedColor}, #1565C0)` }} />
+          <div style={{ padding: '18px 20px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 10 }}>Missed Calls</div>
+            <div style={{ fontSize: '2rem', fontWeight: 800, lineHeight: 1, marginBottom: 6, color: missedColor, letterSpacing: '-1px' }}>{stats.missedMonth}</div>
+            <div style={{ fontSize: 11, fontWeight: 300, color: stats.missedMonth === 0 ? '#22C55E' : '#EF4444' }}>
+              {stats.missedMonth === 0 ? '100% answer rate 🎉' : `${stats.missedMonth} call${stats.missedMonth > 1 ? 's' : ''} not answered`}
             </div>
           </div>
-        ))}
+        </div>
       </div>
+
+      {/* Upsell Banner */}
+      <UpsellBanner
+        missedMonth={stats.missedMonth}
+        totalMonth={stats.totalMonth}
+        callsAnsweredToday={callsAnsweredToday}
+        router={router}
+      />
 
       {/* Chart + Outcomes */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 24 }}>
@@ -189,17 +396,17 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
           <CardLabel>Call Outcomes</CardLabel>
           <div style={{ fontSize: 11, color: '#4A7FBB', marginBottom: 20, fontWeight: 300 }}>This month</div>
           {([
-            ['Resolved by AI', pct(outcomes.resolved), '#22c55e'],
-            ['Transferred', pct(outcomes.transferred), '#f59e0b'],
-            ['Missed', pct(outcomes.missed), '#ef4444'],
+            ['Resolved by AI', pct(outcomes.resolved), '#22C55E'],
+            ['Transferred', pct(outcomes.transferred), '#F59E0B'],
+            ['Missed', pct(outcomes.missed), '#EF4444'],
           ] as [string, number, string][]).map(([label, value, color]) => (
             <div key={label} style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
                 <span style={{ color: '#7BAED4', fontWeight: 300 }}>{label}</span>
-                <span style={{ fontWeight: 800, color: 'white', fontSize: 13 }}>{value}%</span>
+                <span style={{ fontWeight: 800, color: 'white', fontSize: 13 }}>{noData ? '—' : `${value}%`}</span>
               </div>
               <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${value}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.6s ease' }} />
+                <div style={{ width: noData ? '0%' : `${value}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.6s ease' }} />
               </div>
             </div>
           ))}
@@ -212,8 +419,8 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
               <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.2px', color: 'white' }}>Recent Calls</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, color: '#22C55E', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#22C55E' }} />
                 Live
               </div>
             </div>
@@ -225,9 +432,9 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
         </div>
 
         {liveCalls.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 0', color: '#4A7FBB', fontSize: 13, fontWeight: 300 }}>No calls yet this month</div>
+          <div style={{ textAlign: 'center', padding: '32px 0', color: '#4A7FBB', fontSize: 13, fontWeight: 300 }}>No calls yet — your agent is live and waiting</div>
         ) : liveCalls.map((c, i) => {
-          const badge = outcomeBg(c.outcome)
+          const badge = outcomeBadge(c.outcome)
           return (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 0', borderBottom: i < liveCalls.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -238,8 +445,8 @@ export function DashboardClient({ business, stats, outcomes, chartData, recentCa
                 <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 300 }}>{c.outcome || 'In progress'} · {fmt(c.duration_seconds)}</div>
               </div>
               <div style={{ fontSize: 11, color: '#4A7FBB', marginRight: 10 }}>{timeAgo(c.created_at)}</div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
-                {c.outcome || 'Live'}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' as const, letterSpacing: '0.03em' }}>
+                {badge.label}
               </span>
             </div>
           )

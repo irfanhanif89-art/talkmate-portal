@@ -33,6 +33,59 @@ export default async function DashboardPage() {
   const resolvedByAI = all.filter(c => c.outcome && c.outcome !== 'Missed' && !c.transferred).length
   const aiResolutionRate = totalMonth > 0 ? Math.round((resolvedByAI / totalMonth) * 100) : 0
 
+  // Calls answered today
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = new Date()
+  todayEnd.setHours(23, 59, 59, 999)
+  const callsAnsweredToday = all.filter(c => {
+    const d = new Date(c.created_at)
+    return d >= todayStart && d <= todayEnd && c.outcome && c.outcome !== 'Missed'
+  }).length
+
+  // Revenue recovered this month — try jobs table, fallback to estimate
+  let revenueRecoveredThisMonth = 0
+  let revenueIsEstimate = false
+  try {
+    const { data: jobs, error } = await supabase
+      .from('jobs')
+      .select('job_value')
+      .eq('business_id', business.id)
+      .gte('created_at', startOfMonth.toISOString())
+    if (error || !jobs || jobs.length === 0) {
+      revenueRecoveredThisMonth = totalMonth * 85
+      revenueIsEstimate = true
+    } else {
+      const total = jobs.reduce((sum: number, j: { job_value?: number | null }) => sum + (j.job_value || 0), 0)
+      if (total === 0) {
+        revenueRecoveredThisMonth = totalMonth * 85
+        revenueIsEstimate = true
+      } else {
+        revenueRecoveredThisMonth = total
+      }
+    }
+  } catch {
+    revenueRecoveredThisMonth = totalMonth * 85
+    revenueIsEstimate = true
+  }
+
+  // vs last month percent
+  const lastMonthStart = new Date()
+  lastMonthStart.setDate(1)
+  lastMonthStart.setHours(0, 0, 0, 0)
+  lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
+  const lastMonthEnd = new Date(startOfMonth.getTime() - 1)
+
+  const { data: lastMonthCalls } = await supabase
+    .from('calls')
+    .select('id')
+    .eq('business_id', business.id)
+    .gte('created_at', lastMonthStart.toISOString())
+    .lte('created_at', lastMonthEnd.toISOString())
+
+  const lastMonth = lastMonthCalls?.length ?? 0
+  const vsLastMonthPercent = Math.round(((totalMonth - lastMonth) / Math.max(lastMonth, 1)) * 100)
+
   // 14-day chart data
   const dayMap: Record<string, number> = {}
   for (let i = 13; i >= 0; i--) {
@@ -84,6 +137,10 @@ export default async function DashboardPage() {
         chartData={chartData}
         recentCalls={recentCalls ?? []}
         businessName={userFirstName}
+        callsAnsweredToday={callsAnsweredToday}
+        revenueRecoveredThisMonth={revenueRecoveredThisMonth}
+        vsLastMonthPercent={vsLastMonthPercent}
+        revenueIsEstimate={revenueIsEstimate}
       />
     </div>
   )
