@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-tasks",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-payouts",
+      "schedule": "0 23 1 * *"
+    }
+  ]
+}
