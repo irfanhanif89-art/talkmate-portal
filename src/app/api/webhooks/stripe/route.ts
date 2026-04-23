@@ -69,6 +69,50 @@ export async function POST(request: NextRequest) {
       }
       break
     }
+
+    // ── Partner / Connect events ──────────────────────────────────────────────
+    case 'account.updated': {
+      const account = event.data.object as Stripe.Account
+      if (account.details_submitted && account.charges_enabled) {
+        await supabase
+          .from('partners')
+          .update({ stripe_onboarding_complete: true, bank_verified: true })
+          .eq('stripe_account_id', account.id)
+      }
+      break
+    }
+    case 'transfer.created': {
+      const transfer = event.data.object as Stripe.Transfer
+      await supabase
+        .from('partner_payouts')
+        .update({ status: 'processing' })
+        .eq('stripe_transfer_id', transfer.id)
+      break
+    }
+    case 'transfer.paid': {
+      const transfer = event.data.object as Stripe.Transfer
+      await supabase
+        .from('partner_payouts')
+        .update({ status: 'paid', paid_at: new Date().toISOString() })
+        .eq('stripe_transfer_id', transfer.id)
+      await supabase
+        .from('partners')
+        .update({ payout_status: 'paid', last_paid_at: new Date().toISOString(), pending_payout: 0 })
+        .eq('stripe_account_id', transfer.destination as string)
+      break
+    }
+    case 'transfer.failed': {
+      const transfer = event.data.object as Stripe.Transfer & { failure_message?: string }
+      await supabase
+        .from('partner_payouts')
+        .update({ status: 'failed', failure_reason: transfer.failure_message || 'Unknown' })
+        .eq('stripe_transfer_id', transfer.id)
+      await supabase
+        .from('partners')
+        .update({ payout_status: 'failed' })
+        .eq('stripe_account_id', transfer.destination as string)
+      break
+    }
   }
 
   return NextResponse.json({ received: true })

@@ -7,7 +7,7 @@ import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
 import {
   LayoutDashboard, Phone, BookOpen, Calendar, BarChart2,
   Settings, CreditCard, Shield, LogOut, TrendingUp, Lock,
-  Star, MessageSquare, PhoneOutgoing, Building2, X,
+  Star, MessageSquare, PhoneOutgoing, Building2, X, Gift,
 } from 'lucide-react'
 
 interface Props {
@@ -86,6 +86,7 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
       show: config.hasAppointments || config.hasJobDispatch,
     },
     { href: '/analytics', label: 'Analytics', icon: BarChart2, show: true },
+    { href: '/refer-and-earn', label: 'Refer & Earn', icon: Gift, show: true },
     { href: '/settings', label: 'Settings', icon: Settings, show: true },
     { href: '/billing', label: 'Billing', icon: CreditCard, show: true },
     { href: '/admin', label: 'Admin', icon: Shield, show: userRole === 'admin' },
