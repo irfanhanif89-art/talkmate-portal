@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 const PLANS = [
@@ -58,16 +58,25 @@ const PLANS = [
 export default function SubscribePage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { window.location.href = '/login'; return }
+      setAccessToken(session.access_token)
+    })
+  }, [])
 
   async function handleChoosePlan(planName: string) {
     setError('')
     setLoadingPlan(planName)
     try {
-      // Get the current session token client-side and send it explicitly
-      // so the API route can authenticate regardless of cookie forwarding
+      // Re-fetch session at click time in case token refreshed
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      const token = session?.access_token ?? accessToken
+      if (!token) {
         window.location.href = '/login'
         return
       }
@@ -75,7 +84,7 @@ export default function SubscribePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ planName }),
       })
@@ -86,8 +95,9 @@ export default function SubscribePage() {
         return
       }
       window.location.href = data.url
-    } catch {
-      setError('Network error. Please try again.')
+    } catch (err) {
+      console.error('Checkout error:', err)
+      setError('Something went wrong. Please refresh the page and try again.')
       setLoadingPlan(null)
     }
   }
