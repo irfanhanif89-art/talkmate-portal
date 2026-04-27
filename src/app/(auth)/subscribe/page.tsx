@@ -82,7 +82,7 @@ export default function SubscribePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-16" style={{ background: '#061322' }}>
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-16" style={{ background: '#061322', position: 'relative', zIndex: 0 }}>
 
       {/* Logo */}
       <div className="mb-10">
@@ -117,7 +117,7 @@ export default function SubscribePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-4xl">
         {PLANS.map((plan) => {
           const isLoading = loadingPlan === plan.name
           const disabled = stripeUnconfigured || !!loadingPlan
