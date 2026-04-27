@@ -26,6 +26,8 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname
   const protectedPaths = ['/dashboard', '/calls', '/catalog', '/appointments', '/analytics', '/settings', '/billing', '/admin', '/onboarding']
+  // Admin approve page is accessible without subscription (Irfan reviewing agents)
+  const isAdminApprove = path.startsWith('/admin/approve')
   const isProtected = protectedPaths.some(p => path.startsWith(p))
   const isAuthPage = path === '/login' || path === '/register'
 
@@ -52,7 +54,7 @@ export async function middleware(request: NextRequest) {
   // Subscription gate: authenticated users on protected paths must have an active subscription.
   // /onboarding is excluded so users can complete setup immediately after payment
   // (the webhook may not have fired yet when Stripe redirects them back).
-  if (user && isProtected && !path.startsWith('/onboarding')) {
+  if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
     const { data: biz } = await supabase
       .from('businesses')
       .select('id')

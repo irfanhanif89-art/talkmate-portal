@@ -64,68 +64,43 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     vapiAgentId = vapiData.id
   }
 
-  // Auto-provision Twilio AU number and assign to Vapi agent
-  let twilioNumber = null
+  // Assign agent to preview number for Irfan to test BEFORE going live
+  const PREVIEW_VAPI_PHONE_ID = process.env.PREVIEW_VAPI_PHONE_ID || '1b87ecc7-46d7-47f6-bacd-deba6daec770' // US Vapi number
+  const PREVIEW_NUMBER = process.env.PREVIEW_NUMBER || '+19305009961'
   if (vapiAgentId) {
     try {
-      const twilioSid = process.env.TWILIO_ACCOUNT_SID
-      const twilioAuth = process.env.TWILIO_AUTH_TOKEN
-      if (!twilioSid || !twilioAuth) throw new Error('Twilio credentials not configured')
-      const twilioBase = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}`
-      const twilioHeaders = {
-        'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioAuth}`).toString('base64'),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      }
-
-      // Search for available AU mobile number
-      const searchRes = await fetch(
-        `${twilioBase}/AvailablePhoneNumbers/AU/Mobile.json?SmsEnabled=false&VoiceEnabled=true&PageSize=1`,
-        { headers: twilioHeaders }
-      )
-      const searchData = await searchRes.json()
-      const availableNumber = searchData?.available_phone_numbers?.[0]?.phone_number
-
-      if (availableNumber) {
-        // Purchase the number
-        const buyBody = new URLSearchParams({ PhoneNumber: availableNumber })
-        const buyRes = await fetch(`${twilioBase}/IncomingPhoneNumbers.json`, {
-          method: 'POST', headers: twilioHeaders, body: buyBody.toString()
-        })
-        const buyData = await buyRes.json()
-
-        if (buyData.phone_number) {
-          twilioNumber = buyData.phone_number
-
-          // Register the number in Vapi and link to agent
-          const vapiPhoneRes = await fetch('https://api.vapi.ai/phone-number', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${process.env.VAPI_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              provider: 'twilio',
-              number: twilioNumber,
-              twilioAccountSid: twilioSid,
-              twilioAuthToken: twilioAuth,
-              assistantId: vapiAgentId,
-              name: `${business.name} — TalkMate Line`,
-            })
-          })
-
-          if (!vapiPhoneRes.ok) {
-            console.error('Vapi phone register failed:', await vapiPhoneRes.text())
-          }
-        }
-      }
+      await fetch(`https://api.vapi.ai/phone-number/${PREVIEW_VAPI_PHONE_ID}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${process.env.VAPI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assistantId: vapiAgentId }),
+      })
     } catch (e) {
-      console.error('Twilio provisioning error:', e)
+      console.error('Preview number assign failed:', e)
     }
   }
 
-  // Update business
+  // Update business — agent pending review, NOT live yet
   await supabase.from('businesses').update({
     onboarding_completed: true,
-    ...(vapiAgentId ? { vapi_agent_id: vapiAgentId } : {}),
-    ...(twilioNumber ? { phone_number: twilioNumber } : {}),
+    ...(vapiAgentId ? { vapi_agent_id: vapiAgentId, agent_status: 'pending_review', preview_number: PREVIEW_NUMBER } : {}),
   }).eq('id', business.id)
+
+  // Notify Irfan on Telegram — agent ready to preview
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
+  const TELEGRAM_CHAT_ID = '7809273812'
+  const approveUrl = `${process.env.NEXT_PUBLIC_APP_URL}/admin/approve?businessId=${business.id}`
+  const telegramMsg = `🎙️ *New agent ready for review*\n\n*Client:* ${business.name}\n*Type:* ${business.business_type}\n*Email:* ${user.email}\n\n*Preview number:* ${PREVIEW_NUMBER}\nCall it now to hear the agent.\n\n[✅ Approve & Go Live](${approveUrl})`
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: telegramMsg, parse_mode: 'Markdown' }),
+    })
+  } catch (e) {
+    console.error('Telegram notify failed:', e)
+  }
+
+  const twilioNumber = null // Will be provisioned on approval
 
   // Mark onboarding complete
   await supabase.from('onboarding_responses').update({ completed_at: new Date().toISOString() }).eq('business_id', business.id)

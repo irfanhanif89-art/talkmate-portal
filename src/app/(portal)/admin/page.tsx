@@ -11,7 +11,7 @@ export default async function AdminPage() {
 
   const adminClient = supabase // Use service role in production
 
-  const { data: businesses } = await adminClient.from('businesses').select('id, name, business_type, plan, onboarding_completed, created_at').order('created_at', { ascending: false })
+  const { data: businesses } = await adminClient.from('businesses').select('id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at').order('created_at', { ascending: false })
   const { data: subscriptions } = await adminClient.from('subscriptions').select('*')
 
   const totalMRR = subscriptions?.reduce((sum, s) => {
@@ -83,7 +83,13 @@ export default async function AdminPage() {
                     <span className="text-xs px-2 py-1 rounded-full capitalize" style={{ background: 'rgba(232,98,42,0.1)', color: '#E8622A' }}>{b.plan}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span style={{ color: b.onboarding_completed ? '#22c55e' : '#f59e0b' }}>{b.onboarding_completed ? '✅ Live' : '⏳ Setup'}</span>
+                    {(b as { agent_status?: string }).agent_status === 'pending_review' ? (
+                      <a href={`/admin/approve?businessId=${b.id}`} style={{ background: '#E8622A', color: 'white', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, textDecoration: 'none', whiteSpace: 'nowrap' }}>🎙️ Review & Approve</a>
+                    ) : (
+                      <span style={{ color: (b as { agent_status?: string }).agent_status === 'live' ? '#22c55e' : b.onboarding_completed ? '#22c55e' : '#f59e0b' }}>
+                        {(b as { agent_status?: string }).agent_status === 'live' ? '✅ Live' : b.onboarding_completed ? '✅ Done' : '⏳ Setup'}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3" style={{ color: '#4A7FBB' }}>{new Date(b.created_at).toLocaleDateString('en-AU')}</td>
                   <td className="px-4 py-3 font-semibold" style={{ color: mrr > 0 ? '#E8622A' : '#4A7FBB' }}>{mrr > 0 ? `$${mrr}` : '—'}</td>
