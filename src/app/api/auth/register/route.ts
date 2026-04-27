@@ -14,7 +14,13 @@ export async function POST(request: NextRequest) {
   const { data: authData, error: authError } = await anonClient.auth.signUp({
     email,
     password,
-    options: { data: { first_name: firstName } }
+    options: {
+      data: {
+        first_name: firstName,
+        business_name: businessName,
+        business_type: businessType,
+      },
+    },
   })
 
   if (authError || !authData.user) {
@@ -31,17 +37,24 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (bizError || !biz) {
+    console.error('[register] Business creation failed:', bizError)
     return NextResponse.json({ error: bizError?.message ?? 'Failed to create business' }, { status: 400 })
   }
 
-  await admin.from('users').insert({
+  const { error: userInsertError } = await admin.from('users').insert({
     id: authData.user.id,
     business_id: biz.id,
     email,
     role: 'owner',
   })
+  if (userInsertError) {
+    console.error('[register] users row insert failed:', userInsertError)
+  }
 
-  await admin.from('onboarding_responses').insert({ business_id: biz.id })
+  const { error: onboardingError } = await admin.from('onboarding_responses').insert({ business_id: biz.id })
+  if (onboardingError) {
+    console.error('[register] onboarding_responses insert failed:', onboardingError)
+  }
 
   return NextResponse.json({ success: true, businessId: biz.id })
 }

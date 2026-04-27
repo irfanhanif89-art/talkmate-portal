@@ -44,21 +44,31 @@ export async function POST(request: NextRequest) {
   // it from whatever auth metadata we have so the user isn't permanently stuck.
   if (!biz) {
     const meta = (user.user_metadata ?? {}) as Record<string, string>
-    const defaultName = meta.business_name
-      ?? (meta.first_name ? `${meta.first_name}'s Business` : (user.email?.split('@')[0] ?? 'My Business'))
+    // Priority: metadata set at registration > request body fields > email-derived name
+    const defaultName =
+      meta.business_name
+      ?? body.businessName
+      ?? (meta.first_name ? `${meta.first_name}'s Business` : null)
+      ?? (user.email?.split('@')[0] ?? 'My Business')
+
+    console.info('[create-checkout-session] No business row for user', user.id, '— auto-creating with name:', defaultName)
 
     const { data: newBiz, error: createError } = await admin
       .from('businesses')
       .insert({
         name: defaultName,
-        business_type: meta.business_type ?? 'other',
+        business_type: meta.business_type ?? body.businessType ?? 'other',
         owner_user_id: user.id,
       })
       .select('id, stripe_customer_id')
       .single()
 
     if (createError || !newBiz) {
-      return NextResponse.json({ error: 'Business not found and could not be created' }, { status: 404 })
+      console.error('[create-checkout-session] Business auto-create failed for user', user.id, ':', createError)
+      return NextResponse.json(
+        { error: 'Business not found and could not be created', detail: createError?.message },
+        { status: 404 }
+      )
     }
 
     biz = newBiz
