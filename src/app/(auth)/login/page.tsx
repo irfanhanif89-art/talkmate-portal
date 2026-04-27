@@ -144,7 +144,10 @@ export default function LoginPage() {
         {/* Heading */}
         <div style={{ marginBottom: 32 }}>
           <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'white', marginBottom: 6, letterSpacing: '-0.5px' }}>Welcome back</h2>
-          <p style={{ fontSize: 14, color: '#4A7FBB' }}>Sign in to your Talkmate portal</p>
+          <p style={{ fontSize: 14, color: '#4A7FBB' }}>
+            Sign in to your TalkMate portal &nbsp;·&nbsp;
+            <a href="/register" style={{ color: '#E8622A', fontWeight: 600, textDecoration: 'none' }}>New? Sign up here →</a>
+          </p>
         </div>
 
         {/* Error */}
