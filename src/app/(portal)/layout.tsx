@@ -37,7 +37,7 @@ export default async function PortalLayout({ children }: { children: React.React
           userRole={userProfile?.role ?? 'owner'}
           onboardingCompleted={business.onboarding_completed}
         />
-        <main className="flex-1 overflow-y-auto" style={{ background: '#061322' }}>
+        <main className="flex-1 overflow-y-auto pb-20 lg:pb-0" style={{ background: '#061322' }}>
           {children}
         </main>
       </div>

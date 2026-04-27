@@ -123,7 +123,7 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
       <aside style={{
         width: 240, background: '#071829', borderRight: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', flexDirection: 'column', height: '100vh', flexShrink: 0,
-      }} className="hidden md:flex">
+      }} className="hidden lg:flex">
 
         {/* Logo */}
         <div style={{ padding: '22px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -205,7 +205,7 @@ export default function PortalSidebar({ businessName, businessType, userEmail, u
       </aside>
 
       {/* Mobile bottom tab bar */}
-      <nav className="md:hidden" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50, display: 'flex', background: '#071829', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      <nav className="lg:hidden" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50, display: 'flex', background: '#071829', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
         {navItems.filter(i => i.show).slice(0, 5).map(item => {
           const active = pathname === item.href
           const Icon = item.icon
