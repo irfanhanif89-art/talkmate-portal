@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
@@ -15,6 +15,8 @@ export async function POST(request: NextRequest) {
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
 
+  // Use the cookie-based client only to verify the session; use the admin client
+  // (service role) for all DB reads/writes so RLS never blocks the lookup.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -30,13 +32,37 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { data: biz } = await supabase
+  const admin = await createAdminClient()
+
+  let { data: biz } = await admin
     .from('businesses')
     .select('id, stripe_customer_id')
     .eq('owner_user_id', user.id)
     .single()
 
-  if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 })
+  // Fallback: business row missing (e.g. register failed mid-flight). Auto-create
+  // it from whatever auth metadata we have so the user isn't permanently stuck.
+  if (!biz) {
+    const meta = (user.user_metadata ?? {}) as Record<string, string>
+    const defaultName = meta.business_name
+      ?? (meta.first_name ? `${meta.first_name}'s Business` : (user.email?.split('@')[0] ?? 'My Business'))
+
+    const { data: newBiz, error: createError } = await admin
+      .from('businesses')
+      .insert({
+        name: defaultName,
+        business_type: meta.business_type ?? 'other',
+        owner_user_id: user.id,
+      })
+      .select('id, stripe_customer_id')
+      .single()
+
+    if (createError || !newBiz) {
+      return NextResponse.json({ error: 'Business not found and could not be created' }, { status: 404 })
+    }
+
+    biz = newBiz
+  }
 
   // Get or create a Stripe customer so the webhook can look up the business
   let customerId: string = (biz as { id: string; stripe_customer_id?: string }).stripe_customer_id ?? ''
@@ -47,7 +73,7 @@ export async function POST(request: NextRequest) {
     })
     customerId = customer.id
     // Save customer ID so the webhook (businesses.stripe_customer_id lookup) can find this business
-    await supabase
+    await admin
       .from('businesses')
       .update({ stripe_customer_id: customerId } as Record<string, string>)
       .eq('id', biz.id)
