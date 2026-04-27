@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState } from 'react'
 
 const PLANS = [
   {
@@ -57,49 +56,14 @@ const PLANS = [
 
 export default function SubscribePage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [accessToken, setAccessToken] = useState<string | null>(null)
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { window.location.href = '/login'; return }
-      setAccessToken(session.access_token)
-    })
-  }, [])
+  // Check for error from server redirect
+  const urlError = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('error') : null
 
-  async function handleChoosePlan(planName: string) {
-    setError('')
-    setLoadingPlan(planName)
-    try {
-      // Re-fetch session at click time in case token refreshed
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? accessToken
-      if (!token) {
-        window.location.href = '/login'
-        return
-      }
-      const res = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ planName }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Something went wrong. Please try again.')
-        setLoadingPlan(null)
-        return
-      }
-      window.location.href = data.url
-    } catch (err) {
-      console.error('Checkout error:', err)
-      setError('Something went wrong. Please refresh the page and try again.')
-      setLoadingPlan(null)
-    }
+  function handleChoosePlan(planKey: string) {
+    setLoadingPlan(planKey)
+    // Server-side redirect — no client JS auth needed, works on all browsers
+    window.location.href = `/api/stripe/checkout?plan=${planKey}`
   }
 
   return (
@@ -138,9 +102,9 @@ export default function SubscribePage() {
         14-day money-back guarantee · No setup fees · Cancel anytime
       </p>
 
-      {error && (
+      {urlError && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 18px', fontSize: 14, color: '#ef4444', marginBottom: 24, maxWidth: 480, textAlign: 'center' }}>
-          {error}
+          Something went wrong. Please try again or contact hello@talkmate.com.au
         </div>
       )}
 
