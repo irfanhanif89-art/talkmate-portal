@@ -1,20 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { BUSINESS_TYPE_LABELS, type BusinessType } from '@/lib/business-types'
 
 export default function RegisterPage() {
-  const router = useRouter()
-  const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
-    firstName: '', email: '', password: '', businessName: '', businessType: '' as BusinessType | ''
+    fullName: '', email: '', password: '', businessName: '', businessType: '' as BusinessType | ''
   })
 
   async function handleSubmit(e: React.FormEvent) {
@@ -31,14 +27,7 @@ export default function RegisterPage() {
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); setLoading(false); return }
 
-    // Now sign in on the client so session cookie is set
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: form.email,
-      password: form.password,
-    })
-    if (signInError) { setError('Account created — please sign in'); window.location.href = '/login'; return }
-
-    window.location.href = '/subscribe'
+    window.location.href = `/verify-email?email=${encodeURIComponent(form.email)}`
   }
 
   const inputStyle = {
@@ -78,17 +67,16 @@ export default function RegisterPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm mb-2 block" style={{ color: '#4A7FBB' }}>First name</Label>
-              <Input value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))}
-                placeholder="Michael" required style={inputStyle} />
-            </div>
-            <div>
-              <Label className="text-sm mb-2 block" style={{ color: '#4A7FBB' }}>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="michael@business.com.au" required style={inputStyle} />
-            </div>
+          <div>
+            <Label className="text-sm mb-2 block" style={{ color: '#4A7FBB' }}>Full name</Label>
+            <Input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
+              placeholder="Michael Smith" required style={inputStyle} />
+          </div>
+
+          <div>
+            <Label className="text-sm mb-2 block" style={{ color: '#4A7FBB' }}>Email</Label>
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="michael@business.com.au" required style={inputStyle} />
           </div>
 
           <div>

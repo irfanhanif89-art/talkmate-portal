@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
   // Admin approve page is accessible without subscription (Irfan reviewing agents)
   const isAdminApprove = path.startsWith('/admin/approve')
   const isProtected = protectedPaths.some(p => path.startsWith(p))
-  const isAuthPage = path === '/login' || path === '/register'
+  const isAuthPage = path === '/login' || path === '/register' || path === '/verify-email'
 
   if (!user && isProtected) {
     const redirectUrl = new URL('/login', request.url)

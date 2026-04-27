@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
-  const { email, password, firstName, businessName, businessType } = await request.json()
+  const { email, password, fullName, businessName, businessType } = await request.json()
 
   // Use anon client to create the auth user
   const anonClient = createClient(
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     password,
     options: {
       data: {
-        first_name: firstName,
+        full_name: fullName,
         business_name: businessName,
         business_type: businessType,
       },
