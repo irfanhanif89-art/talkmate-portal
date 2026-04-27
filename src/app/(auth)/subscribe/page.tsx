@@ -2,11 +2,22 @@
 
 import { useState } from 'react'
 
+type Plan = {
+  name: string
+  price: number
+  planKey: string
+  stripeUrl: string
+  description: string
+  features: string[]
+  highlight: boolean
+}
+
 const PLANS = [
   {
     name: 'Starter',
     price: 299,
     planKey: 'starter',
+    stripeUrl: 'https://buy.stripe.com/test_28E9AS5djfkA0sv3ypd3i00',
     description: 'Catches every missed call. Perfect for one busy location.',
     features: [
       '1 location',
@@ -22,6 +33,7 @@ const PLANS = [
     name: 'Professional',
     price: 429,
     planKey: 'professional',
+    stripeUrl: 'https://buy.stripe.com/test_7sYdR8axD6O44ILfh7d3i01',
     description: 'Answers every call, day and night. Most popular.',
     features: [
       '1 location',
@@ -39,6 +51,7 @@ const PLANS = [
     name: 'Growth',
     price: 499,
     planKey: 'growth',
+    stripeUrl: 'https://buy.stripe.com/test_00w14m9tz2xO1wz3ypd3i02',
     description: 'Full automation for multi-location businesses.',
     features: [
       'Up to 3 locations',
@@ -55,16 +68,7 @@ const PLANS = [
 ]
 
 export default function SubscribePage() {
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
-
-  // Check for error from server redirect
-  const urlError = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('error') : null
-
-  function handleChoosePlan(planKey: string) {
-    setLoadingPlan(planKey)
-    // Server-side redirect — no client JS auth needed, works on all browsers
-    window.location.href = `/api/stripe/checkout?plan=${planKey}`
-  }
+  const [, setLoadingPlan] = useState<string | null>(null)
 
   return (
     <div style={{
@@ -102,11 +106,7 @@ export default function SubscribePage() {
         14-day money-back guarantee · No setup fees · Cancel anytime
       </p>
 
-      {urlError && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 18px', fontSize: 14, color: '#ef4444', marginBottom: 24, maxWidth: 480, textAlign: 'center' }}>
-          Something went wrong. Please try again or contact hello@talkmate.com.au
-        </div>
-      )}
+
 
       {/* Cards — vertical stack always, side by side only on very large screens */}
       <div style={{
@@ -116,9 +116,9 @@ export default function SubscribePage() {
         width: '100%',
         maxWidth: 480,
       }}>
-        {PLANS.map((plan) => {
+        {(PLANS as Plan[]).map((plan) => {
           const isLoading = loadingPlan === plan.name
-          const disabled = !!loadingPlan
+          const disabled = false
 
           return (
             <div
@@ -180,11 +180,11 @@ export default function SubscribePage() {
                 ))}
               </div>
 
-              {/* CTA */}
-              <button
-                onClick={() => handleChoosePlan(plan.planKey)}
-                disabled={disabled}
+              {/* CTA — plain link to Stripe, no JS auth needed */}
+              <a
+                href={plan.stripeUrl}
                 style={{
+                  display: 'block',
                   width: '100%',
                   padding: '13px',
                   background: plan.highlight ? '#E8622A' : 'transparent',
@@ -193,13 +193,14 @@ export default function SubscribePage() {
                   borderRadius: 10,
                   fontWeight: 700,
                   fontSize: 14,
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  opacity: disabled ? 0.6 : 1,
+                  textAlign: 'center',
+                  textDecoration: 'none',
                   fontFamily: 'inherit',
+                  boxSizing: 'border-box',
                 }}
               >
                 {isLoading ? 'Redirecting…' : `Choose ${plan.name}`}
-              </button>
+              </a>
             </div>
           )
         })}
