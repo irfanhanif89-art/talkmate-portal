@@ -6,44 +6,49 @@ const PLANS = [
   {
     name: 'Starter',
     price: 299,
-    priceEnvKey: 'STRIPE_PRICE_STARTER',
-    description: 'Perfect for small businesses getting started with AI voice.',
+    planKey: 'starter',
+    description: 'Catches every missed call. Perfect for one busy location.',
     features: [
-      'Up to 500 calls / month',
-      'AI voice agent setup',
-      'Basic analytics dashboard',
-      'Appointment & order capture',
-      'Email support',
+      '1 location',
+      'Up to 300 calls / month',
+      'Answers missed calls only',
+      'Order taking + FAQs',
+      'SMS confirmations',
+      'Call transcripts + email support',
     ],
     highlight: false,
   },
   {
     name: 'Professional',
     price: 429,
-    priceEnvKey: 'STRIPE_PRICE_PROFESSIONAL',
-    description: 'For growing businesses that need more capacity and customisation.',
+    planKey: 'professional',
+    description: 'Answers every call, day and night. Most popular.',
     features: [
-      'Up to 1,500 calls / month',
-      'Custom voice & tone',
-      'Advanced analytics',
+      '1 location',
+      'Up to 600 calls / month',
+      'Answers ALL calls (not just missed)',
+      'Custom AI voice — trained on your menu',
+      'After-hours answering (24/7)',
+      'Smart upselling — AI suggests add-ons',
+      'Weekly call summary reports',
       'Priority support',
-      'CRM integrations',
-      'Call transcripts',
     ],
     highlight: true,
   },
   {
     name: 'Growth',
     price: 499,
-    priceEnvKey: 'STRIPE_PRICE_GROWTH',
-    description: 'Unlimited scale for high-volume operations.',
+    planKey: 'growth',
+    description: 'Full automation for multi-location businesses.',
     features: [
-      'Unlimited calls',
-      'Multiple AI agents',
-      'Full analytics suite',
+      'Up to 3 locations',
+      'Unlimited calls / month',
+      'Everything in Professional',
+      'Full dispatch + scheduling',
+      'Automated invoicing',
+      'Email automation + CRM Lite',
+      'Advanced analytics dashboard',
       'Dedicated account manager',
-      'Custom integrations',
-      'Partner program access',
     ],
     highlight: false,
   },
@@ -52,7 +57,6 @@ const PLANS = [
 export default function SubscribePage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [stripeUnconfigured, setStripeUnconfigured] = useState(false)
 
   async function handleChoosePlan(planName: string) {
     setError('')
@@ -65,12 +69,7 @@ export default function SubscribePage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 500 && data.error?.includes('not configured')) {
-          setStripeUnconfigured(true)
-          setError('')
-        } else {
-          setError(data.error ?? 'Something went wrong. Please try again.')
-        }
+        setError(data.error ?? 'Something went wrong. Please try again.')
         setLoadingPlan(null)
         return
       }
@@ -82,10 +81,20 @@ export default function SubscribePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-16" style={{ background: '#061322', position: 'relative', zIndex: 0 }}>
+    <div style={{
+      minHeight: '100vh',
+      width: '100%',
+      background: '#061322',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '48px 20px',
+      boxSizing: 'border-box',
+    }}>
 
       {/* Logo */}
-      <div className="mb-10">
+      <div style={{ marginBottom: 32 }}>
         <svg width="140" height="42" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="120" height="120" rx="22" fill="#E8622A"/>
           <rect x="18" y="20" width="84" height="18" fill="white"/>
@@ -100,95 +109,118 @@ export default function SubscribePage() {
         </svg>
       </div>
 
-      <h1 className="text-3xl font-bold text-white mb-2 text-center">Choose your plan</h1>
-      <p className="text-base mb-10 text-center" style={{ color: '#4A7FBB' }}>
-        All plans include a 14-day money-back guarantee. Cancel anytime.
+      <h1 style={{ fontSize: 28, fontWeight: 800, color: 'white', marginBottom: 8, textAlign: 'center' }}>
+        Choose your plan
+      </h1>
+      <p style={{ fontSize: 15, color: '#4A7FBB', marginBottom: 40, textAlign: 'center' }}>
+        14-day money-back guarantee · No setup fees · Cancel anytime
       </p>
 
-      {stripeUnconfigured && (
-        <div className="mb-8 px-5 py-3 rounded-lg text-sm max-w-lg text-center" style={{ background: 'rgba(232,98,42,0.1)', color: '#E8622A', border: '1px solid rgba(232,98,42,0.3)' }}>
-          Stripe price IDs are not yet configured (STRIPE_PRICE_STARTER / STRIPE_PRICE_PROFESSIONAL / STRIPE_PRICE_GROWTH). Checkout is unavailable until they are set.
-        </div>
-      )}
-
       {error && (
-        <div className="mb-8 px-5 py-3 rounded-lg text-sm max-w-lg text-center" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 18px', fontSize: 14, color: '#ef4444', marginBottom: 24, maxWidth: 480, textAlign: 'center' }}>
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full max-w-4xl">
+      {/* Cards — vertical stack always, side by side only on very large screens */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        width: '100%',
+        maxWidth: 480,
+      }}>
         {PLANS.map((plan) => {
           const isLoading = loadingPlan === plan.name
-          const disabled = stripeUnconfigured || !!loadingPlan
+          const disabled = !!loadingPlan
 
           return (
             <div
               key={plan.name}
-              className="flex flex-col rounded-2xl p-7"
               style={{
                 background: plan.highlight ? '#0E2A4A' : '#0A1E38',
                 border: plan.highlight ? '2px solid #E8622A' : '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 16,
+                padding: '24px 24px 20px',
                 position: 'relative',
+                width: '100%',
+                boxSizing: 'border-box',
               }}
             >
               {plan.highlight && (
-                <div
-                  className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-semibold"
-                  style={{ background: '#E8622A', color: 'white' }}
-                >
+                <div style={{
+                  position: 'absolute',
+                  top: -12,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: '#E8622A',
+                  color: 'white',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '3px 14px',
+                  borderRadius: 99,
+                  whiteSpace: 'nowrap',
+                  letterSpacing: '0.05em',
+                }}>
                   Most Popular
                 </div>
               )}
 
-              <div className="mb-5">
-                <h2 className="text-lg font-bold text-white mb-1">{plan.name}</h2>
-                <p className="text-sm" style={{ color: '#4A7FBB' }}>{plan.description}</p>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: 'white', marginBottom: 2 }}>{plan.name}</div>
+                  <div style={{ fontSize: 12, color: '#4A7FBB', lineHeight: 1.4 }}>{plan.description}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 16 }}>
+                  <span style={{ fontSize: 30, fontWeight: 800, color: 'white' }}>${plan.price}</span>
+                  <span style={{ fontSize: 12, color: '#4A7FBB' }}>/mo</span>
+                </div>
               </div>
 
-              <div className="mb-6">
-                <span className="text-4xl font-extrabold text-white">${plan.price}</span>
-                <span className="text-sm ml-1" style={{ color: '#4A7FBB' }}>/mo AUD</span>
-              </div>
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 12 }} />
 
-              <ul className="flex-1 space-y-3 mb-8">
+              {/* Features */}
+              <div style={{ marginBottom: 16 }}>
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2 text-sm" style={{ color: '#C8D8EA' }}>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                      <circle cx="8" cy="8" r="8" fill="rgba(232,98,42,0.15)"/>
-                      <path d="M4.5 8l2.5 2.5 4.5-5" stroke="#E8622A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
+                  <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#C8D8EA', marginBottom: 6 }}>
+                    <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'rgba(232,98,42,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                        <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#E8622A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
                     {feature}
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
 
+              {/* CTA */}
               <button
-                onClick={() => handleChoosePlan(plan.name)}
+                onClick={() => handleChoosePlan(plan.planKey)}
                 disabled={disabled}
                 style={{
+                  width: '100%',
+                  padding: '13px',
                   background: plan.highlight ? '#E8622A' : 'transparent',
                   color: plan.highlight ? 'white' : '#E8622A',
-                  border: plan.highlight ? 'none' : '1px solid #E8622A',
-                  borderRadius: '10px',
-                  padding: '12px',
-                  fontWeight: 600,
-                  fontSize: '14px',
+                  border: plan.highlight ? 'none' : '1.5px solid #E8622A',
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  fontSize: 14,
                   cursor: disabled ? 'not-allowed' : 'pointer',
                   opacity: disabled ? 0.6 : 1,
-                  transition: 'opacity 0.2s',
-                  width: '100%',
+                  fontFamily: 'inherit',
                 }}
               >
-                {isLoading ? 'Redirecting to checkout…' : `Choose ${plan.name}`}
+                {isLoading ? 'Redirecting…' : `Choose ${plan.name}`}
               </button>
             </div>
           )
         })}
       </div>
 
-      <p className="text-xs mt-10 text-center" style={{ color: '#2A5080' }}>
-        Secure payment via Stripe. You can upgrade, downgrade, or cancel at any time from your billing settings.
+      <p style={{ fontSize: 12, color: '#2A5080', marginTop: 28, textAlign: 'center' }}>
+        Secure payment via Stripe · Upgrade or cancel anytime
       </p>
     </div>
   )
