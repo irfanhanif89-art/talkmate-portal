@@ -38,7 +38,7 @@ export default function RegisterPage() {
     })
     if (signInError) { setError('Account created — please sign in'); window.location.href = '/login'; return }
 
-    window.location.href = '/onboarding'
+    window.location.href = '/subscribe'
   }
 
   const inputStyle = {

@@ -49,6 +49,35 @@ export async function middleware(request: NextRequest) {
     return redirectResponse
   }
 
+  // Subscription gate: authenticated users on protected paths must have an active subscription.
+  // /onboarding is excluded so users can complete setup immediately after payment
+  // (the webhook may not have fired yet when Stripe redirects them back).
+  if (user && isProtected && !path.startsWith('/onboarding')) {
+    const { data: biz } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('owner_user_id', user.id)
+      .single()
+
+    if (biz) {
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('status')
+        .eq('business_id', biz.id)
+        .in('status', ['active', 'trialing'])
+        .maybeSingle()
+
+      if (!sub) {
+        const redirectUrl = new URL('/subscribe', request.url)
+        const redirectResponse = NextResponse.redirect(redirectUrl)
+        supabaseResponse.cookies.getAll().forEach(cookie => {
+          redirectResponse.cookies.set(cookie.name, cookie.value)
+        })
+        return redirectResponse
+      }
+    }
+  }
+
   return supabaseResponse
 }
 
