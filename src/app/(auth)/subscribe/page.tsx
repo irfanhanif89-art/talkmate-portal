@@ -68,7 +68,7 @@ const PLANS = [
 ]
 
 export default function SubscribePage() {
-  const [, setLoadingPlan] = useState<string | null>(null)
+  const [loadingPlan] = useState<string | null>(null)
 
   return (
     <div style={{
