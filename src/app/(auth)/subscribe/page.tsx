@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 const PLANS = [
   {
@@ -62,9 +63,20 @@ export default function SubscribePage() {
     setError('')
     setLoadingPlan(planName)
     try {
+      // Get the current session token client-side and send it explicitly
+      // so the API route can authenticate regardless of cookie forwarding
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        window.location.href = '/login'
+        return
+      }
       const res = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ planName }),
       })
       const data = await res.json()

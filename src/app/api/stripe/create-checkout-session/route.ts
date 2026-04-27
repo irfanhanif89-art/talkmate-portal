@@ -14,15 +14,30 @@ export async function POST(request: NextRequest) {
   }
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
+  const admin = await createAdminClient()
 
-  // Use the cookie-based client only to verify the session; use the admin client
-  // (service role) for all DB reads/writes so RLS never blocks the lookup.
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Accept auth via Bearer token (sent by client) OR cookie session
+  const authHeader = request.headers.get('authorization') ?? ''
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-  const body = await request.json()
-  const planName: string = (body.planName ?? '').toLowerCase()
+  let user: import('@supabase/supabase-js').User | null = null
+
+  if (bearerToken) {
+    const { data } = await admin.auth.getUser(bearerToken)
+    user = data.user ?? null
+  } else {
+    const supabase = await createClient()
+    const { data } = await supabase.auth.getUser()
+    user = data.user ?? null
+  }
+
+  if (!user) {
+    console.error('[checkout] No user — unauthorized')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const planName: string = ((body as Record<string, string>).planName ?? '').toLowerCase()
   const priceId = PLAN_PRICE_MAP[planName]
 
   if (!priceId) {
@@ -32,39 +47,30 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const admin = createAdminClient()
-
-  // Use select('*') — selecting named columns fails if a column doesn't yet exist
-  // in the database (PostgREST returns a column-not-found error, silently setting
-  // data to null and triggering the fallback unnecessarily).
+  // Fetch business row using admin client (bypasses RLS)
   let { data: biz, error: bizLookupError } = await admin
     .from('businesses')
-    .select('*')
+    .select('id, stripe_customer_id')
     .eq('owner_user_id', user.id)
     .single()
 
   if (bizLookupError) {
-    console.error('[create-checkout-session] Business lookup error for user', user.id, ':', bizLookupError)
+    console.error('[checkout] Business lookup error for user', user.id, ':', bizLookupError)
   }
 
-  // Fallback: business row missing (e.g. register failed mid-flight). Auto-create
-  // using ONLY user.id and email — no user_metadata dependency.
+  // Fallback: auto-create business if missing (e.g. register failed mid-flight)
   if (!biz) {
     const defaultName = user.email?.split('@')[0] ?? 'My Business'
-
-    console.info('[create-checkout-session] No business row for user', user.id, '— auto-creating with name:', defaultName)
+    console.info('[checkout] No business row for user', user.id, '— auto-creating:', defaultName)
 
     const { data: newBiz, error: createError } = await admin
       .from('businesses')
-      .insert({
-        name: defaultName,
-        owner_user_id: user.id,
-      })
-      .select('*')
+      .insert({ name: defaultName, owner_user_id: user.id })
+      .select('id, stripe_customer_id')
       .single()
 
     if (createError || !newBiz) {
-      console.error('[create-checkout-session] Business auto-create failed for user', user.id, ':', createError)
+      console.error('[checkout] Auto-create failed for user', user.id, ':', createError)
       return NextResponse.json(
         { error: 'Business not found and could not be created', detail: createError?.message },
         { status: 404 }
@@ -74,7 +80,7 @@ export async function POST(request: NextRequest) {
     biz = newBiz
   }
 
-  // Get or create a Stripe customer so the webhook can look up the business
+  // Get or create Stripe customer
   let customerId: string = (biz as { id: string; stripe_customer_id?: string }).stripe_customer_id ?? ''
   if (!customerId) {
     const customer = await stripe.customers.create({
@@ -82,14 +88,13 @@ export async function POST(request: NextRequest) {
       metadata: { business_id: biz.id, supabase_user_id: user.id },
     })
     customerId = customer.id
-    // Save customer ID so the webhook (businesses.stripe_customer_id lookup) can find this business
     await admin
       .from('businesses')
-      .update({ stripe_customer_id: customerId } as Record<string, string>)
+      .update({ stripe_customer_id: customerId })
       .eq('id', biz.id)
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
