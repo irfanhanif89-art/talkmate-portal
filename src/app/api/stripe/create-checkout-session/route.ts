@@ -58,26 +58,32 @@ export async function POST(request: NextRequest) {
     console.error('[checkout] Business lookup error for user', user.id, ':', bizLookupError)
   }
 
-  // Fallback: auto-create business if missing (e.g. register failed mid-flight)
+  // Fallback: business row not returned (lookup error or genuinely missing)
   if (!biz) {
+    // Try upsert — if a row already exists (unique constraint on owner_user_id) it returns the existing row
     const defaultName = user.email?.split('@')[0] ?? 'My Business'
-    console.info('[checkout] No business row for user', user.id, '— auto-creating:', defaultName)
+    console.info('[checkout] Business lookup returned null for user', user.id, '— upserting:', defaultName)
 
-    const { data: newBiz, error: createError } = await admin
+    const { data: upsertBiz, error: upsertError } = await admin
       .from('businesses')
-      .insert({ name: defaultName, owner_user_id: user.id })
+      .upsert({ name: defaultName, owner_user_id: user.id }, { onConflict: 'owner_user_id', ignoreDuplicates: false })
       .select('id, stripe_customer_id')
       .single()
 
-    if (createError || !newBiz) {
-      console.error('[checkout] Auto-create failed for user', user.id, ':', createError)
-      return NextResponse.json(
-        { error: 'Business not found and could not be created', detail: createError?.message },
-        { status: 404 }
-      )
+    if (upsertError || !upsertBiz) {
+      // Final fallback: just re-fetch — maybe the row exists and upsert failed due to permissions
+      console.error('[checkout] Upsert failed, re-fetching:', upsertError)
+      const { data: refetch } = await admin.from('businesses').select('id, stripe_customer_id').eq('owner_user_id', user.id).single()
+      if (!refetch) {
+        return NextResponse.json(
+          { error: 'Business not found and could not be created', detail: upsertError?.message },
+          { status: 404 }
+        )
+      }
+      biz = refetch
+    } else {
+      biz = upsertBiz
     }
-
-    biz = newBiz
   }
 
   // Get or create Stripe customer
