@@ -32,24 +32,25 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
-  let { data: biz } = await admin
+  // Use select('*') — selecting named columns fails if a column doesn't yet exist
+  // in the database (PostgREST returns a column-not-found error, silently setting
+  // data to null and triggering the fallback unnecessarily).
+  let { data: biz, error: bizLookupError } = await admin
     .from('businesses')
-    .select('id, stripe_customer_id')
+    .select('*')
     .eq('owner_user_id', user.id)
     .single()
 
+  if (bizLookupError) {
+    console.error('[create-checkout-session] Business lookup error for user', user.id, ':', bizLookupError)
+  }
+
   // Fallback: business row missing (e.g. register failed mid-flight). Auto-create
-  // it from whatever auth metadata we have so the user isn't permanently stuck.
+  // using ONLY user.id and email — no user_metadata dependency.
   if (!biz) {
-    const meta = (user.user_metadata ?? {}) as Record<string, string>
-    // Priority: metadata set at registration > request body fields > email-derived name
-    const defaultName =
-      meta.business_name
-      ?? body.businessName
-      ?? (meta.first_name ? `${meta.first_name}'s Business` : null)
-      ?? (user.email?.split('@')[0] ?? 'My Business')
+    const defaultName = user.email?.split('@')[0] ?? 'My Business'
 
     console.info('[create-checkout-session] No business row for user', user.id, '— auto-creating with name:', defaultName)
 
@@ -57,10 +58,9 @@ export async function POST(request: NextRequest) {
       .from('businesses')
       .insert({
         name: defaultName,
-        business_type: meta.business_type ?? body.businessType ?? 'other',
         owner_user_id: user.id,
       })
-      .select('id, stripe_customer_id')
+      .select('*')
       .single()
 
     if (createError || !newBiz) {

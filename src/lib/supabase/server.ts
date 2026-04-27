@@ -22,10 +22,11 @@ export async function createClient() {
   )
 }
 
-// Admin client uses the service role key via the base supabase-js client.
-// This correctly bypasses RLS — do NOT use createServerClient (ssr) with the
-// service role key as cookie handling interferes with the auth context.
-export async function createAdminClient() {
+// Admin client uses the service role key via the base supabase-js client (NOT
+// @supabase/ssr). Using createServerClient here would read the user's session
+// cookie and substitute the user's JWT into the Authorization header, silently
+// overriding the service role key and causing RLS to fire.
+export function createAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,

@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   const businessId = req.nextUrl.searchParams.get('businessId')
   if (!businessId) return NextResponse.json({ error: 'businessId required' }, { status: 400 })
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
   const { data } = await supabase
     .from('businesses')
     .select('name, business_type, preview_number, agent_status')

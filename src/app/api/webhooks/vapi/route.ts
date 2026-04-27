@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
   if (!callId) return NextResponse.json({ received: true })
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
 
   // Look up the business by Vapi agent ID
   const { data: business } = await supabase

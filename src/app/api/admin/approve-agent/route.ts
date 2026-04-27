@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   const { businessId } = await req.json()
   if (!businessId) return NextResponse.json({ error: 'businessId required' }, { status: 400 })
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
 
   const { data: business } = await supabase
     .from('businesses')

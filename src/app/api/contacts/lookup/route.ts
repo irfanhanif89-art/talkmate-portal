@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ found: false })
   }
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
 
   const { data: contact } = await supabase
     .from('contacts')

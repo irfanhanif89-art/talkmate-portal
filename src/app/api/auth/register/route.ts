@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Use admin client (service role) to bypass RLS for business creation
-  const admin = await createAdminClient()
+  const admin = createAdminClient()
 
   const { data: biz, error: bizError } = await admin
     .from('businesses')

@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabase = await createAdminClient()
+  const supabase = createAdminClient()
   const now = new Date()
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
