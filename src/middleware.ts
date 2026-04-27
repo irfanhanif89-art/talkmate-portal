@@ -42,9 +42,15 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isAuthPage) {
-    const redirectUrl = new URL('/dashboard', request.url)
+    // Check if user has an active subscription — if not, send to /subscribe not /dashboard
+    const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+    let hasSub = false
+    if (biz) {
+      const { data: sub } = await supabase.from('subscriptions').select('status').eq('business_id', biz.id).in('status', ['active', 'trialing']).maybeSingle()
+      hasSub = !!sub
+    }
+    const redirectUrl = new URL(hasSub ? '/dashboard' : '/subscribe', request.url)
     const redirectResponse = NextResponse.redirect(redirectUrl)
-    // Copy all cookies from supabaseResponse to the redirect
     supabaseResponse.cookies.getAll().forEach(cookie => {
       redirectResponse.cookies.set(cookie.name, cookie.value)
     })

@@ -222,6 +222,11 @@ export default function SubscribePage() {
       <p style={{ fontSize: 12, color: '#2A5080', marginTop: 28, textAlign: 'center' }}>
         Secure payment via Stripe · Upgrade or cancel anytime
       </p>
+
+      <p style={{ fontSize: 12, color: '#2A5080', marginTop: 16, textAlign: 'center' }}>
+        Wrong account?{' '}
+        <a href="/api/auth/signout" style={{ color: '#4A7FBB', textDecoration: 'underline' }}>Log out</a>
+      </p>
     </div>
   )
 }
