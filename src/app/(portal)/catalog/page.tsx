@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Star, Edit, Trash2, Zap } from 'lucide-react'
+import MenuImportBanner from '@/components/portal/menu-import-banner'
 
 interface CatalogItem {
   id: string; name: string; description: string; price: number | null
@@ -125,6 +126,8 @@ export default function CatalogPage() {
           </Button>
         </div>
       </div>
+
+      <MenuImportBanner onImported={() => fetchItems()} />
 
       {loading ? (
         <p style={{ color: '#4A7FBB' }}>Loading…</p>

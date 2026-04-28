@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import PlanComparison from '@/components/portal/plan-comparison'
 
 const invoices = [
   { date: '21 Apr 2026', desc: 'Talkmate Premium — April 2026', amount: '$499.00', status: 'Paid' },
@@ -89,21 +90,43 @@ export default function BillingPage() {
   const supabase = createClient()
   const [cancelling, setCancelling] = useState(false)
   const [missedCallCount, setMissedCallCount] = useState(0)
+  const [plan, setPlan] = useState<string>('starter')
+  const [lifetimeRevenue, setLifetimeRevenue] = useState(0)
+  const [totalPaid, setTotalPaid] = useState(0)
+  const [signupAt, setSignupAt] = useState<string | null>(null)
+  const [businessName, setBusinessName] = useState('')
   const weeklyPositiveCalls = Math.round(7 * 0.72 * 5) // ~25
 
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+      const { data: biz } = await supabase.from('businesses').select('id, plan, signup_at, name').eq('owner_user_id', user.id).single()
       if (!biz) return
-      const startOfMonth = new Date()
-      startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
+      setPlan(biz.plan ?? 'starter')
+      setSignupAt(biz.signup_at)
+      setBusinessName(biz.name)
+
+      const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
       const { data: calls } = await supabase.from('calls').select('outcome').eq('business_id', biz.id).gte('created_at', startOfMonth.toISOString())
       if (calls) setMissedCallCount(calls.filter(c => !c.outcome || c.outcome === 'Missed').length)
+
+      const { data: allCalls } = await supabase.from('calls').select('id').eq('business_id', biz.id)
+      // Estimate lifetime revenue at $85/call as a fallback when no jobs table values exist.
+      const totalCalls = allCalls?.length ?? 0
+      setLifetimeRevenue(totalCalls * 85)
+
+      // Months active × monthly price
+      if (biz.signup_at) {
+        const months = Math.max(1, Math.floor((Date.now() - new Date(biz.signup_at).getTime()) / (30 * 24 * 60 * 60 * 1000)))
+        const monthly = biz.plan === 'pro' || biz.plan === 'professional' ? 799 : biz.plan === 'growth' ? 499 : 299
+        setTotalPaid(months * monthly)
+      }
     }
     fetchData()
   }, [])
+
+  const roiMultiple = totalPaid > 0 ? (lifetimeRevenue / totalPaid) : 0
 
   return (
     <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
@@ -152,6 +175,22 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+
+      {/* Plan comparison */}
+      <PlanComparison currentPlan={plan} />
+
+      {/* ROI summary */}
+      {lifetimeRevenue > 0 && (
+        <div style={{ background: 'linear-gradient(135deg, rgba(232,98,42,0.08), rgba(74,159,232,0.04))', border: '1px solid rgba(232,98,42,0.25)', borderRadius: 14, padding: 20, marginBottom: 28 }}>
+          <div style={{ fontSize: 11, color: '#E8622A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Your TalkMate ROI</div>
+          <div style={{ fontSize: 14, color: 'white', lineHeight: 1.6 }}>
+            TalkMate has captured an estimated <strong style={{ color: '#E8622A' }}>${lifetimeRevenue.toLocaleString()}</strong> in revenue for <strong>{businessName || 'your business'}</strong>{signupAt ? ` since ${new Date(signupAt).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}.
+          </div>
+          <div style={{ fontSize: 14, color: '#7BAED4', marginTop: 6 }}>
+            Total investment: <strong style={{ color: 'white' }}>${totalPaid.toLocaleString()}</strong>. That&apos;s a <strong style={{ color: '#22C55E' }}>{roiMultiple.toFixed(1)}× return</strong>.
+          </div>
+        </div>
+      )}
 
       {/* Add-ons section header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>

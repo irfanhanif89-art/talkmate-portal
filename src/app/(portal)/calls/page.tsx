@@ -42,6 +42,22 @@ function outcomeBadge(outcome: string) {
 
 function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void }) {
   const badge = outcomeBadge(call.outcome)
+  const [flagging, setFlagging] = useState<number | null>(null)
+  const [flagged, setFlagged] = useState<Set<number>>(new Set())
+
+  async function flagWrong(idx: number) {
+    setFlagging(idx)
+    try {
+      const res = await fetch('/api/calls/flag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId: call.id, messageIndex: idx }),
+      })
+      if (res.ok) setFlagged(prev => new Set(prev).add(idx))
+    } finally {
+      setFlagging(null)
+    }
+  }
 
   // Parse transcript — could be plain string or JSON array of {role, message} objects
   let messages: Array<{ role: string; content: string }> = []
@@ -116,13 +132,29 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
           )}
           {messages.length > 0 && messages.map((msg, i) => {
             const isAI = msg.role === 'assistant' || msg.role === 'bot'
+            const isFlagged = flagged.has(i)
             return (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, flexDirection: isAI ? 'row' : 'row-reverse' }}>
+              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, flexDirection: isAI ? 'row' : 'row-reverse', alignItems: 'flex-start' }}>
                 <div style={{ width: 28, height: 28, borderRadius: '50%', background: isAI ? '#E8622A' : 'rgba(74,159,232,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0, color: 'white', fontWeight: 700 }}>
                   {isAI ? 'AI' : '👤'}
                 </div>
-                <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: isAI ? '4px 14px 14px 14px' : '14px 4px 14px 14px', background: isAI ? 'rgba(232,98,42,0.1)' : 'rgba(74,159,232,0.1)', border: `1px solid ${isAI ? 'rgba(232,98,42,0.2)' : 'rgba(74,159,232,0.2)'}` }}>
-                  <p style={{ fontSize: 14, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.content}</p>
+                <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ padding: '10px 14px', borderRadius: isAI ? '4px 14px 14px 14px' : '14px 4px 14px 14px', background: isAI ? 'rgba(232,98,42,0.1)' : 'rgba(74,159,232,0.1)', border: `1px solid ${isAI ? 'rgba(232,98,42,0.2)' : 'rgba(74,159,232,0.2)'}` }}>
+                    <p style={{ fontSize: 14, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.content}</p>
+                  </div>
+                  {isAI && (
+                    <button
+                      onClick={() => !isFlagged && flagWrong(i)}
+                      disabled={isFlagged || flagging === i}
+                      style={{
+                        background: 'transparent', border: 'none', color: isFlagged ? '#22C55E' : 'rgba(255,255,255,0.4)',
+                        cursor: isFlagged ? 'default' : 'pointer', fontSize: 11, padding: 0, textAlign: 'left',
+                        fontFamily: 'Outfit, sans-serif',
+                      }}
+                    >
+                      {isFlagged ? '✓ Flagged for retraining' : flagging === i ? 'Flagging…' : '⚠ This response was wrong'}
+                    </button>
+                  )}
                 </div>
               </div>
             )

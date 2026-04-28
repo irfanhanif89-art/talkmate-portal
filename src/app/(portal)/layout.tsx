@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BusinessTypeProvider } from '@/context/business-type-context'
 import { type BusinessType } from '@/lib/business-types'
-import PortalSidebar from './sidebar'
+import { getPlan } from '@/lib/plan'
+import PortalShell from '@/components/portal/portal-shell'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -11,7 +12,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, business_type, onboarding_completed')
+    .select('id, name, business_type, plan, onboarding_completed')
     .eq('owner_user_id', user.id)
     .single()
 
@@ -19,9 +20,33 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const { data: userProfile } = await supabase
     .from('users')
-    .select('role')
+    .select('role, full_name')
     .eq('id', user.id)
     .single()
+
+  const planConfig = getPlan(business.plan)
+
+  // Quick stats — used to render the sidebar plan card and the topbar badges.
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+
+  const [{ count: callsThisMonth }, { count: todayCount }, { data: partner }, { data: changelogRows }] = await Promise.all([
+    supabase.from('calls').select('id', { count: 'exact', head: true }).eq('business_id', business.id).gte('created_at', startOfMonth.toISOString()),
+    supabase.from('calls').select('id', { count: 'exact', head: true }).eq('business_id', business.id).gte('created_at', todayStart.toISOString()),
+    supabase.from('partners').select('id, pending_payout').eq('user_id', user.id).maybeSingle(),
+    supabase.from('changelog').select('id, seen_by').order('published_at', { ascending: false }).limit(20),
+  ])
+
+  const partnerEarnings = partner?.pending_payout ?? 0
+  const isPartner = !!partner
+
+  const unseenChangelog = (changelogRows ?? []).filter(c => {
+    const seen = (c.seen_by ?? []) as string[]
+    return !seen.includes(user.id)
+  }).length
+
+  const userName = userProfile?.full_name || (user.user_metadata?.full_name as string) || ''
 
   return (
     <BusinessTypeProvider
@@ -29,18 +54,21 @@ export default async function PortalLayout({ children }: { children: React.React
       businessName={business.name}
       businessId={business.id}
     >
-      <div className="flex h-screen overflow-hidden" style={{ background: '#061322' }}>
-        <PortalSidebar
-          businessName={business.name}
-          businessType={business.business_type as BusinessType}
-          userEmail={user.email ?? ''}
-          userRole={userProfile?.role ?? 'owner'}
-          onboardingCompleted={business.onboarding_completed}
-        />
-        <main className="flex-1 overflow-y-auto pb-20 lg:pb-0" style={{ background: '#061322' }}>
-          {children}
-        </main>
-      </div>
+      <PortalShell
+        businessName={business.name}
+        userName={userName}
+        userEmail={user.email ?? ''}
+        userRole={userProfile?.role ?? 'owner'}
+        plan={business.plan ?? 'starter'}
+        callsThisMonth={callsThisMonth ?? 0}
+        todayCallCount={todayCount ?? 0}
+        partnerEarningsThisMonth={partnerEarnings}
+        isPartner={isPartner}
+        hasCommandCentre={planConfig.hasCommandCentre}
+        unseenChangelog={unseenChangelog}
+      >
+        {children}
+      </PortalShell>
     </BusinessTypeProvider>
   )
 }

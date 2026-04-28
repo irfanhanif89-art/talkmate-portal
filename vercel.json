@@ -1,16 +1,15 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/daily-tasks",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/monthly-payouts",
-      "schedule": "0 23 1 * *"
-    },
-    {
-      "path": "/api/cron/abandoned-signup",
-      "schedule": "0 * * * *"
-    }
+    { "path": "/api/cron/daily-tasks", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/monthly-payouts", "schedule": "0 23 1 * *" },
+    { "path": "/api/cron/abandoned-signup", "schedule": "0 * * * *" },
+    { "path": "/api/cron/vapi-health", "schedule": "* * * * *" },
+    { "path": "/api/cron/stripe-sync", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/usage-monitor", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/call-forward-check", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/db-backup", "schedule": "0 16 * * *" },
+    { "path": "/api/cron/nps-check", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/email-triggers", "schedule": "0 * * * *" },
+    { "path": "/api/cron/onboard-day7", "schedule": "0 22 * * *" }
   ]
 }

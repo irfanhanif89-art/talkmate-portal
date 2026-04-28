@@ -3,7 +3,13 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy-init so module evaluation doesn't crash at build-time when the key
+// isn't injected (Next 16 collects page data at build time without env vars).
+function getResend() {
+  const key = process.env.RESEND_API_KEY
+  if (!key) return null
+  return new Resend(key)
+}
 
 export async function POST() {
   const supabase = await createClient()
@@ -107,7 +113,7 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
 
   // Send welcome email
   try {
-    await resend.emails.send({
+    await getResend()?.emails.send({
       from: 'Talkmate <hello@talkmate.com.au>',
       to: user.email!,
       subject: `🎉 You're live on Talkmate — ${business.name}`,
@@ -149,7 +155,7 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
 
   // Notify Irfan (admin)
   try {
-    await resend.emails.send({
+    await getResend()?.emails.send({
       from: 'Talkmate <hello@talkmate.com.au>',
       to: 'irfanhanif89@gmail.com',
       subject: `🆕 New client live: ${business.name}`,
