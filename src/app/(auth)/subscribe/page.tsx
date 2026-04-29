@@ -10,61 +10,73 @@ type Plan = {
   description: string
   features: string[]
   highlight: boolean
+  badge?: string
+  buttonLabel: string
 }
 
-const PLANS = [
+const PLANS: Plan[] = [
   {
     name: 'Starter',
     price: 299,
     planKey: 'starter',
     stripeUrl: 'https://buy.stripe.com/test_28E9AS5djfkA0sv3ypd3i00',
-    description: 'Catches every missed call. Perfect for one busy location.',
+    description: 'For single-location businesses that want to stop missing calls.',
     features: [
       '1 location',
-      'Up to 300 calls / month',
-      'Answers missed calls only',
-      'Order taking + FAQs',
+      'Up to 300 calls/month',
+      '24/7 AI voice agent',
+      'Order taking and FAQs',
+      'Upselling on every call',
       'SMS confirmations',
-      'Call transcripts + email support',
+      'Live dashboard',
+      'Email support',
     ],
     highlight: false,
-  },
-  {
-    name: 'Professional',
-    price: 429,
-    planKey: 'professional',
-    stripeUrl: 'https://buy.stripe.com/test_7sYdR8axD6O44ILfh7d3i01',
-    description: 'Answers every call, day and night. Most popular.',
-    features: [
-      '1 location',
-      'Up to 600 calls / month',
-      'Answers ALL calls (not just missed)',
-      'Custom AI voice — trained on your menu',
-      'After-hours answering (24/7)',
-      'Smart upselling — AI suggests add-ons',
-      'Weekly call summary reports',
-      'Priority support',
-    ],
-    highlight: true,
+    buttonLabel: 'Choose Starter',
   },
   {
     name: 'Growth',
     price: 499,
     planKey: 'growth',
     stripeUrl: 'https://buy.stripe.com/test_00w14m9tz2xO1wz3ypd3i02',
-    description: 'Full automation for multi-location businesses.',
+    description: 'For businesses ready to go further.',
     features: [
+      'Everything in Starter',
+      'Up to 800 calls/month',
+      'TalkMate Command',
+      'WhatsApp and Telegram assistant',
+      '50 commands per day',
+      'Advanced analytics',
+      'Priority support',
+    ],
+    highlight: true,
+    badge: 'Most Popular',
+    buttonLabel: 'Choose Growth',
+  },
+  {
+    name: 'Pro',
+    price: 799,
+    planKey: 'pro',
+    stripeUrl: 'https://buy.stripe.com/test_7sYdR8axD6O44ILfh7d3i01',
+    description: 'Built for multi-location and high-volume operators.',
+    features: [
+      'Everything in Growth',
+      'Unlimited calls',
       'Up to 3 locations',
-      'Unlimited calls / month',
-      'Everything in Professional',
-      'Full dispatch + scheduling',
-      'Automated invoicing',
-      'Email automation + CRM Lite',
-      'Advanced analytics dashboard',
-      'Dedicated account manager',
+      'Unlimited commands per day',
+      'Dedicated onboarding specialist',
+      'Priority phone support',
     ],
     highlight: false,
+    buttonLabel: 'Choose Pro',
   },
+]
+
+const GUARANTEES = [
+  'No setup fees',
+  '14-day money-back guarantee',
+  'No lock-in contracts',
+  'Cancel anytime',
 ]
 
 export default function SubscribePage() {
@@ -106,9 +118,7 @@ export default function SubscribePage() {
         14-day money-back guarantee · No setup fees · Cancel anytime
       </p>
 
-
-
-      {/* Cards — vertical stack always, side by side only on very large screens */}
+      {/* Cards */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
@@ -116,9 +126,8 @@ export default function SubscribePage() {
         width: '100%',
         maxWidth: 480,
       }}>
-        {(PLANS as Plan[]).map((plan) => {
+        {PLANS.map((plan) => {
           const isLoading = loadingPlan === plan.name
-          const disabled = false
 
           return (
             <div
@@ -133,7 +142,7 @@ export default function SubscribePage() {
                 boxSizing: 'border-box',
               }}
             >
-              {plan.highlight && (
+              {plan.badge && (
                 <div style={{
                   position: 'absolute',
                   top: -12,
@@ -148,7 +157,7 @@ export default function SubscribePage() {
                   whiteSpace: 'nowrap',
                   letterSpacing: '0.05em',
                 }}>
-                  Most Popular
+                  {plan.badge}
                 </div>
               )}
 
@@ -180,7 +189,7 @@ export default function SubscribePage() {
                 ))}
               </div>
 
-              {/* CTA — plain link to Stripe, no JS auth needed */}
+              {/* CTA */}
               <a
                 href={plan.stripeUrl}
                 style={{
@@ -199,11 +208,30 @@ export default function SubscribePage() {
                   boxSizing: 'border-box',
                 }}
               >
-                {isLoading ? 'Redirecting…' : `Choose ${plan.name}`}
+                {isLoading ? 'Redirecting...' : plan.buttonLabel}
               </a>
             </div>
           )
         })}
+      </div>
+
+      {/* Guarantee badges */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        gap: '10px 20px',
+        marginTop: 32,
+        maxWidth: 480,
+      }}>
+        {GUARANTEES.map((g) => (
+          <div key={g} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4A7FBB' }}>
+            <svg width="13" height="13" viewBox="0 0 10 10" fill="none">
+              <path d="M1.5 5l2.5 2.5 4.5-5" stroke="#4A7FBB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {g}
+          </div>
+        ))}
       </div>
 
       <p style={{ fontSize: 12, color: '#2A5080', marginTop: 28, textAlign: 'center' }}>
