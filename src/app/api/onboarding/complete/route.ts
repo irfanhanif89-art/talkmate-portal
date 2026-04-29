@@ -1,7 +1,8 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
+import { seedDefaultSmartLists, type IndustrySlug } from '@/lib/smart-lists'
 
 // Lazy-init so module evaluation doesn't crash at build-time when the key
 // isn't injected (Next 16 collects page data at build time without env vars).
@@ -85,11 +86,29 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     }
   }
 
+  // Pull the new Session-1 fields out of the wizard responses.
+  const industry = (responses.industry as IndustrySlug | undefined) ?? null
+  const recordingDisclosureEnabled = (responses.recordingDisclosureEnabled as boolean | undefined) ?? true
+  const recordingDisclosureText = (responses.recordingDisclosureText as string | undefined)
+    ?? 'Thank you for calling. This call may be recorded for quality and business purposes.'
+
   // Update business — agent pending review, NOT live yet
   await supabase.from('businesses').update({
     onboarding_completed: true,
+    ...(industry ? { industry, industry_configured_at: new Date().toISOString() } : {}),
+    call_recording_disclosure_enabled: recordingDisclosureEnabled,
+    call_recording_disclosure_text: recordingDisclosureText,
     ...(vapiAgentId ? { vapi_agent_id: vapiAgentId, agent_status: 'pending_review', preview_number: PREVIEW_NUMBER } : {}),
   }).eq('id', business.id)
+
+  // Seed default smart lists for this client based on selected industry.
+  if (industry) {
+    try {
+      await seedDefaultSmartLists(createAdminClient(), business.id, industry)
+    } catch (e) {
+      console.error('[onboarding/complete] seed smart lists failed', e)
+    }
+  }
 
   // Notify Irfan on Telegram — agent ready to preview
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'

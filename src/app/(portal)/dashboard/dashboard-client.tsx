@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import OnboardingChecklist from '@/components/portal/onboarding-checklist'
+import RetroactiveTCBanner from '@/components/portal/retroactive-tc-banner'
 import RoiCounter from '@/components/portal/roi-counter'
 import ContextualUpsellBanner from '@/components/portal/contextual-upsell'
 import NpsModal from '@/components/portal/nps-modal'
@@ -50,6 +51,9 @@ interface Props {
   onboardingSteps: Array<{ key: string; label: string; done: boolean; href: string }>
   needsNps: 'day30' | 'day90' | null
   partner: { referral_link?: string; active_referrals?: number; pending_payout?: number } | null
+  pendingLegalAcceptances?: number
+  contactsThisMonth?: number
+  crmHealthPct?: number
 }
 
 function timeAgo(date: string) {
@@ -131,6 +135,7 @@ export function DashboardClient({
   callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
   revenueProtected, benchmarkLabel, payingForItself, planMonthlyPrice, planLimit,
   daysActive, daysSinceSignup, onboardingSteps, needsNps, partner,
+  pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0,
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
@@ -193,6 +198,9 @@ export function DashboardClient({
         </h1>
       </div>
 
+      {/* Retroactive T&C banner (Session 1 brief Part 1) */}
+      <RetroactiveTCBanner pendingCount={pendingLegalAcceptances} />
+
       {/* Onboarding checklist (until complete) */}
       {!business.onboarding_completed && (
         <OnboardingChecklist
@@ -252,6 +260,19 @@ export function DashboardClient({
         <StatCard label="Revenue Captured" value={`$${revenueRecoveredThisMonth.toLocaleString()}`} hint={revenueIsEstimate ? 'estimated' : 'actual'} accent="#E8622A" />
         <StatCard label="Answer Rate" value={noData ? '—' : `${stats.aiResolutionRate}%`} hint="Industry avg 77%" accent={aiRateColor} hintColor="#22C55E" />
         <StatCard label="Avg Order Value" value={revenueIsEstimate ? '$32' : `$${Math.max(85, Math.round(revenueRecoveredThisMonth / Math.max(stats.totalMonth, 1)))}`} hint="incl. upsell lift" accent="#8B5CF6" />
+        <StatCard
+          label="New Contacts This Month"
+          value={contactsThisMonth}
+          hint="Callers automatically added to your CRM"
+          accent="#1565C0"
+        />
+        <StatCard
+          label="CRM Health"
+          value={`${crmHealthPct}%`}
+          hint="Contacts with name identified"
+          accent={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
+          hintColor={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
+        />
       </div>
 
       {/* Contextual upsell banner */}

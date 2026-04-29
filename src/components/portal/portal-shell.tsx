@@ -14,6 +14,7 @@ interface Props {
   plan: string
   callsThisMonth: number
   todayCallCount: number
+  contactsTotal?: number
   partnerEarningsThisMonth: number
   isPartner: boolean
   hasCommandCentre: boolean
@@ -47,6 +48,7 @@ export default function PortalShell(props: Props) {
         partnerEarningsThisMonth={props.partnerEarningsThisMonth}
         isPartner={props.isPartner}
         todayCallCount={props.todayCallCount}
+        contactsTotal={props.contactsTotal}
         hasCommandCentre={props.hasCommandCentre}
         isOpenMobile={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}

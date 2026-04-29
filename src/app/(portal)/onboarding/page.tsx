@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useOnboardingStore } from '@/store/onboarding-store'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
 import { Plus, Trash2, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import LegalAcceptanceForm from '@/components/portal/legal-acceptance-form'
 
 // ── Custom Toggle (no base-ui) ──────────────────────────────────────────────
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -123,6 +124,9 @@ export default function OnboardingPage() {
   const [uploadDone, setUploadDone] = useState(false)
   const [agreed, setAgreed] = useState(false)
   const [marketingConsent, setMarketingConsent] = useState(false)
+  const [tcAccepted, setTcAccepted] = useState(false)
+  const [tcSubmitting, setTcSubmitting] = useState(false)
+  const [tcError, setTcError] = useState<string | null>(null)
   const [payProcessing, setPayProcessing] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
@@ -253,11 +257,49 @@ export default function OnboardingPage() {
         {/* Card */}
         <div style={card}>
 
-          {/* STEP 1: Business Details */}
+          {/* STEP 1: Business Details + Industry Selection */}
           {currentStep === 1 && (
             <div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Tell us about your business</h2>
               <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Your AI agent will use this to introduce itself and answer questions.</p>
+
+              {/* Industry selection (Session 1 brief Part 5) */}
+              <label style={lbl}>What type of business are you?</label>
+              <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: -4 }}>This configures the right CRM features and smart lists for your industry.</p>
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 24,
+              }}>
+                {[
+                  ['restaurants', '🍕', 'Restaurant & Takeaway'],
+                  ['towing', '🚗', 'Towing & Transport'],
+                  ['real_estate', '🏠', 'Real Estate'],
+                  ['trades', '🔧', 'Trades & Services'],
+                  ['healthcare', '🏥', 'Healthcare & Clinics'],
+                  ['ndis', '💙', 'NDIS Provider'],
+                  ['retail', '🛍️', 'Retail'],
+                  ['professional_services', '💼', 'Professional Services'],
+                  ['other', '⚙️', 'Other'],
+                ].map(([key, emoji, name]) => {
+                  const selected = (responses.industry as string) === key
+                  return (
+                    <button
+                      key={key} type="button"
+                      onClick={() => setResponse('industry', key)}
+                      style={{
+                        padding: 14, borderRadius: 10,
+                        background: selected ? 'rgba(232,98,42,0.08)' : '#071829',
+                        border: `1.5px solid ${selected ? '#E8622A' : 'rgba(255,255,255,0.06)'}`,
+                        color: 'white', cursor: 'pointer', textAlign: 'left',
+                        fontFamily: 'Outfit, sans-serif',
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>{emoji}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{name}</div>
+                    </button>
+                  )
+                })}
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {[['Business Name', 'businessName', 'My Business Pty Ltd'], ['Phone Number', 'phone', '+61 4XX XXX XXX'], ['Address', 'address', '123 Main St, Brisbane QLD 4000'], ['Website', 'website', 'www.mybusiness.com.au']].map(([label, key, ph]) => (
                   <div key={key}>
@@ -407,6 +449,39 @@ export default function OnboardingPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Recording disclosure (Session 1 brief Part 5) */}
+              <div style={{
+                marginTop: 20, padding: 16,
+                background: '#071829',
+                border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Include call recording disclosure</div>
+                    <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 4, lineHeight: 1.55 }}>
+                      Recommended. Adds a brief statement that the call may be recorded. Required in some circumstances under Australian privacy law.
+                    </div>
+                  </div>
+                  <Toggle
+                    checked={(responses.recordingDisclosureEnabled as boolean | undefined) ?? true}
+                    onChange={v => setResponse('recordingDisclosureEnabled', v)}
+                  />
+                </div>
+                {((responses.recordingDisclosureEnabled as boolean | undefined) ?? true) && (
+                  <>
+                    <div style={{ marginTop: 14, padding: '10px 12px', background: '#061322', borderRadius: 8, fontSize: 12, color: '#7BAED4', fontStyle: 'italic' }}>
+                      Callers will hear: &ldquo;{(responses.recordingDisclosureText as string) || 'Thank you for calling. This call may be recorded for quality and business purposes.'}&rdquo;
+                    </div>
+                    <textarea
+                      value={(responses.recordingDisclosureText as string) || 'Thank you for calling. This call may be recorded for quality and business purposes.'}
+                      onChange={e => setResponse('recordingDisclosureText', e.target.value)}
+                      rows={2}
+                      style={{ ...ta, marginTop: 8, fontSize: 13 }}
+                    />
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -498,46 +573,55 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* STEP 8: Agreement */}
+          {/* STEP 8: Terms acceptance (Session 1 brief Part 1) */}
           {currentStep === 8 && (
             <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>📝 Service Agreement</h2>
-              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Please read and sign our terms before going live. Takes about 2 minutes.</p>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Review and accept our terms</h2>
+              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Please read and accept the following before activating your TalkMate account.</p>
 
-              <div style={{ background: '#071829', borderRadius: 14, padding: 20, maxHeight: 280, overflowY: 'scroll', fontSize: 12.5, color: '#7BAED4', lineHeight: 1.9, marginBottom: 20, border: '1px solid rgba(255,255,255,0.06)' }}>
-                {AGREEMENT_TEXT.split('\n\n').map((para, i) => (
-                  <p key={i} style={{ marginBottom: 12 }}>
-                    {para.includes('\n') ? (
-                      <>
-                        <strong style={{ color: 'white' }}>{para.split('\n')[0]}</strong>
-                        <br />
-                        {para.split('\n').slice(1).join(' ')}
-                      </>
-                    ) : (
-                      para.startsWith('Talkmate Pty Ltd') ? <strong style={{ color: 'white', fontSize: 13 }}>{para}</strong> : para
-                    )}
-                  </p>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, background: '#071829', borderRadius: 12, border: `1.5px solid ${agreed ? 'rgba(232,98,42,0.4)' : 'rgba(255,255,255,0.06)'}` }}>
-                  <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ marginTop: 2, width: 18, height: 18, accentColor: '#E8622A', flexShrink: 0, cursor: 'pointer' }} />
-                  <span style={{ fontSize: 14, color: 'white', lineHeight: 1.6 }}>
-                    I have read, understood, and agree to the <strong>Talkmate Service Agreement</strong> above, including terms on payment, call recording, privacy, and the social proof licence for my business name and logo. I am authorised to enter this agreement on behalf of my business. <span style={{ color: '#E8622A', fontSize: 12 }}>(Required)</span>
-                  </span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 16, background: '#071829', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)} style={{ marginTop: 2, width: 18, height: 18, accentColor: '#E8622A', flexShrink: 0, cursor: 'pointer' }} />
-                  <span style={{ fontSize: 14, color: 'white', lineHeight: 1.6 }}>
-                    I consent to receive marketing emails from Talkmate including product updates, promotions, tips, and case studies. I may unsubscribe at any time. <span style={{ color: '#4A7FBB', fontSize: 12 }}>(Optional — Spam Act 2003 compliant)</span>
-                  </span>
-                </label>
-              </div>
-
-              <div style={{ marginTop: 16, padding: 14, background: 'rgba(74,159,232,0.06)', border: '1px solid rgba(74,159,232,0.15)', borderRadius: 12, fontSize: 12, color: '#7BAED4' }}>
-                🔒 Your agreement is recorded with your IP address and timestamp. A copy will be emailed to you.
-              </div>
+              {tcAccepted ? (
+                <div style={{ padding: 18, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 12, color: '#22C55E', fontSize: 14, fontWeight: 600 }}>
+                  ✓ Terms accepted. You can now continue.
+                </div>
+              ) : (
+                <>
+                  <LegalAcceptanceForm
+                    busy={tcSubmitting}
+                    showHeader={false}
+                    onSubmit={async (signature, acceptedDocs) => {
+                      setTcSubmitting(true); setTcError(null)
+                      try {
+                        const res = await fetch('/api/legal/accept', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ signature, acceptedDocs }),
+                        })
+                        const data = await res.json()
+                        if (!data.ok) {
+                          setTcError(data.error || 'Could not record acceptance.')
+                          return
+                        }
+                        setAgreed(true) // satisfy existing nav guard
+                        setTcAccepted(true)
+                      } finally {
+                        setTcSubmitting(false)
+                      }
+                    }}
+                  />
+                  {tcError && (
+                    <div style={{ marginTop: 12, fontSize: 13, color: '#EF4444', textAlign: 'center' }}>{tcError}</div>
+                  )}
+                  <div style={{ marginTop: 14, padding: 12, background: 'rgba(74,159,232,0.06)', border: '1px solid rgba(74,159,232,0.15)', borderRadius: 10, fontSize: 12, color: '#7BAED4' }}>
+                    🔒 Your acceptance is recorded with your IP address, browser, signature, and timestamp.
+                  </div>
+                  <label style={{ marginTop: 14, display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', padding: 12, background: '#071829', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <input type="checkbox" checked={marketingConsent} onChange={e => setMarketingConsent(e.target.checked)} style={{ marginTop: 2, width: 17, height: 17, accentColor: '#E8622A', flexShrink: 0, cursor: 'pointer' }} />
+                    <span style={{ fontSize: 13, color: 'white', lineHeight: 1.6 }}>
+                      I consent to receive marketing emails from TalkMate including product updates, promotions, tips, and case studies. I may unsubscribe at any time. <span style={{ color: '#4A7FBB', fontSize: 11 }}>(Optional, Spam Act 2003 compliant)</span>
+                    </span>
+                  </label>
+                </>
+              )}
             </div>
           )}
 

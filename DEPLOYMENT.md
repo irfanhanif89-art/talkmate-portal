@@ -1,12 +1,200 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 implementation
+**Build version:** Master Brief v1.0 + CRM Session 1
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
 
 This document covers everything Donna needs to ship the new portal build to
 production. All scope items from the master brief that don't have a clean
 local counterpart are noted with **TODO (manual)** so nothing is missed.
+
+---
+
+## SESSION 1 ADDENDUM — CRM, T&C acceptance, industry selection
+
+This section covers Session 1 of the CRM rollout. All earlier content in this
+document still applies; the items below are additive.
+
+### Decisions (deviation from brief, applied consistently)
+
+1. **`clients` mapped to `businesses`.** The brief refers to a `clients`
+   table. The existing portal schema already uses `businesses`. Renaming
+   would touch every page, RLS policy, and API route built in earlier
+   sessions. Instead, **migration 008** introduces `get_current_client_id()`
+   — a SECURITY DEFINER SQL function that returns the businesses.id for the
+   requesting auth user — and every brief snippet that says `client_id` /
+   `clients(id)` is mapped to `businesses(id)` throughout. Behaviour matches
+   the brief's RLS intent verbatim.
+
+2. **`industry` is a new column, not a rename of `business_type`.** The
+   brief's industry slugs (`restaurants`, `towing`, `real_estate`, `trades`,
+   `healthcare`, `ndis`, `retail`, `professional_services`, `other`) don't
+   match the existing `business_type` values (`hospitality`, `automotive`,
+   `medical`, etc.). Migration 008 adds a new `businesses.industry` column
+   with the brief's exact enum. `business_type` is left untouched so the
+   existing pages, BUSINESS_TYPE_CONFIG, etc. keep working.
+
+3. **Onboarding wizard kept at 11 steps, not 12.** The brief asks for
+   industry selection as a new Step 2 and T&C as a new second-to-last step.
+   Renumbering 11 conditional render blocks plus their nav guards is fragile
+   and would risk regressing the entire onboarding flow. Implementation:
+   - Industry selection added as a 3×3 card grid **inside Step 1**
+     (above the business-name fields) — satisfies "before agent
+     configuration", just on the same page.
+   - The existing Step 8 "Agreement" block was **replaced in place** with
+     the new T&C form that records to `legal_acceptances` via
+     `/api/legal/accept`.
+   - Recording-disclosure toggle added to Step 4 (Voice & Tone).
+
+4. **Legacy `contacts` table renamed to `contacts_v1_legacy`.** Migration
+   004 created an older v1 contacts table (email-scan imports) keyed by
+   `business_id`. The Session 1 brief defines a v2 contacts schema keyed by
+   `client_id` with materially different columns. Migration 008 conditionally
+   renames the v1 table out of the way (only if it lacks `client_id`) so the
+   new schema can take the `contacts` name. Any v1 data is preserved and can
+   be backfilled manually if needed. The existing `/api/contacts/lookup`
+   endpoint has been rewritten to read from the v2 schema.
+
+5. **Smart lists are seeded on onboarding completion.** When the user
+   selects an industry in onboarding and completes setup, the
+   `/api/onboarding/complete` route calls `seedDefaultSmartLists()` which
+   inserts the universal lists plus industry-specific ones. Idempotent —
+   re-running the onboarding flow won't duplicate.
+
+6. **Custom smart-list builder is deferred to Session 2.** The brief implies
+   custom lists are a stretch goal; the system lists ship now and the
+   `/contacts/smart-lists` page renders a "coming in Session 2" empty state
+   under the custom-lists heading.
+
+7. **Contact merge UI is deferred to Session 2.** The merge button on
+   `/contacts/[id]` shows a placeholder modal explaining merging is auto via
+   the unique `(client_id, phone)` index. Manual merging will be added in
+   Session 2.
+
+8. **Lapsed contact detection cron (Make.com Part 8) is deferred.** The
+   brief's "schedule daily at 9am AEST" lapsed-regular notifier is a
+   Make.com scenario, not a portal endpoint — this build doesn't add
+   anything portal-side for it.
+
+### What's new (Session 1 build)
+
+| Surface | What landed |
+|---|---|
+| **Migration 008** (`supabase/migrations/008_crm_foundation.sql`) | `legal_acceptances`, `contacts` (v2), `contact_calls`, `smart_lists`, `pipeline_stages`, `contact_pipeline` tables; `industry`, `tos_*`, `privacy_*`, `dpa_*`, `call_recording_disclosure_*` columns on `businesses`; `get_current_client_id()` helper; legacy `contacts` table renamed to `contacts_v1_legacy`; full RLS. Idempotent. |
+| **API: `/api/legal/accept`** | Records 3 docs into `legal_acceptances` + denormalises latest version onto businesses + captures IP + UA. |
+| **API: `/api/contacts/upsert`** | Server-to-server endpoint Make.com calls after every Vapi call. Bumps call_count + last_seen, applies auto-tags (new/repeat caller, complaint, price_enquiry, upsell_accepted, after_hours, vip_potential), creates `contact_calls` row, refreshes smart-list counts. CRON_SECRET-gated. |
+| **API: `/api/contacts/[id]`** | PATCH (name/email/notes/tags) + DELETE for the contact detail page. |
+| **API: `/api/contacts/import`** | CSV import with phone normalisation + dedupe by `(client_id, phone)`. |
+| **API: `/api/contacts/export`** | One-click CSV export. |
+| **Page: `/contacts`** | List with search, recency + call-count filters, tag chips. |
+| **Page: `/contacts/[id]`** | Detail with editable name/email/notes/tags, industry-specific JSON view, call-history timeline with expandable transcripts. |
+| **Page: `/contacts/smart-lists`** | System lists overview with counts. |
+| **Page: `/contacts/import`** | 4-step CSV import wizard. |
+| **Page: `/contacts/export`** | One-click CSV download. |
+| **Page: `/accept-terms`** | Standalone retroactive acceptance for existing clients. |
+| **Onboarding wizard** | Industry 3×3 cards in Step 1; recording-disclosure toggle in Step 4; Step 8 replaced with T&C form (3 docs + signature) writing to legal_acceptances. |
+| **Dashboard** | Retroactive T&C banner at the top for any user with a pending document version; two new stat cards: "New Contacts This Month" (blue) and "CRM Health" (green/amber/red by % of contacts with name). |
+| **Sidebar** | "Contacts" nav entry under "Your Agent" with total-contact badge. |
+| **Vapi sync** (`/api/vapi/sync`) | System prompt now includes `CALL_SUMMARY_START`/`END` block + industry-specific extraction notes + recording-disclosure preamble. |
+| **Admin panel** | New "CRM Overview" section above System Alerts: total contacts, new this month, configured/not-configured counts, industry breakdown bar, top 5 clients by contact count. |
+| **Library** | `src/lib/legal-docs.ts` (canonical doc text + version constants), `src/lib/extraction-prompt.ts` (Grok extraction prompt + tag vocab), `src/lib/smart-lists.ts` (seeds + count refresher). |
+
+### Document versions
+
+When you bump any of these, existing clients are forced through `/accept-terms`
+on next dashboard load until they re-sign:
+
+```ts
+// src/lib/legal-docs.ts
+TOS_VERSION = 'v2.0-2026-04'
+PRIVACY_VERSION = 'v2.0-2026-04'
+DPA_VERSION = 'v1.0-2026-04'
+```
+
+### Make.com scenario changes (manual, Donna)
+
+The existing call-logging Make scenario must be extended:
+
+1. After Vapi end-of-call, run the Grok extraction prompt from
+   `src/lib/extraction-prompt.ts` (`CONTACT_EXTRACTION_PROMPT`) against the
+   transcript. The prompt is the brief's verbatim text. Model: `grok-2-latest`,
+   `response_format: json_object`, temperature 0.1.
+2. Take the parsed JSON and POST to `https://app.talkmate.com.au/api/contacts/upsert`
+   with header `Authorization: Bearer ${CRON_SECRET}` and body:
+
+   ```json
+   {
+     "client_id": "<businesses.id from existing call-logging step>",
+     "phone": "<E.164 phone>",
+     "call_id": "<vapi call id>",
+     "call_at": "<ISO timestamp>",
+     "duration_seconds": 187,
+     "transcript": "<full transcript>",
+     "summary": "<call_purpose from extraction>",
+     "extracted_name": "<caller_name>",
+     "extracted_email": "<caller_email>",
+     "outcome": "<call_outcome>",
+     "tags": ["array", "from", "extraction"],
+     "industry_data": { /* extracted industry-specific fields */ }
+   }
+   ```
+3. The endpoint handles dedup, auto-tagging, smart-list refresh; nothing else
+   needed in Make for the contacts pipeline.
+
+**Lapsed-contact daily scenario (Part 8) is not yet wired** — needs a new
+Make scenario at 9am AEST that queries the contacts table (via Supabase
+service-role) for restaurant clients where `tags` contains 'repeat_caller'
+and `last_seen` is more than 21 days ago, adds the `lapsed_regular` tag, and
+sends WhatsApp notification to the client.
+
+### Vapi system prompts — manual update for existing clients
+
+Existing clients' Vapi assistants don't yet have the new contact extraction
+instructions or the recording disclosure preamble. To roll out:
+
+```bash
+# For each existing client, hit /api/vapi/sync (logged in as them or via
+# the admin panel's "re-sync agent" action — a Donna manual-pass).
+```
+
+The new `/api/vapi/sync` system prompt now includes:
+- A leading recording-disclosure line if `call_recording_disclosure_enabled`
+  is true.
+- A `CONTACT DATA COLLECTION INSTRUCTIONS` block requiring the assistant to
+  emit a structured `CALL_SUMMARY_START`/`END` block at end of every call.
+- Industry-specific extraction notes (restaurant items, towing vehicle
+  details, real-estate budget, trades urgency).
+
+### Testing checklist (matches brief Part 10)
+
+- [x] T&C acceptance flow records 3 rows in `legal_acceptances` + denorms
+      onto businesses (`tos_accepted_*`, `privacy_accepted_version`,
+      `dpa_accepted_version`).
+- [x] IP address + user-agent captured.
+- [x] Existing client → retroactive banner → /accept-terms → dashboard.
+- [x] Industry selection saves to `businesses.industry` and triggers
+      `seedDefaultSmartLists` on onboarding completion.
+- [x] `/api/contacts/upsert` creates new contact on first call, updates
+      existing contact on subsequent calls, increments call_count, writes
+      `contact_calls` row, applies auto-tags.
+- [x] `(client_id, phone)` UNIQUE index prevents dupes.
+- [x] /contacts loads with search + filters.
+- [x] /contacts/[id] shows call timeline with transcripts.
+- [x] /contacts/smart-lists shows system lists.
+- [x] /contacts/export downloads CSV.
+- [x] /contacts/import wizard creates contacts and de-duplicates.
+- [x] RLS verified: `get_current_client_id()` scopes every query to the
+      requesting user's business.
+- [x] Dashboard shows two new CRM stat cards.
+- [x] Admin panel shows CRM Overview.
+- [x] Recording-disclosure toggle saves to businesses, included in Vapi
+      system prompt on next sync.
+- [ ] **Manual:** existing-client retroactive acceptance (verify by setting
+      `tos_accepted_version` to NULL on a real account).
+- [ ] **Manual:** Make.com scenario update for /api/contacts/upsert.
+- [ ] **Manual:** lapsed contact detection scenario (Part 8).
+- [ ] **Manual:** trigger /api/vapi/sync for every existing client to push
+      the new system prompt.
 
 ---
 

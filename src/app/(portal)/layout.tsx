@@ -38,6 +38,10 @@ export default async function PortalLayout({ children }: { children: React.React
     supabase.from('changelog').select('id, seen_by').order('published_at', { ascending: false }).limit(20),
   ])
 
+  const { count: contactsTotal } = await supabase.from('contacts')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', business.id).eq('is_merged', false)
+
   const partnerEarnings = partner?.pending_payout ?? 0
   const isPartner = !!partner
 
@@ -62,6 +66,7 @@ export default async function PortalLayout({ children }: { children: React.React
         plan={business.plan ?? 'starter'}
         callsThisMonth={callsThisMonth ?? 0}
         todayCallCount={todayCount ?? 0}
+        contactsTotal={contactsTotal ?? 0}
         partnerEarningsThisMonth={partnerEarnings}
         isPartner={isPartner}
         hasCommandCentre={planConfig.hasCommandCentre}

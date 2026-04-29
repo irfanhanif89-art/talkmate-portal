@@ -14,8 +14,45 @@ export default async function AdminPage() {
   const adminClient = createAdminClient()
 
   const { data: businesses } = await adminClient.from('businesses').select(`
-    id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at, signup_at, owner_user_id
+    id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at, signup_at, owner_user_id, industry
   `).order('created_at', { ascending: false }).limit(100)
+
+  // CRM Overview (Session 1 brief Part 9)
+  const { count: contactsTotal } = await adminClient.from('contacts')
+    .select('id', { count: 'exact', head: true }).eq('is_merged', false)
+  const { count: contactsThisMonth } = await adminClient.from('contacts')
+    .select('id', { count: 'exact', head: true }).eq('is_merged', false)
+    .gte('first_seen', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
+
+  const industryBreakdown = (businesses ?? []).reduce<Record<string, number>>((acc, b) => {
+    const key = b.industry || 'unconfigured'
+    acc[key] = (acc[key] || 0) + 1
+    return acc
+  }, {})
+  const industryEntries = Object.entries(industryBreakdown).sort((a, b) => b[1] - a[1])
+  const crmConfigured = (businesses ?? []).filter(b => !!b.industry).length
+  const crmNotConfigured = (businesses ?? []).length - crmConfigured
+
+  // Top 5 clients by contact count.
+  const { data: topByContacts } = await adminClient.rpc('admin_top_clients_by_contacts').select('*').limit(5).single().then(
+    () => ({ data: null }),
+    () => ({ data: null }),
+  ) as { data: null }
+  // Fallback: aggregate manually if no RPC defined.
+  let topClients: Array<{ business_id: string; name: string; contact_count: number }> = []
+  if (!topByContacts) {
+    const { data: agg } = await adminClient.from('contacts')
+      .select('client_id').eq('is_merged', false)
+    const counts = new Map<string, number>()
+    for (const row of agg ?? []) counts.set(row.client_id as string, (counts.get(row.client_id as string) ?? 0) + 1)
+    topClients = [...counts.entries()]
+      .map(([clientId, count]) => {
+        const biz = businesses?.find(b => b.id === clientId)
+        return { business_id: clientId, name: biz?.name ?? 'Unknown', contact_count: count }
+      })
+      .sort((a, b) => b.contact_count - a.contact_count)
+      .slice(0, 5)
+  }
 
   const { data: subscriptions } = await adminClient.from('subscriptions').select('*')
 
@@ -77,6 +114,59 @@ export default async function AdminPage() {
         </div>
         <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 12 }}>
           Vapi health: {vapiHealth?.fail_count ?? 0} consecutive fails · success streak {vapiHealth?.success_streak ?? 0} · last check {vapiHealth?.last_check ? new Date(vapiHealth.last_check).toLocaleString('en-AU') : 'never'}
+        </div>
+      </div>
+
+      {/* CRM Overview (Session 1 brief Part 9) */}
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20, marginBottom: 22 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 14 }}>CRM Overview</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+          {[
+            { label: 'Total contacts', value: contactsTotal ?? 0, color: '#1565C0' },
+            { label: 'New this month', value: contactsThisMonth ?? 0, color: '#22C55E' },
+            { label: 'CRM configured', value: `${crmConfigured} / ${(businesses?.length ?? 0)}`, color: '#E8622A' },
+            { label: 'Not configured', value: crmNotConfigured, color: '#F59E0B' },
+          ].map(s => (
+            <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 11, padding: 14 }}>
+              <div style={{ height: 2, background: s.color, marginBottom: 10, marginLeft: -14, marginRight: -14, marginTop: -14 }} />
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{s.label}</p>
+              <p style={{ fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Industry breakdown</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {industryEntries.length === 0 && <div style={{ fontSize: 12, color: '#7BAED4' }}>No data yet.</div>}
+              {industryEntries.map(([industry, count]) => {
+                const max = industryEntries[0]?.[1] ?? 1
+                return (
+                  <div key={industry} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'white', minWidth: 130, textTransform: 'capitalize' as const }}>{industry.replace(/_/g, ' ')}</span>
+                    <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: '#1565C0', borderRadius: 3 }} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'white', minWidth: 24, textAlign: 'right' as const }}>{count}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Top 5 by contact count</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {topClients.length === 0 && <div style={{ fontSize: 12, color: '#7BAED4' }}>No contacts yet.</div>}
+              {topClients.map((c, i) => (
+                <div key={c.business_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                  <span style={{ fontSize: 13, color: 'white' }}>{i + 1}. {c.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#E8622A' }}>{c.contact_count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

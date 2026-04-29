@@ -7,7 +7,7 @@ import { getPlan } from '@/lib/plan'
 import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
-  Lock, LogOut, Shield, X,
+  Lock, LogOut, Shield, X, Users,
 } from 'lucide-react'
 
 interface Props {
@@ -19,6 +19,7 @@ interface Props {
   partnerEarningsThisMonth: number
   isPartner: boolean
   todayCallCount: number
+  contactsTotal?: number
   hasCommandCentre: boolean
   isOpenMobile: boolean
   onCloseMobile: () => void
@@ -67,6 +68,10 @@ export default function PortalSidebar(props: Props) {
     {
       label: 'Your Agent',
       items: [
+        {
+          href: '/contacts', label: 'Contacts', icon: Users, show: true,
+          badge: props.contactsTotal && props.contactsTotal > 0 ? { text: String(props.contactsTotal), bg: 'rgba(74,159,232,0.18)', color: '#4A9FE8' } : undefined,
+        },
         { href: '/catalog', label: 'Services & Menu', icon: FileText, show: true },
         { href: '/settings', label: 'Agent Settings', icon: Settings, show: true },
         { href: '/appointments', label: 'Jobs', icon: Calendar, show: true },

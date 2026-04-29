@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { DashboardClient } from './dashboard-client'
 import { estimateRevenueProtected, daysActiveThisMonth, getBenchmark } from '@/lib/roi'
 import { getPlan } from '@/lib/plan'
+import { pendingDocsForBusiness } from '@/lib/legal-docs'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -11,7 +12,7 @@ export default async function DashboardPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours')
+    .select('id, name, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours, industry, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
     .eq('owner_user_id', user.id)
     .single()
 
@@ -136,6 +137,24 @@ export default async function DashboardPage() {
   const { data: partnerRow } = await supabase
     .from('partners').select('referral_link, active_referrals, pending_payout').eq('user_id', user.id).maybeSingle()
 
+  // CRM stats (Part 6) + outstanding T&C acceptance (Part 1)
+  const pendingDocs = pendingDocsForBusiness({
+    tos_accepted_version: business.tos_accepted_version,
+    privacy_accepted_version: business.privacy_accepted_version,
+    dpa_accepted_version: business.dpa_accepted_version,
+  })
+  const [{ count: contactsThisMonth }, { count: contactsTotal }, { count: contactsWithName }] = await Promise.all([
+    supabase.from('contacts').select('id', { count: 'exact', head: true })
+      .eq('client_id', business.id).gte('first_seen', startOfMonth.toISOString()),
+    supabase.from('contacts').select('id', { count: 'exact', head: true })
+      .eq('client_id', business.id).eq('is_merged', false),
+    supabase.from('contacts').select('id', { count: 'exact', head: true })
+      .eq('client_id', business.id).eq('is_merged', false).not('name', 'is', null),
+  ])
+  const crmHealthPct = (contactsTotal ?? 0) > 0
+    ? Math.round(((contactsWithName ?? 0) / (contactsTotal ?? 1)) * 100)
+    : 0
+
   return (
     <DashboardClient
       business={{
@@ -146,6 +165,9 @@ export default async function DashboardPage() {
         agent_name: business.agent_name,
         talkmate_number: business.talkmate_number,
       }}
+      pendingLegalAcceptances={pendingDocs.length}
+      contactsThisMonth={contactsThisMonth ?? 0}
+      crmHealthPct={crmHealthPct}
       stats={{ totalMonth, aiResolutionRate, transferredMonth, missedMonth }}
       outcomes={{ resolved: resolvedByAI, transferred: transferredMonth, missed: missedMonth, total: totalMonth }}
       chartData={chartData}
