@@ -25,7 +25,11 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
-  const protectedPaths = ['/dashboard', '/calls', '/catalog', '/appointments', '/analytics', '/settings', '/billing', '/admin', '/onboarding']
+  const protectedPaths = [
+    '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
+    '/settings', '/billing', '/admin', '/onboarding', '/contacts',
+    '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
+  ]
   // Admin approve page is accessible without subscription (Irfan reviewing agents)
   const isAdminApprove = path.startsWith('/admin/approve')
   const isProtected = protectedPaths.some(p => path.startsWith(p))
@@ -42,7 +46,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isAuthPage) {
-    // Check if user has an active subscription — if not, send to /subscribe not /dashboard
+    // Check if user has an active subscription - if not, send to /subscribe not /dashboard
     const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
     let hasSub = false
     if (biz) {
