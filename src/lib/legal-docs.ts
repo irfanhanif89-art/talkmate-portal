@@ -6,6 +6,13 @@ export const TOS_VERSION = 'v2.0-2026-04'
 export const PRIVACY_VERSION = 'v2.0-2026-04'
 export const DPA_VERSION = 'v1.0-2026-04'
 
+// TalkMate's own ABN. Set to "TBC" until business registration completes —
+// then update this single constant and it propagates through every legal doc.
+// Bumping the value alone does NOT change the document version, since the
+// legal substance has not changed; bump the version only when policy text
+// materially changes.
+export const TALKMATE_ABN = 'TBC'
+
 export type DocumentType = 'terms_of_service' | 'privacy_policy' | 'data_processing_agreement'
 
 export interface LegalDoc {
@@ -25,7 +32,7 @@ export const TERMS_OF_SERVICE: LegalDoc = {
 Version 2.0, April 2026
 
 1. INTRODUCTION
-These Terms of Service govern your use of the TalkMate platform operated by TalkMate Pty Ltd (ABN TBC), a company registered in Queensland, Australia. By completing the onboarding process and activating your TalkMate account you agree to be bound by these terms.
+These Terms of Service govern your use of the TalkMate platform operated by TalkMate Pty Ltd (ABN ${TALKMATE_ABN}), a company registered in Queensland, Australia. By completing the onboarding process and activating your TalkMate account you agree to be bound by these terms.
 
 2. THE SERVICE
 TalkMate provides AI-powered voice agent services, business communication tools, and related software (the Service). The Service includes the TalkMate Voice Agent, TalkMate Command, the TalkMate client portal, and any related features.

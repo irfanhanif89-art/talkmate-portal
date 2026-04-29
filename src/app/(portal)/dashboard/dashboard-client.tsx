@@ -54,6 +54,7 @@ interface Props {
   pendingLegalAcceptances?: number
   contactsThisMonth?: number
   crmHealthPct?: number
+  crmHealthHasContacts?: boolean
 }
 
 function timeAgo(date: string) {
@@ -135,7 +136,7 @@ export function DashboardClient({
   callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
   revenueProtected, benchmarkLabel, payingForItself, planMonthlyPrice, planLimit,
   daysActive, daysSinceSignup, onboardingSteps, needsNps, partner,
-  pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0,
+  pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0, crmHealthHasContacts = false,
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
@@ -266,13 +267,23 @@ export function DashboardClient({
           hint="Callers automatically added to your CRM"
           accent="#1565C0"
         />
-        <StatCard
-          label="CRM Health"
-          value={`${crmHealthPct}%`}
-          hint="Contacts with name identified"
-          accent={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
-          hintColor={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
-        />
+        {crmHealthHasContacts ? (
+          <StatCard
+            label="CRM Health"
+            value={`${crmHealthPct}%`}
+            hint="Contacts with name identified"
+            accent={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
+            hintColor={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
+          />
+        ) : (
+          <StatCard
+            label="CRM Health"
+            value="—"
+            hint="No contacts yet"
+            accent="rgba(255,255,255,0.25)"
+            hintColor="rgba(255,255,255,0.4)"
+          />
+        )}
       </div>
 
       {/* Contextual upsell banner */}

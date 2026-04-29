@@ -2,7 +2,10 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'TalkMate Portal — AI Voice Agent Dashboard',
+  title: {
+    template: '%s — TalkMate',
+    default: 'TalkMate Portal — AI Voice Agent Dashboard',
+  },
   description: 'Manage your TalkMate AI voice agent. View calls, update settings, and grow your business.',
 }
 

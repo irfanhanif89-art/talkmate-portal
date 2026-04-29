@@ -1,8 +1,110 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2
+**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2 + CRM Session 3
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 3 ADDENDUM — White-label foundation, Proxima demo, billing v2, ABN, polish
+
+Session 3 ships everything Monique Charabati needs to see in the Proxima demo this week,
+plus the polish items that came out of Sessions 1–2.
+
+### Migration
+
+**`supabase/migrations/010_session3.sql`** — idempotent. Run once in Supabase SQL editor:
+
+```bash
+psql "$DATABASE_URL" -f supabase/migrations/010_session3.sql
+```
+
+What it adds:
+- `white_label_configs` table with RLS (owner-only write, anon read for `is_active = true` rows so the public preview page works without an admin client)
+- `businesses.is_partner`, `partner_tier` (starter/silver/gold), `partner_commission_rate`, `referred_by`
+- `businesses.abn`, `abn_verified`
+- `subscriptions.cancel_at_period_end`, `cancellation_reason`, `cancellation_requested_at`
+- Seeds the **Proxima Agent** demo white-label config so `/wl-preview/proxima` renders immediately after migration
+
+### What's new
+
+| Surface | What landed |
+|---|---|
+| `/wl-preview/[subdomain]` | Public, branded login mock used for the Proxima demo. Uses `white_label_configs` for that subdomain. Anonymous read via `is_active` RLS policy. |
+| `/admin/white-label` | Admin index of every white-label config across all partners. |
+| `/account/white-label` | Per-partner config page (visible only when `is_partner = true`). Brand name, logo URL, primary/secondary/accent colours, support email/phone, hide-TalkMate-branding toggle (gated to Gold tier). Wired to `/api/white-label`. |
+| `/admin/partners` | Partner management table. Inline edit of tier and commission rate via `/api/admin/partner-update`. Shows referred_count + attributed MRR per partner. |
+| `/admin/make-setup` | Step-by-step Make.com scenario doc with copy-able URL/payload and a one-click **Test connection** button that hits `/api/contacts/upsert/test`. |
+| `/api/contacts/upsert/test` | Admin-only GET that returns the expected payload structure for the `/api/contacts/upsert` endpoint. Used by the Test connection button + Donna's manual checks. |
+| `/api/demo/seed` | Admin-only POST. Seeds the 10 Proxima real-estate sample contacts + per-contact call summaries + pipeline placement. Idempotent. Refuses to run on non-real-estate businesses. |
+| `/api/demo/reset` | Admin-only POST. Deletes contacts whose phone starts with the demo prefix `+61412001`. CASCADE handles contact_calls + contact_pipeline. |
+| Demo banner | Auto-shown on `/contacts` and `/contacts/pipeline` when demo data is present. Admins see a Reset button. |
+| `/api/stripe/summary` | New endpoint feeding the upgraded billing page. Returns plan, payment method last4 + expiry, last 6 invoices, subscription status. Falls back gracefully when Stripe isn't fully wired. |
+| `/api/stripe/cancel` | New endpoint for the cancellation modal. Calls `subscriptions.update(cancel_at_period_end: true)`, persists the reason on the row, and fires a `subscription_cancelled` Make.com event. |
+| `/billing` | Rebuilt. Real plan name + price, real call usage progress (red/amber/green by threshold), real card-on-file display with **Update** button to Stripe Customer Portal, last 6 invoices with PDF download, full cancellation modal with reason capture and "we're sorry to see you go" copy. Already-cancelling state is shown when `cancel_at_period_end = true`. |
+| Onboarding Step 1 | New optional **ABN (optional)** field with helper text and 11-digit format validation (digits only, max 11). Persisted to `businesses.abn` on completion. |
+| Settings → Business Info | New **ABN** field with same validation + a green **✓ Verified** badge when `abn_verified` is true. |
+| `lib/legal-docs.ts` | New `TALKMATE_ABN` constant (currently `TBC`). Terms-of-Service body interpolates it via template literal. Update one place when the real ABN is registered. |
+| Admin home | New section nav (Partners / White Label / Make.com Setup) at the top, plus a **Contacts awaiting name identification** widget grouping NULL-name contacts by business. |
+| Sidebar | New **White Label** entry under Account, visible only when `businesses.is_partner` is true. |
+| Website `/partners` | New **White label TalkMate for your network** section below the referral program. CTA links to `/demo?type=whitelabel`. |
+| Website homepage | Removed `backdrop-filter: blur()` from Nav, DemoCard, and StickyBottomBar (the cause of scroll-frame freezes); promoted the IntegrationsRow marquee to its own GPU layer (`translate3d`/`will-change`); honoured `prefers-reduced-motion`. |
+| Industry pages | Fixed: `INDUSTRY_CRM` keys are underscored (`real_estate`, `professional_services`) but slugs use hyphens. Lookup now normalises before indexing, so all 8 industry pages render their CRM block. |
+
+### Decisions (Session 3)
+
+1. **White-label preview is a public route.** The `/wl-preview/[subdomain]` page is unauthenticated by design — the whole point of the demo is to send Monique a link without making her log in. Anonymous SELECT on `white_label_configs` is gated to `is_active = true` rows via RLS, so only configs explicitly marked active are visible. Inactive/draft configs are owner-only.
+2. **Proxima demo config has `partner_id = NULL`.** It's seeded directly by the migration so the preview link works the moment migration 010 runs, before any real business is registered for Proxima. When Monique signs up, link her business by setting `white_label_configs.partner_id = <her business id>`.
+3. **Hide-TalkMate-branding is Gold-only.** Server-side enforcement in `/api/white-label` — the toggle on `/account/white-label` ignores the value for non-Gold tiers and forces it to false, so the constraint can't be bypassed client-side.
+4. **Demo seeder is gated to real-estate businesses.** Mixing demo real-estate contacts into a non-real-estate account would pollute their CRM and Smart Lists in ways that aren't easily reversible by the prefix-based reset. Refuses with a clear error message.
+5. **Existing onboarding wizard kept at 11 steps.** ABN is added inline to Step 1 (Business Details) above the timezone selector — same pattern Session 1 used for the industry picker — rather than introducing a 12th step. Onboarding flow nav guards stay untouched.
+6. **CRM Health card on the dashboard.** Brief Fix 3 said "show neutral grey when contact count is zero". Implemented as a separate `crmHealthHasContacts` prop that swaps the card to a neutral `—` / "No contacts yet" state. The colour-coded version only renders when there's actual data to compute health from.
+7. **Smart-lists seeder always runs.** Brief Fix 6 was a verification ask — but the existing logic only seeded when zero lists existed, which meant towing accounts seeded with universal-only lists pre-Session 2 never got their towing-specific lists. `seedDefaultSmartLists` is already name-idempotent, so the page now calls it on every visit and back-fills any missing seeds without duplicating.
+8. **T&C banner cache invalidation.** `/api/legal/accept` now calls `revalidatePath('/dashboard')` and the `(portal)` layout so the banner disappears on the next render without requiring `router.refresh()` to land. Belt-and-braces: the client still does push + refresh.
+9. **Stripe cancellation goes through Make.com, not Resend.** The cancellation confirmation email is fired through `postEmailTrigger({ event: 'subscription_cancelled' })` so Donna can edit copy in Make without a code change. New event added to `EmailTriggerEvent` union — Donna will need to add a route for it in the Make scenario.
+10. **Page titles via `metadata.title.template`.** Set on the root layout once. Server-component pages add `export const metadata = { title: '...' }`; client-component pages get a sibling `layout.tsx` with the metadata export. Matches Next 16 conventions and works with Turbopack.
+11. **Homepage scroll fix targeted backdrop-filter, not animations.** The CRM section added in Session 2 was clean — no IntersectionObserver, no animation. The freeze culprit was the fixed-position Nav with `backdrop-filter: blur(12px)` forcing a full-page composite on every scroll frame, compounded by another blur on the Hero's DemoCard and the StickyBottomBar. Removed all three; promoted the marquee to its own GPU layer to keep it animating cheaply. Marquee duration also relaxed from 30s to 60s, halving the per-frame transform delta.
+12. **Demo seeder's "Unknown Caller" entry uses `name: null`.** The brief listed it as an explicit string — but the contacts table stores name as `text` nullable, and the rest of the portal already handles NULL names everywhere (the new "awaiting name identification" admin metric depends on it). Storing the literal string "Unknown Caller" would corrupt that metric.
+
+### Manual handoff (Donna)
+
+1. Run migration 010 in Supabase SQL editor.
+2. Visit `https://app.talkmate.com.au/wl-preview/proxima` from any browser and confirm the Proxima-branded login renders correctly. **This is the URL to show Monique.**
+3. (Optional) Seed demo data in a real-estate test account: as an admin, POST to `/api/demo/seed` with `{ "businessId": "<uuid>" }`. Reset with POST `/api/demo/reset`.
+4. (Optional) When Donna is ready to wire Make.com to `/api/contacts/upsert`, follow the doc at `/admin/make-setup` and use the **Test connection** button to confirm auth.
+5. **No Vapi changes required for Session 3.**
+6. When the Proxima business signs up, link them: `update white_label_configs set partner_id = '<biz_id>' where portal_subdomain = 'proxima'` and flip `businesses.is_partner = true`.
+
+### Build verification (Session 3)
+
+```
+$ npm run build
+✓ Compiled successfully in 11.7s
+✓ Generating static pages using 7 workers (82/82) in 854ms
+```
+
+82 routes built, zero errors. Website rebuilt to 25 routes, zero errors.
+
+### Testing checklist (Session 3)
+
+- [ ] Migration 010 runs without errors
+- [ ] /wl-preview/proxima shows Proxima-branded portal login
+- [ ] Demo data seeds correctly via /api/demo/seed for a real_estate business
+- [ ] Pipeline page shows seeded contacts in correct stages
+- [ ] Smart lists show updated counts after demo data seeded
+- [ ] Welcome back message shows first name (auth metadata) or business name, not the email-local-part
+- [ ] T&C banner disappears immediately after acceptance (no manual refresh)
+- [ ] CRM Health shows neutral state when zero contacts
+- [ ] Towing industry smart lists include Account Clients, Repeat Breakdowns, After Hours
+- [ ] Billing page shows plan, usage, payment method section
+- [ ] ABN field appears in onboarding Step 1 and account settings
+- [ ] Homepage scrolls smoothly without timeout (test on mid-spec hardware)
+- [ ] /partners page (website) has the new **White label TalkMate for your network** section
+- [ ] All page titles are descriptive (e.g. "Contacts — TalkMate")
+- [ ] /admin/partners shows partner management table with inline edit
+- [ ] /admin/white-label shows white label configs
+- [ ] /admin/make-setup shows wiring instructions and the Test connection button works
+- [ ] Cancellation modal cancels the subscription at period end (verified via Stripe dashboard)
 
 ---
 

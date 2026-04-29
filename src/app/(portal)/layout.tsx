@@ -12,7 +12,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, business_type, plan, onboarding_completed, industry')
+    .select('id, name, business_type, plan, onboarding_completed, industry, is_partner')
     .eq('owner_user_id', user.id)
     .single()
 
@@ -71,6 +71,7 @@ export default async function PortalLayout({ children }: { children: React.React
         isPartner={isPartner}
         hasCommandCentre={planConfig.hasCommandCentre}
         hasPipeline={['real_estate', 'trades', 'professional_services'].includes((business.industry as string | null) ?? '')}
+        isWhiteLabelPartner={Boolean((business as { is_partner?: boolean }).is_partner)}
         unseenChangelog={unseenChangelog}
       >
         {children}

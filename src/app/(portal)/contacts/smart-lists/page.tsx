@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { seedDefaultSmartLists, refreshSmartListCounts, type IndustrySlug } from '@/lib/smart-lists'
@@ -6,6 +7,7 @@ import SmartListsClient from './smart-lists-client'
 // Server entry: ensure system lists are seeded for any business that doesn't
 // have them yet (Session 2 brief Part 1 — retroactive seed).
 export const dynamic = 'force-dynamic'
+export const metadata: Metadata = { title: 'Smart Lists' }
 
 export default async function SmartListsPage() {
   const supabase = await createClient()
@@ -15,11 +17,13 @@ export default async function SmartListsPage() {
     .from('businesses').select('id, industry').eq('owner_user_id', user.id).single()
   if (!business) redirect('/register')
 
-  const { data: existing } = await supabase
-    .from('smart_lists').select('id').eq('client_id', business.id).limit(1)
-  if (!existing || existing.length === 0) {
-    const admin = createAdminClient()
-    await seedDefaultSmartLists(admin, business.id, business.industry as IndustrySlug | null)
+  // Always run the (idempotent) seeder — `seedDefaultSmartLists` skips lists
+  // whose names already exist, so this back-fills industry-specific lists
+  // for any business that was seeded before its industry was supported
+  // (e.g. towing accounts seeded with universal-only lists pre-Session 2).
+  const admin = createAdminClient()
+  const seeded = await seedDefaultSmartLists(admin, business.id, business.industry as IndustrySlug | null)
+  if ((seeded.inserted ?? 0) > 0) {
     await refreshSmartListCounts(admin, business.id)
   }
 

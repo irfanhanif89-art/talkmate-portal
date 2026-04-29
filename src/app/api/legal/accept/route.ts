@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import {
   ALL_LEGAL_DOCS, TOS_VERSION, PRIVACY_VERSION, DPA_VERSION,
@@ -86,6 +87,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 })
     }
   }
+
+  // Invalidate cached server data so the dashboard banner disappears
+  // immediately after the user accepts (no manual refresh required).
+  revalidatePath('/dashboard')
+  revalidatePath('/(portal)', 'layout')
 
   return NextResponse.json({ ok: true, acceptedAt, recorded: docsRequested })
 }

@@ -139,12 +139,35 @@ export default function SettingsPage() {
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Business Information</h3>
           <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Used by your AI agent when speaking to callers.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Notification Email', 'notification_email'], ['Website', 'website'], ['Address', 'address'], ['ABN', 'abn']].map(([label, key]) => (
+            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Notification Email', 'notification_email'], ['Website', 'website'], ['Address', 'address']].map(([label, key]) => (
               <div key={key}>
                 <label style={lbl}>{label}</label>
                 <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} style={inp} />
               </div>
             ))}
+            <div>
+              <label style={{ ...lbl, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>ABN</span>
+                {biz.abn_verified === 'true' || biz.abn_verified === true ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E', letterSpacing: '0.05em' }}>
+                    ✓ Verified
+                  </span>
+                ) : null}
+              </label>
+              <input
+                value={biz.abn || ''}
+                onChange={e => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 11)
+                  setBiz(b => ({ ...b, abn: digits }))
+                }}
+                placeholder="11 digit ABN"
+                inputMode="numeric"
+                style={inp}
+              />
+              <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 4 }}>
+                Your Australian Business Number. Used for invoicing.
+              </div>
+            </div>
           </div>
           <button onClick={saveBusiness} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Changes</button>
         </div>

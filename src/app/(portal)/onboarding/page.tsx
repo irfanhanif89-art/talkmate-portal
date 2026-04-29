@@ -309,6 +309,23 @@ export default function OnboardingPage() {
                 ))}
               </div>
               <div style={{ marginTop: 16 }}>
+                <label style={lbl}>ABN (optional)</label>
+                <input
+                  value={(responses.abn as string) || ''}
+                  onChange={e => {
+                    // Strip spaces and limit to 11 digits to keep the format clean.
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 11)
+                    setResponse('abn', digits)
+                  }}
+                  placeholder="11 digit ABN"
+                  inputMode="numeric"
+                  style={inp}
+                />
+                <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 4 }}>
+                  Your Australian Business Number. Used for invoicing.
+                </div>
+              </div>
+              <div style={{ marginTop: 16 }}>
                 <label style={lbl}>Timezone</label>
                 <select value={(responses.timezone as string) || 'Australia/Brisbane'} onChange={e => setResponse('timezone', e.target.value)}
                   style={{ ...inp, appearance: 'auto', cursor: 'pointer' }}>

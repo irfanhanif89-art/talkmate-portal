@@ -1,9 +1,12 @@
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { DashboardClient } from './dashboard-client'
 import { estimateRevenueProtected, daysActiveThisMonth, getBenchmark } from '@/lib/roi'
 import { getPlan } from '@/lib/plan'
 import { pendingDocsForBusiness } from '@/lib/legal-docs'
+
+export const metadata: Metadata = { title: 'Dashboard' }
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -104,9 +107,20 @@ export default async function DashboardPage() {
     { key: 'connect', label: 'Connect your number', done: !!business.talkmate_number, href: '/onboarding' },
   ]
 
+  // Welcome message: prefer the auth user's first name, then fall back to the
+  // business name. We deliberately ignore the email-local-part fallback —
+  // "irfanhanif89" is a worse greeting than the business name.
   const userFirstName = (() => {
-    const raw = (user.user_metadata?.full_name as string) || (user.user_metadata?.name as string) || user.email || ''
-    return raw.includes('@') ? raw.split('@')[0] : raw.split(' ')[0]
+    const fullName = (user.user_metadata?.full_name as string) || (user.user_metadata?.name as string) || ''
+    if (fullName && !fullName.includes('@')) {
+      const first = fullName.trim().split(/\s+/)[0]
+      if (first) return first
+    }
+    if (business.name) {
+      const first = business.name.trim().split(/\s+/)[0]
+      if (first) return first
+    }
+    return ''
   })()
 
   // ROI estimate
@@ -154,6 +168,7 @@ export default async function DashboardPage() {
   const crmHealthPct = (contactsTotal ?? 0) > 0
     ? Math.round(((contactsWithName ?? 0) / (contactsTotal ?? 1)) * 100)
     : 0
+  const crmHealthHasContacts = (contactsTotal ?? 0) > 0
 
   return (
     <DashboardClient
@@ -168,6 +183,7 @@ export default async function DashboardPage() {
       pendingLegalAcceptances={pendingDocs.length}
       contactsThisMonth={contactsThisMonth ?? 0}
       crmHealthPct={crmHealthPct}
+      crmHealthHasContacts={crmHealthHasContacts}
       stats={{ totalMonth, aiResolutionRate, transferredMonth, missedMonth }}
       outcomes={{ resolved: resolvedByAI, transferred: transferredMonth, missed: missedMonth, total: totalMonth }}
       chartData={chartData}

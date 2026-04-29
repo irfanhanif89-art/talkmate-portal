@@ -23,6 +23,7 @@ export type EmailTriggerEvent =
   | 'referral_churned'
   | 'nps_low_score'
   | 'system_alert'
+  | 'subscription_cancelled'
 
 export interface EmailTriggerPayload {
   event: EmailTriggerEvent

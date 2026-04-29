@@ -92,10 +92,16 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
   const recordingDisclosureText = (responses.recordingDisclosureText as string | undefined)
     ?? 'Thank you for calling. This call may be recorded for quality and business purposes.'
 
+  // Pull the optional ABN out of the onboarding responses. Strip non-digits
+  // before persisting so the column always stores the canonical 11-digit form.
+  const abnRaw = typeof responses.abn === 'string' ? responses.abn : ''
+  const abn = abnRaw.replace(/\D/g, '').slice(0, 11)
+
   // Update business — agent pending review, NOT live yet
   await supabase.from('businesses').update({
     onboarding_completed: true,
     ...(industry ? { industry, industry_configured_at: new Date().toISOString() } : {}),
+    ...(abn.length === 11 ? { abn } : {}),
     call_recording_disclosure_enabled: recordingDisclosureEnabled,
     call_recording_disclosure_text: recordingDisclosureText,
     ...(vapiAgentId ? { vapi_agent_id: vapiAgentId, agent_status: 'pending_review', preview_number: PREVIEW_NUMBER } : {}),

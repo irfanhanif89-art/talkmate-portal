@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { ALL_LEGAL_DOCS, pendingDocsForBusiness } from '@/lib/legal-docs'
@@ -7,6 +8,7 @@ import AcceptTermsClient from './accept-terms-client'
 // onboarding before the T&C step existed are redirected here from the
 // dashboard banner. Once they sign, they go back to wherever they were.
 export const dynamic = 'force-dynamic'
+export const metadata: Metadata = { title: 'Accept Updated Terms' }
 
 export default async function AcceptTermsPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const supabase = await createClient()

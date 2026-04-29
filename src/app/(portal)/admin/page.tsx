@@ -1,5 +1,9 @@
+import type { Metadata } from 'next'
+import Link from 'next/link'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+
+export const metadata: Metadata = { title: 'Admin' }
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -23,6 +27,27 @@ export default async function AdminPage() {
   const { count: contactsThisMonth } = await adminClient.from('contacts')
     .select('id', { count: 'exact', head: true }).eq('is_merged', false)
     .gte('first_seen', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
+
+  // "Contacts awaiting name identification" — Session 3 brief Part 8.
+  // Group by business so Irfan can spot clients whose call data quality is low.
+  const { data: nameGapRows } = await adminClient
+    .from('contacts')
+    .select('client_id')
+    .eq('is_merged', false)
+    .is('name', null)
+  const nameGapByBusiness = new Map<string, number>()
+  for (const row of nameGapRows ?? []) {
+    nameGapByBusiness.set(row.client_id as string, (nameGapByBusiness.get(row.client_id as string) ?? 0) + 1)
+  }
+  const nameGapEntries = [...nameGapByBusiness.entries()]
+    .map(([clientId, count]) => ({
+      business_id: clientId,
+      name: businesses?.find(b => b.id === clientId)?.name ?? 'Unknown',
+      count,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+  const totalAwaitingName = nameGapRows?.length ?? 0
 
   // Pipeline health (Session 2 brief Part 8)
   const PIPELINE_INDUSTRIES = ['real_estate', 'trades', 'professional_services']
@@ -107,7 +132,26 @@ export default async function AdminPage() {
 
   return (
     <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 22 }}>Admin</h1>
+      <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 14 }}>Admin</h1>
+
+      {/* Admin section nav */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+        {[
+          { href: '/admin/partners', label: 'Partners' },
+          { href: '/admin/white-label', label: 'White Label' },
+          { href: '/admin/make-setup', label: 'Make.com Setup' },
+        ].map(l => (
+          <Link
+            key={l.href}
+            href={l.href}
+            style={{
+              padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: 'rgba(74,159,232,0.08)', border: '1px solid rgba(74,159,232,0.25)',
+              color: '#4A9FE8', textDecoration: 'none', fontFamily: 'Outfit, sans-serif',
+            }}
+          >{l.label} →</Link>
+        ))}
+      </div>
 
       {/* MRR / Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 22 }}>
@@ -147,6 +191,36 @@ export default async function AdminPage() {
         <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 12 }}>
           Vapi health: {vapiHealth?.fail_count ?? 0} consecutive fails · success streak {vapiHealth?.success_streak ?? 0} · last check {vapiHealth?.last_check ? new Date(vapiHealth.last_check).toLocaleString('en-AU') : 'never'}
         </div>
+      </div>
+
+      {/* Contacts awaiting name (Session 3 brief Part 8) */}
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20, marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Contacts awaiting name identification</div>
+          <span style={{ fontSize: 11, color: '#7BAED4' }}>{totalAwaitingName} total</span>
+        </div>
+        <p style={{ fontSize: 12, color: '#7BAED4', marginBottom: 12, lineHeight: 1.5 }}>
+          Contacts where <code style={{ color: '#E8622A' }}>name IS NULL</code>. High counts here mean the
+          extraction prompt isn&apos;t pulling caller names — worth flagging to the client.
+        </p>
+        {nameGapEntries.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#22C55E' }}>✓ All contacts have a name.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {nameGapEntries.map(e => {
+              const max = nameGapEntries[0]?.count ?? 1
+              return (
+                <div key={e.business_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: 'white', minWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{e.name}</span>
+                  <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${(e.count / max) * 100}%`, height: '100%', background: '#F59E0B', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', minWidth: 30, textAlign: 'right' as const }}>{e.count}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* CRM Overview (Session 1 brief Part 9) */}

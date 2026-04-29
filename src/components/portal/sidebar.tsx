@@ -7,7 +7,7 @@ import { getPlan } from '@/lib/plan'
 import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
-  Lock, LogOut, Shield, X, Users, GitBranch,
+  Lock, LogOut, Shield, X, Users, GitBranch, Palette,
 } from 'lucide-react'
 
 interface Props {
@@ -22,6 +22,7 @@ interface Props {
   contactsTotal?: number
   hasCommandCentre: boolean
   hasPipeline?: boolean
+  isWhiteLabelPartner?: boolean
   isOpenMobile: boolean
   onCloseMobile: () => void
 }
@@ -110,6 +111,7 @@ export default function PortalSidebar(props: Props) {
       items: [
         { href: '/billing', label: 'Billing', icon: CreditCard, show: true },
         { href: '/settings', label: 'Settings', icon: UserIcon, show: true },
+        { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner },
         { href: '/admin', label: 'Admin', icon: Shield, show: props.userRole === 'admin' },
       ],
     },
@@ -226,9 +228,9 @@ export default function PortalSidebar(props: Props) {
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(232,98,42,0.2)', color: '#E8622A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
             {(props.businessName[0] || 'T').toUpperCase()}
           </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.businessName}</div>
-            <div style={{ fontSize: 10, color: '#4A7FBB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.userEmail}</div>
+          <div style={{ minWidth: 0, flex: 1, maxWidth: 160 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{props.businessName}</div>
+            <div title={props.userEmail} style={{ fontSize: 10, color: '#4A7FBB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{props.userEmail}</div>
           </div>
         </div>
 

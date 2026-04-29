@@ -1,7 +1,10 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getPlan } from '@/lib/plan'
 import CommandCentreClient from './command-centre-client'
+
+export const metadata: Metadata = { title: 'Command Centre' }
 
 export default async function CommandCentrePage() {
   const supabase = await createClient()
