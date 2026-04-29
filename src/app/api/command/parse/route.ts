@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { grokJson, GrokError } from '@/lib/grok'
 import { getPlan } from '@/lib/plan'
+import { handleContactLookup, handleContactListQuery, handlePipelineQuery, extractNameFromIntent } from '@/lib/command-crm-handlers'
 
 interface ParsedIntent {
   intent: string
@@ -11,8 +12,8 @@ interface ParsedIntent {
   actionParams?: Record<string, unknown>
 }
 
-const HIGH_RISK = new Set(['send_invoice', 'delete_item', 'update_pricing', 'refund', 'pause_agent', 'resume_agent', 'update_menu', 'update_hours'])
-const SAFE = new Set(['query_analytics', 'get_call_summary', 'get_missed_calls', 'get_busiest_hours'])
+const HIGH_RISK = new Set(['send_invoice', 'delete_item', 'update_pricing', 'refund', 'pause_agent', 'resume_agent', 'update_menu', 'update_hours', 'contact_tag_update'])
+const SAFE = new Set(['query_analytics', 'get_call_summary', 'get_missed_calls', 'get_busiest_hours', 'contact_lookup', 'contact_list_query', 'pipeline_query'])
 
 function buildSystemPrompt(ctx: {
   businessName: string
@@ -37,15 +38,31 @@ You help the business owner manage their TalkMate account via natural language c
 
 ALWAYS respond in this JSON format:
 {
-  "intent": "query_analytics" | "send_invoice" | "update_menu" | "update_hours" | "pause_agent" | "resume_agent" | "get_call_summary" | "get_missed_calls" | "get_busiest_hours" | "unknown",
+  "intent": "query_analytics" | "send_invoice" | "update_menu" | "update_hours" | "pause_agent" | "resume_agent" | "get_call_summary" | "get_missed_calls" | "get_busiest_hours" | "contact_lookup" | "contact_list_query" | "pipeline_query" | "contact_tag_update" | "unknown",
   "requiresConfirmation": true|false,
   "confirmationMessage": "string (shown to user before executing)",
   "responseMessage": "string (friendly response to send back)",
   "actionParams": {}
 }
 
-HIGH RISK actions that ALWAYS require confirmation: send_invoice, delete_item, update_pricing, refund.
-LOW RISK actions that execute immediately: query_analytics, get_call_summary, update_hours, pause_agent.
+CRM intents (Session 2):
+- contact_lookup: "Find Mike", "Who is Sarah", "Has James called before". actionParams: { name: "..." }
+- contact_list_query: "Show me lapsed regulars", "Who are my top callers", "Show me complaints". actionParams: { listName: "..." } (smart-list name guess)
+- pipeline_query: "How many leads in my pipeline", "Who's at Inspection Booked", "Show me hot leads". actionParams: { stage?: "..." }
+- contact_tag_update: "Tag Sarah as VIP", "Mark John as complaint", "Add note to Mike". actionParams: { name: "...", tag?: "...", note?: "..." }
+
+contact_lookup, contact_list_query, pipeline_query are READ-ONLY — execute immediately.
+contact_tag_update is HIGH RISK — always require confirmation.
+
+For list results, format the responseMessage as a clean numbered list optimised for WhatsApp/Telegram:
+"Your top callers (5):
+1. Sarah Chen — 12 calls — last 2 days ago
+2. ..."
+
+If a list returns more than 10 items, show the first 10 and append "...and N more. Open the portal for the full list."
+
+HIGH RISK actions that ALWAYS require confirmation: send_invoice, delete_item, update_pricing, refund, contact_tag_update.
+LOW RISK actions that execute immediately: query_analytics, get_call_summary, contact_lookup, contact_list_query, pipeline_query.
 If you cannot understand the command, ask one clarifying question with intent="unknown".
 Never guess on financial actions. Never execute destructive actions without confirmation.`
 }
@@ -125,6 +142,23 @@ export async function POST(req: Request) {
   const isHighRisk = HIGH_RISK.has(intent)
   const requiresConfirmation = isHighRisk || parsed.requiresConfirmation === true
 
+  // ─ CRM read-only intents: fetch real data and override responseMessage ──
+  let crmResponseOverride: string | null = null
+  try {
+    if (intent === 'contact_lookup') {
+      const name = extractNameFromIntent(parsed.actionParams, message) ?? ''
+      crmResponseOverride = await handleContactLookup(supabase, business.id, name)
+    } else if (intent === 'contact_list_query') {
+      const hint = (parsed.actionParams?.listName as string | undefined) ?? message
+      crmResponseOverride = await handleContactListQuery(supabase, business.id, hint)
+    } else if (intent === 'pipeline_query') {
+      const stage = (parsed.actionParams?.stage as string | undefined) ?? null
+      crmResponseOverride = await handlePipelineQuery(supabase, business.id, stage)
+    }
+  } catch (e) {
+    console.error('[command/parse] CRM handler error', e)
+  }
+
   // ─ Log it ──────────────────────────────────────────────────────────────
   const { data: logRow } = await admin.from('command_logs').insert({
     business_id: business.id,
@@ -152,7 +186,7 @@ export async function POST(req: Request) {
     intent,
     requiresConfirmation,
     confirmationMessage: parsed.confirmationMessage ?? null,
-    responseMessage: parsed.responseMessage,
+    responseMessage: crmResponseOverride ?? parsed.responseMessage,
     responseMs,
   })
 }

@@ -18,6 +18,7 @@ interface Props {
   partnerEarningsThisMonth: number
   isPartner: boolean
   hasCommandCentre: boolean
+  hasPipeline?: boolean
   unseenChangelog: number
   children: React.ReactNode
 }
@@ -50,6 +51,7 @@ export default function PortalShell(props: Props) {
         todayCallCount={props.todayCallCount}
         contactsTotal={props.contactsTotal}
         hasCommandCentre={props.hasCommandCentre}
+        hasPipeline={props.hasPipeline}
         isOpenMobile={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}
       />

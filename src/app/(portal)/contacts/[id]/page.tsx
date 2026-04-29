@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { fetchPipelineStages, hasPipeline } from '@/lib/pipeline'
 import ContactDetailClient from './contact-detail-client'
 
 export const dynamic = 'force-dynamic'
@@ -24,11 +25,23 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
     .eq('contact_id', id)
     .order('call_at', { ascending: false })
 
+  const industry = business.industry as string | null
+  const stages = hasPipeline(industry) ? await fetchPipelineStages(supabase, business.id) : []
+  const { data: pipelineRow } = hasPipeline(industry)
+    ? await supabase
+        .from('contact_pipeline')
+        .select('id, stage_id, entered_at')
+        .eq('contact_id', id)
+        .maybeSingle()
+    : { data: null }
+
   return (
     <ContactDetailClient
       contact={contact}
       calls={calls ?? []}
-      industry={business.industry as string | null}
+      industry={industry}
+      pipelineStages={stages}
+      pipelineRow={pipelineRow ? { stage_id: pipelineRow.stage_id as string, entered_at: pipelineRow.entered_at as string } : null}
     />
   )
 }

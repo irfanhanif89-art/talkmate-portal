@@ -1,8 +1,95 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Session 1
+**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 2 ADDENDUM — Smart lists v2, Pipeline kanban, Contact merge, CRM Command queries
+
+Session 1 set up the data model. Session 2 turned the placeholders into working surfaces:
+
+### Migration
+
+**`supabase/migrations/009_crm_session2_indexes.sql`** — index-only, idempotent. Run once in the Supabase SQL editor:
+
+```bash
+psql "$DATABASE_URL" -f supabase/migrations/009_crm_session2_indexes.sql
+```
+
+GIN index on `contacts.tags`; B-tree indexes on `contacts.call_count`, `contacts.first_seen`, `contacts.last_seen`, plus the two pipeline lookups. No new tables or columns.
+
+### What's new
+
+| Surface | What landed |
+|---|---|
+| `/api/smart-lists/seed` | Retroactively seeds system smart lists for any business that doesn't have them yet. Auto-called by the smart-lists page on first visit. |
+| `/api/smart-lists` (POST + GET) | Create custom lists / list all of them. |
+| `/api/smart-lists/preview` | Live count for the custom-list builder modal. |
+| `/api/contacts/merge` | Merges call history + tags + industry_data, dedupes by phone, marks merged contact `is_merged=true` with `merged_into` pointer. |
+| `/api/contacts/search` | Backs the merge modal — name/phone ilike, RLS-scoped. |
+| `/api/pipeline/seed` | Default stages per industry (real estate / trades / professional services). Idempotent. |
+| `/api/pipeline/move` (POST + DELETE) | Move/add/remove a contact in the pipeline; backs the kanban drag-drop. |
+| `/contacts/smart-lists` | Replaced "None yet" placeholder with system + custom list grids. Auto-seeds on first visit. "Create custom list" button opens builder modal. |
+| `/contacts/smart-lists/[id]` | New detail page — same table layout as the contacts page, pre-filtered. |
+| `/contacts/pipeline` | New kanban board, horizontal scroll, HTML5 drag-drop, urgency colour-coding (green < 7d, amber 7-14d, red 14+d), property-of-interest line for real estate. |
+| Contact detail | Merge modal wired in (replaces the Session 1 placeholder), pipeline-stage widget added, structured industry-data display per industry, call timeline shows tag chips + transcript + "Add note from this call" button. |
+| Sidebar | "Pipeline" added under "Your Agent" — visible only for businesses with `industry IN (real_estate, trades, professional_services)`. |
+| `/api/contacts/upsert` | Auto-movement: real-estate `booking_made` → "Inspection Booked"; first call for real-estate/trades → "New Enquiry". |
+| `/api/command/parse` | New CRM intents (`contact_lookup`, `contact_list_query`, `pipeline_query`, `contact_tag_update`) added to the Grok prompt. Read-only intents resolve real data via `lib/command-crm-handlers.ts` and override `responseMessage` so users see actual contacts/lists, not Grok hallucinations. Tag updates flagged HIGH RISK (require YES/CANCEL confirmation). |
+| Admin panel | New "Pipeline health" widget (real-estate clients, all pipeline clients, contacts in pipeline, stage distribution bar chart) + "Smart list activity" widget (most-populated lists across all clients, lapsed-regulars upsell signal). |
+
+### New libraries
+
+```
+src/lib/smart-list-resolver.ts   — resolveSmartList() executes filter_rules → contacts; describeFilter() for Command output
+src/lib/smart-lists.ts           — universal + per-industry seeds; refreshSmartListCounts() (now backed by the resolver)
+src/lib/pipeline.ts              — PIPELINE_STAGES, hasPipeline(), seedPipelineStages(), fetchPipelineStages()
+src/lib/command-crm-handlers.ts  — handleContactLookup, handleContactListQuery, handlePipelineQuery + name extractor
+```
+
+### New pages and components
+
+```
+src/app/(portal)/contacts/smart-lists/page.tsx           (rebuilt, server-seeds on first visit)
+src/app/(portal)/contacts/smart-lists/smart-lists-client.tsx
+src/app/(portal)/contacts/smart-lists/[id]/page.tsx
+src/app/(portal)/contacts/pipeline/page.tsx
+src/app/(portal)/contacts/pipeline/pipeline-kanban-client.tsx
+
+src/components/portal/custom-list-builder.tsx
+src/components/portal/contact-merge-modal.tsx
+src/components/portal/industry-data-view.tsx
+src/components/portal/pipeline-stage-widget.tsx
+```
+
+### Decisions
+
+1. **Custom-list rule UI is narrow on purpose.** Five high-leverage rule types ship now (`min_call_count`, `first_seen_days`, `last_seen_min_days`, `tag`, plus name/phone "contains" placeholders that no-op in the resolver pending an ilike pass). Industry-specific custom rules are a follow-up — system lists already cover the most common industry cases.
+2. **Smart-list counts use the same code path as the UI.** `refreshSmartListCounts()` calls `resolveSmartList()` so the card count and the detail-page count never disagree.
+3. **Merge keeps the user-supplied "keep" choice** rather than auto-picking the older record. Tags are unioned; `industry_data` is shallow-merged with the kept contact's values winning; `contact_calls` rows are reassigned (not duplicated).
+4. **Pipeline auto-movement is conservative.** Only two rules trigger: real-estate `booking_made` → Inspection Booked, and first-ever call (real-estate or trades) → New Enquiry. Anything else needs explicit drag or "Move to next stage" — avoids unwanted state changes from ambiguous transcripts.
+5. **Pipeline stages seed on first visit to `/contacts/pipeline`,** not on onboarding completion. Avoids creating empty stage rows for businesses whose industry doesn't use a pipeline.
+6. **Command CRM intents bypass Grok's `responseMessage`.** Grok classifies the intent and extracts params; the actual data is fetched server-side and the response text is rebuilt from real DB rows. Guarantees no hallucinated contact lists.
+
+### Manual handoff (Donna)
+
+1. Run migration 009 in Supabase SQL editor.
+2. **(Optional)** Trigger `/api/smart-lists/seed` once per existing business — or simply have the user visit `/contacts/smart-lists` once and the page auto-seeds. Same applies for `/api/pipeline/seed`.
+3. **Make.com — no changes required.** The existing call-logging scenario already calls `/api/contacts/upsert`; pipeline auto-movement and smart-list refresh now happen inside that endpoint.
+4. **Vapi — no changes required.** Command Centre prompt updates go out automatically on each `/api/command/parse` call (built dynamically per request).
+
+### Test pass
+
+- Visit `/contacts/smart-lists` as a towing client → see 5 universal + 3 towing-specific lists with live counts.
+- Click any system list → filtered contacts table.
+- "Create custom list" → builder opens, preview count updates with each rule, save redirects to detail.
+- Contact detail → "Merge with another contact" → 2+ char search → preview side-by-side → confirm.
+- Real-estate client: `/contacts/pipeline` → drag card across columns → toast confirms.
+- Command Centre: "Find Mike" → real lookup response (not Grok-generated). "Show me lapsed regulars" → real list. "Tag Sarah as VIP" → confirmation prompt.
+
+---
 
 This document covers everything Donna needs to ship the new portal build to
 production. All scope items from the master brief that don't have a clean

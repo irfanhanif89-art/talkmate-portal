@@ -28,6 +28,50 @@ interface UpsertRequest {
 const PRICE_KEYWORDS = /\b(price|cost|how much|quote|fee|charge|rate)\b/i
 const UPSELL_ACCEPTED_KEYWORDS = /\b(yes|sure|ok|alright|sounds good|why not|throw it in|add it|go on)\b/i
 
+// Pipeline auto-movement helper (Session 2 brief Part 4).
+// Real estate + trades: first-ever call adds to "New Enquiry".
+// Real estate + booking_made: move from "Qualified" → "Inspection Booked",
+// or add to "Inspection Booked" if no current stage.
+async function maybeUpdatePipeline(
+  admin: ReturnType<typeof import('@/lib/supabase/server').createAdminClient>,
+  clientId: string,
+  contactId: string,
+  industry: string | null,
+  outcome: string | null,
+  isFirstCall: boolean,
+) {
+  if (!industry || !['real_estate', 'trades'].includes(industry)) return
+  const { data: stages } = await admin.from('pipeline_stages').select('id, stage_name').eq('client_id', clientId)
+  if (!stages || stages.length === 0) return // Pipeline hasn't been seeded yet for this business.
+
+  const findStage = (name: string) => stages.find(s => s.stage_name === name)?.id as string | undefined
+
+  const { data: existing } = await admin.from('contact_pipeline')
+    .select('id, stage_id, pipeline_stages(stage_name)').eq('contact_id', contactId).maybeSingle()
+  const existingStageName = (existing as { pipeline_stages?: { stage_name?: string } | null })?.pipeline_stages?.stage_name ?? null
+
+  let targetStageId: string | undefined
+
+  if (industry === 'real_estate' && outcome === 'booking_made' && existingStageName === 'Qualified') {
+    targetStageId = findStage('Inspection Booked')
+  } else if (industry === 'real_estate' && outcome === 'booking_made' && !existing) {
+    targetStageId = findStage('Inspection Booked')
+  } else if (isFirstCall && !existing) {
+    targetStageId = findStage('New Enquiry')
+  }
+
+  if (!targetStageId) return
+  const now = new Date().toISOString()
+  if (existing) {
+    if (existing.stage_id === targetStageId) return
+    await admin.from('contact_pipeline').update({ stage_id: targetStageId, entered_at: now, updated_at: now }).eq('id', existing.id)
+  } else {
+    await admin.from('contact_pipeline').insert({
+      contact_id: contactId, client_id: clientId, stage_id: targetStageId, entered_at: now, updated_at: now,
+    })
+  }
+}
+
 function isAfterHoursAEST(callAt: Date): boolean {
   // 8am-6pm AEST window. Brisbane (no DST): UTC+10.
   const hourUtc = callAt.getUTCHours()
@@ -136,7 +180,10 @@ export async function POST(req: Request) {
     console.error('[contacts/upsert] contact_calls insert', callErr)
   }
 
-  // 6. Refresh smart-list counts in the background; don't block the response.
+  // 6. Pipeline auto-movement (Session 2 brief Part 4).
+  await maybeUpdatePipeline(admin, client_id, contactId, business.industry, body.outcome ?? null, isFirstCall)
+
+  // 7. Refresh smart-list counts in the background; don't block the response.
   refreshSmartListCounts(admin, client_id).catch(e => console.error('[contacts/upsert] smart-list refresh', e))
 
   return NextResponse.json({

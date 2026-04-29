@@ -24,6 +24,38 @@ export default async function AdminPage() {
     .select('id', { count: 'exact', head: true }).eq('is_merged', false)
     .gte('first_seen', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
 
+  // Pipeline health (Session 2 brief Part 8)
+  const PIPELINE_INDUSTRIES = ['real_estate', 'trades', 'professional_services']
+  const realEstateClients = (businesses ?? []).filter(b => b.industry === 'real_estate').length
+  const pipelineClients = (businesses ?? []).filter(b => PIPELINE_INDUSTRIES.includes(b.industry as string)).length
+  const { count: contactsInPipeline } = await adminClient.from('contact_pipeline')
+    .select('id', { count: 'exact', head: true })
+  const { data: pipelineStageRows } = await adminClient.from('contact_pipeline')
+    .select('stage_id, pipeline_stages(stage_name)')
+  const stageDistribution = new Map<string, number>()
+  for (const row of pipelineStageRows ?? []) {
+    const name = ((row as { pipeline_stages?: { stage_name?: string } | null }).pipeline_stages?.stage_name) ?? 'Unknown'
+    stageDistribution.set(name, (stageDistribution.get(name) ?? 0) + 1)
+  }
+  const stageEntries = [...stageDistribution.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+
+  // Smart list activity (Session 2 brief Part 8)
+  const { data: smartListRows } = await adminClient.from('smart_lists')
+    .select('name, contact_count, client_id, businesses(name)')
+    .order('contact_count', { ascending: false })
+    .limit(50)
+  const topLists = (smartListRows ?? [])
+    .filter(r => (r.contact_count ?? 0) > 0)
+    .slice(0, 8)
+    .map(r => ({
+      name: r.name as string,
+      contact_count: r.contact_count as number,
+      business_name: (((r as { businesses?: { name?: string } | null }).businesses)?.name) ?? 'Unknown',
+    }))
+  const lapsedRegularSignal = (smartListRows ?? [])
+    .filter(r => (r.name as string) === 'Lapsed Regulars' && (r.contact_count ?? 0) > 0)
+    .map(r => ({ business_name: (((r as { businesses?: { name?: string } | null }).businesses)?.name) ?? 'Unknown', count: r.contact_count as number }))
+
   const industryBreakdown = (businesses ?? []).reduce<Record<string, number>>((acc, b) => {
     const key = b.industry || 'unconfigured'
     acc[key] = (acc[key] || 0) + 1
@@ -166,6 +198,80 @@ export default async function AdminPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Pipeline health (Session 2 brief Part 8) */}
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20, marginBottom: 22 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 14 }}>Pipeline health</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+          {[
+            { label: 'Real-estate clients', value: realEstateClients, color: '#E8622A' },
+            { label: 'All pipeline clients', value: pipelineClients, color: '#1565C0' },
+            { label: 'Contacts in pipeline', value: contactsInPipeline ?? 0, color: '#22C55E' },
+          ].map(s => (
+            <div key={s.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 11, padding: 14 }}>
+              <div style={{ height: 2, background: s.color, marginBottom: 10, marginLeft: -14, marginRight: -14, marginTop: -14 }} />
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{s.label}</p>
+              <p style={{ fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Average stage distribution</div>
+        {stageEntries.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#7BAED4' }}>No pipeline contacts yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {stageEntries.map(([stage, count]) => {
+              const max = stageEntries[0][1] ?? 1
+              return (
+                <div key={stage} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, color: 'white', minWidth: 160 }}>{stage}</span>
+                  <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: '#E8622A', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'white', minWidth: 24, textAlign: 'right' as const }}>{count}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Smart list activity (Session 2 brief Part 8) */}
+      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20, marginBottom: 22 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 14 }}>Smart list activity</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Most populated lists</div>
+            {topLists.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#7BAED4' }}>No lists with contacts yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {topLists.map((l, i) => (
+                  <div key={`${l.business_name}-${l.name}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                    <span style={{ fontSize: 12, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{l.business_name} · {l.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', flexShrink: 0, marginLeft: 10 }}>{l.contact_count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Upsell signal: Lapsed regulars</div>
+            {lapsedRegularSignal.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#7BAED4' }}>No clients with lapsed regulars right now.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {lapsedRegularSignal.map((s, i) => (
+                  <div key={`${s.business_name}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8 }}>
+                    <span style={{ fontSize: 12, color: 'white' }}>{s.business_name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>{s.count} lapsed</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

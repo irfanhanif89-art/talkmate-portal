@@ -1,9 +1,10 @@
-// Default smart lists per the Session 1 brief Part 4. We seed a set of system
-// lists for every client at industry-selection time. Filter rules are stored
-// as JSON on the smart_lists row and executed at query time by the
-// /contacts list page (rules → Supabase query builder).
+// Smart-list seeds (Session 2 brief Part 1). Universal lists are seeded for
+// every business; industry-specific lists are added on top based on
+// businesses.industry. The seeder is idempotent — it skips any list whose
+// name already exists for the client.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolveSmartList, type FilterRules } from './smart-list-resolver'
 
 export type IndustrySlug =
   | 'restaurants' | 'towing' | 'real_estate' | 'trades'
@@ -12,49 +13,63 @@ export type IndustrySlug =
 export interface SmartListSeed {
   name: string
   description: string
-  filter_rules: Record<string, unknown>
+  filter_rules: FilterRules
   icon?: string
   color?: string
   industry?: IndustrySlug
 }
 
-// Universal lists — seeded for every client regardless of industry.
 const UNIVERSAL: SmartListSeed[] = [
-  { name: 'All Contacts', description: 'Every contact captured by TalkMate.', filter_rules: { all: true }, icon: 'users', color: '#1565C0' },
-  { name: 'New This Week', description: 'Contacts first seen in the last 7 days.', filter_rules: { first_seen_within_days: 7 }, icon: 'sparkles', color: '#22C55E' },
-  { name: 'Repeat Callers', description: 'Contacts with 3 or more calls.', filter_rules: { call_count_min: 3 }, icon: 'repeat', color: '#8B5CF6' },
-  { name: 'Needs Follow-up', description: 'Callers who requested a callback in the last 14 days.', filter_rules: { has_outcome: 'callback_requested', outcome_within_days: 14 }, icon: 'phone', color: '#F59E0B' },
-  { name: 'Complaints', description: 'Contacts tagged as a complaint in the last 30 days.', filter_rules: { has_tag: 'complaint', tag_within_days: 30 }, icon: 'alert-triangle', color: '#EF4444' },
+  { name: 'All Contacts', description: 'Every contact TalkMate has captured', icon: '👥', color: '#1565C0', filter_rules: {} },
+  { name: 'New This Week', description: 'First contact in the last 7 days', icon: '✨', color: '#8B5CF6', filter_rules: { first_seen_days: 7 } },
+  { name: 'Repeat Callers', description: 'Called 3 or more times', icon: '🔄', color: '#E8622A', filter_rules: { min_call_count: 3 } },
+  { name: 'Needs Follow-up', description: 'Callback requested in the last 14 days', icon: '📞', color: '#F59E0B', filter_rules: { outcome: 'callback_requested', outcome_days: 14 } },
+  { name: 'Complaints', description: 'Tagged as complaint in last 30 days', icon: '⚠️', color: '#EF4444', filter_rules: { tag: 'complaint', tag_days: 30 } },
 ]
 
 const INDUSTRY: Record<IndustrySlug, SmartListSeed[]> = {
   restaurants: [
-    { name: 'Regulars', description: '5+ calls in the last 60 days.', filter_rules: { call_count_min: 5, last_seen_within_days: 60 }, icon: 'star', color: '#E8622A' },
-    { name: 'Lapsed Regulars', description: 'Was a regular, no call in 21+ days.', filter_rules: { call_count_min: 5, last_seen_after_days: 21 }, icon: 'clock', color: '#9CA3AF' },
-  ],
-  real_estate: [
-    { name: 'New Enquiries', description: 'First seen this week, looking to buy or rent.', filter_rules: { first_seen_within_days: 7, industry_data: { enquiry_type: ['buy', 'rent'] } }, icon: 'sparkles', color: '#22C55E' },
-    { name: 'Hot Leads', description: 'Pre-approved buyers.', filter_rules: { industry_data: { pre_approved: true } }, icon: 'flame', color: '#E8622A' },
-    { name: 'Stale Leads', description: 'In pipeline but no contact in 14+ days.', filter_rules: { in_pipeline: true, last_seen_after_days: 14 }, icon: 'clock', color: '#9CA3AF' },
-  ],
-  trades: [
-    { name: 'Quote Requested', description: 'Callbacks or pricing enquiries.', filter_rules: { has_outcome: ['callback_requested', 'enquiry_answered'], has_tag: 'price_enquiry' }, icon: 'file-text', color: '#1565C0' },
-    { name: 'Recurring Clients', description: 'Contacts with 3+ calls.', filter_rules: { call_count_min: 3 }, icon: 'repeat', color: '#22C55E' },
+    { name: 'Regulars', description: 'Called 5+ times in last 60 days', icon: '⭐', color: '#22C55E', filter_rules: { min_call_count: 5, days: 60 } },
+    { name: 'Lapsed Regulars', description: 'Was a regular, last call over 21 days ago', icon: '😴', color: '#94A3B8', filter_rules: { was_regular: true, last_seen_min_days: 21 } },
+    { name: 'Delivery Customers', description: 'Tagged as delivery order', icon: '🚗', color: '#3B82F6', filter_rules: { tag: 'delivery' } },
+    { name: 'High Value', description: 'Upsell accepted on last call', icon: '💰', color: '#F59E0B', filter_rules: { tag: 'upsell_accepted' } },
   ],
   towing: [
-    { name: 'Repeat Customers', description: 'Has called more than once.', filter_rules: { call_count_min: 2 }, icon: 'repeat', color: '#22C55E' },
+    { name: 'Account Clients', description: 'Tagged as account client', icon: '🏢', color: '#1565C0', filter_rules: { tag: 'account_client' } },
+    { name: 'Repeat Breakdowns', description: 'Called 2+ times', icon: '🚗', color: '#E8622A', filter_rules: { min_call_count: 2 } },
+    { name: 'After Hours Calls', description: 'Called outside business hours', icon: '🌙', color: '#8B5CF6', filter_rules: { tag: 'after_hours' } },
+  ],
+  real_estate: [
+    { name: 'New Enquiries', description: 'First contact this week, buyer or renter', icon: '🏠', color: '#22C55E', filter_rules: { first_seen_days: 7, industry_tag: 'buy_or_rent' } },
+    { name: 'Hot Leads', description: 'Pre-approved buyers', icon: '🔥', color: '#E8622A', filter_rules: { industry_data_field: 'pre_approved', industry_data_value: true } },
+    { name: 'Inspection Booked', description: 'In inspection booked pipeline stage', icon: '📅', color: '#1565C0', filter_rules: { pipeline_stage: 'Inspection Booked' } },
+    { name: 'Stale Leads', description: 'In pipeline but no contact in 14+ days', icon: '⏰', color: '#94A3B8', filter_rules: { in_pipeline: true, last_seen_min_days: 14 } },
+    { name: 'Sellers', description: 'Enquiry type is sell or appraisal', icon: '🔑', color: '#F59E0B', filter_rules: { industry_data_field: 'enquiry_type', industry_data_value: 'sell' } },
+  ],
+  trades: [
+    { name: 'Quote Requested', description: 'Price enquiry in last 30 days', icon: '📋', color: '#F59E0B', filter_rules: { tag: 'price_enquiry', tag_days: 30 } },
+    { name: 'Recurring Clients', description: 'Called 3+ times', icon: '⭐', color: '#22C55E', filter_rules: { min_call_count: 3 } },
+    { name: 'Emergency Jobs', description: 'Tagged as urgent', icon: '🚨', color: '#EF4444', filter_rules: { tag: 'urgent' } },
   ],
   healthcare: [
-    { name: 'New Patients', description: 'First seen in the last 14 days.', filter_rules: { first_seen_within_days: 14 }, icon: 'sparkles', color: '#22C55E' },
+    { name: 'Recent Patients', description: 'First contact in last 30 days', icon: '🏥', color: '#22C55E', filter_rules: { first_seen_days: 30 } },
+    { name: 'Lapsed Patients', description: 'No contact in 42+ days', icon: '📋', color: '#94A3B8', filter_rules: { last_seen_min_days: 42 } },
+    { name: 'Appointment Bookings', description: 'Outcome was booking made', icon: '📅', color: '#1565C0', filter_rules: { outcome: 'booking_made' } },
   ],
   ndis: [
-    { name: 'Active Participants', description: '3+ calls in the last 60 days.', filter_rules: { call_count_min: 3, last_seen_within_days: 60 }, icon: 'users', color: '#1565C0' },
+    { name: 'Participants', description: 'Tagged as participant', icon: '💙', color: '#1565C0', filter_rules: { tag: 'participant' } },
+    { name: 'Support Coordinators', description: 'Tagged as coordinator', icon: '👤', color: '#8B5CF6', filter_rules: { tag: 'coordinator' } },
+    { name: 'New Enquiries', description: 'First contact this week', icon: '✨', color: '#22C55E', filter_rules: { first_seen_days: 7 } },
   ],
   retail: [
-    { name: 'Loyal Customers', description: '5+ calls in the last 90 days.', filter_rules: { call_count_min: 5, last_seen_within_days: 90 }, icon: 'star', color: '#E8622A' },
+    { name: 'Repeat Customers', description: 'Called 3+ times', icon: '⭐', color: '#22C55E', filter_rules: { min_call_count: 3 } },
+    { name: 'Stock Enquiries', description: 'Tagged as stock enquiry', icon: '📦', color: '#1565C0', filter_rules: { tag: 'stock_enquiry' } },
+    { name: 'Complaints', description: 'Tagged as complaint', icon: '⚠️', color: '#EF4444', filter_rules: { tag: 'complaint' } },
   ],
   professional_services: [
-    { name: 'Active Clients', description: '3+ calls in the last 90 days.', filter_rules: { call_count_min: 3, last_seen_within_days: 90 }, icon: 'briefcase', color: '#1565C0' },
+    { name: 'New Enquiries', description: 'First contact this week', icon: '✨', color: '#22C55E', filter_rules: { first_seen_days: 7 } },
+    { name: 'Unconverted Leads', description: 'Enquiry but no follow-up booking', icon: '📋', color: '#F59E0B', filter_rules: { outcome: 'enquiry_answered', no_followup: true } },
+    { name: 'Existing Clients', description: 'Called 2+ times', icon: '⭐', color: '#1565C0', filter_rules: { min_call_count: 2 } },
   ],
   other: [],
 }
@@ -96,30 +111,14 @@ export async function seedDefaultSmartLists(
   return { inserted: toInsert.length }
 }
 
-// Refresh contact_count + last_refreshed_at for the system smart lists of a
-// given client. Cheap counts only — no full contact materialisation.
+// Refresh contact_count + last_refreshed_at on every smart list for a client
+// using resolveSmartList so the count exactly matches what the UI shows.
 export async function refreshSmartListCounts(admin: SupabaseClient, clientId: string) {
   const { data: lists } = await admin.from('smart_lists').select('id, filter_rules').eq('client_id', clientId)
   if (!lists) return
-
   const now = new Date().toISOString()
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-
   for (const list of lists) {
-    const rules = (list.filter_rules ?? {}) as Record<string, unknown>
-    let q = admin.from('contacts').select('id', { count: 'exact', head: true }).eq('client_id', clientId).eq('is_merged', false)
-
-    if (rules.first_seen_within_days === 7) q = q.gte('first_seen', sevenDaysAgo)
-    if (rules.first_seen_within_days === 14) q = q.gte('first_seen', fourteenDaysAgo)
-    if (rules.last_seen_within_days === 60) q = q.gte('last_seen', new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
-    if (rules.last_seen_after_days === 14) q = q.lte('last_seen', fourteenDaysAgo)
-    if (rules.last_seen_after_days === 21) q = q.lte('last_seen', new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString())
-    if (typeof rules.call_count_min === 'number') q = q.gte('call_count', rules.call_count_min as number)
-    if (rules.has_tag === 'complaint') q = q.contains('tags', ['complaint']).gte('updated_at', thirtyDaysAgo)
-
-    const { count } = await q
-    await admin.from('smart_lists').update({ contact_count: count ?? 0, last_refreshed_at: now }).eq('id', list.id)
+    const { total } = await resolveSmartList(admin, clientId, (list.filter_rules ?? {}) as FilterRules, { limit: 1 })
+    await admin.from('smart_lists').update({ contact_count: total, last_refreshed_at: now }).eq('id', list.id)
   }
 }

@@ -3,7 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, Plus, X, Save, Trash2, GitMerge } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, X, Save, Trash2, GitMerge, StickyNote } from 'lucide-react'
+import ContactMergeModal from '@/components/portal/contact-merge-modal'
+import IndustryDataView from '@/components/portal/industry-data-view'
+import PipelineStageWidget, { type PipelineStage, type PipelineRow } from '@/components/portal/pipeline-stage-widget'
 
 interface Contact {
   id: string
@@ -50,13 +53,16 @@ function fmtDuration(s: number | null): string {
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
 }
 
-export default function ContactDetailClient({ contact: initial, calls, industry }: {
+export default function ContactDetailClient({ contact: initial, calls, industry, pipelineStages = [], pipelineRow = null }: {
   contact: Contact
   calls: CallRow[]
   industry: string | null
+  pipelineStages?: PipelineStage[]
+  pipelineRow?: PipelineRow | null
 }) {
   const router = useRouter()
   const [contact, setContact] = useState<Contact>(initial)
+  const [mergeOpen, setMergeOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(contact.name ?? '')
   const [email, setEmail] = useState(contact.email ?? '')
@@ -199,24 +205,32 @@ export default function ContactDetailClient({ contact: initial, calls, industry 
             />
           </div>
 
-          {/* Industry-specific fields */}
+          {/* Pipeline stage widget (Session 2 brief Part 7) */}
+          {pipelineStages.length > 0 && (
+            <PipelineStageWidget contactId={contact.id} stages={pipelineStages} current={pipelineRow} />
+          )}
+
+          {/* Industry-specific fields — structured display per industry */}
           {industry && Object.keys(contact.industry_data ?? {}).length > 0 && (
             <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-                Industry data ({industry.replace(/_/g, ' ')})
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
+                {industry.replace(/_/g, ' ')} details
               </div>
-              <pre style={{
-                background: '#071829', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 9, padding: 14,
-                fontSize: 12, color: '#7BAED4', fontFamily: 'monospace', lineHeight: 1.7,
-                margin: 0, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const,
-              }}>{JSON.stringify(contact.industry_data, null, 2)}</pre>
+              <IndustryDataView industry={industry} data={contact.industry_data} />
             </div>
           )}
 
-          {/* Merge button */}
-          <button onClick={() => alert('Merge UI coming in Session 2 — contacts are still de-duplicated by phone automatically.')} style={{ ...ghostBtn, justifyContent: 'center', padding: '12px 16px' }}>
+          {/* Merge button (Session 2 brief Part 3) */}
+          <button onClick={() => setMergeOpen(true)} style={{ ...ghostBtn, justifyContent: 'center', padding: '12px 16px' }}>
             <GitMerge size={14} /> Merge with another contact
           </button>
+
+          <ContactMergeModal
+            open={mergeOpen}
+            currentContact={{ id: contact.id, name: contact.name, phone: contact.phone, call_count: contact.call_count, last_seen: contact.last_seen, tags: contact.tags }}
+            onClose={() => setMergeOpen(false)}
+            onMerged={() => { setMergeOpen(false); router.push('/contacts'); router.refresh() }}
+          />
         </div>
 
         {/* RIGHT */}
@@ -237,16 +251,33 @@ export default function ContactDetailClient({ contact: initial, calls, industry 
                       <span style={{ fontSize: 11, color: '#7BAED4' }}>{fmtDuration(c.duration_seconds)}</span>
                       {expandedCallId === c.id ? <ChevronUp size={14} color="#4A7FBB" /> : <ChevronDown size={14} color="#4A7FBB" />}
                     </div>
-                    {c.outcome && (
-                      <span style={{ display: 'inline-block', marginTop: 6, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E', textTransform: 'capitalize' as const }}>
-                        {c.outcome.replace(/_/g, ' ')}
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
+                      {c.outcome && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E', textTransform: 'capitalize' as const }}>
+                          {c.outcome.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                      {(c.tags_applied ?? []).slice(0, 4).map(t => (
+                        <span key={t} style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(74,159,232,0.12)', color: '#4A9FE8', textTransform: 'capitalize' as const }}>
+                          {t.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
                     {c.summary && <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 6, lineHeight: 1.5 }}>{c.summary}</div>}
                   </button>
-                  {expandedCallId === c.id && c.transcript && (
+                  {expandedCallId === c.id && (
                     <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: 14, background: '#061322' }}>
-                      <pre style={{ fontSize: 12, color: '#7BAED4', fontFamily: 'inherit', margin: 0, whiteSpace: 'pre-wrap' as const, lineHeight: 1.7 }}>{c.transcript}</pre>
+                      {c.transcript ? (
+                        <pre style={{ fontSize: 12, color: '#7BAED4', fontFamily: 'inherit', margin: 0, whiteSpace: 'pre-wrap' as const, lineHeight: 1.7, marginBottom: 10 }}>{c.transcript}</pre>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 10, fontStyle: 'italic' }}>No transcript captured for this call.</div>
+                      )}
+                      <button
+                        onClick={() => setNotes(n => `${n}${n ? '\n\n' : ''}[${fmtDate(c.call_at)}] ${c.summary ?? c.outcome ?? 'Call note'}`)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', background: 'rgba(74,159,232,0.1)', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.25)', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                      >
+                        <StickyNote size={11} /> Add note from this call
+                      </button>
                     </div>
                   )}
                 </div>
