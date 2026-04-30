@@ -1,6 +1,31 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+async function checkHasActiveSub(userId: string): Promise<boolean> {
+  try {
+    const bizRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=id`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    )
+    const bizData: { id: string }[] = await bizRes.json()
+    if (!Array.isArray(bizData) || bizData.length === 0) return false
+
+    const ids = bizData.map(b => b.id).join(',')
+    const subRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids})&status=in.(active,trialing)&select=status&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    )
+    const subData: { status: string }[] = await subRes.json()
+    return Array.isArray(subData) && subData.length > 0
+  } catch {
+    // If check fails, fail OPEN — let them through rather than cause a redirect loop
+    return true
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -21,84 +46,52 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: must call getUser() to refresh session
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+
+  // Pages that require login AND an active subscription
   const protectedPaths = [
     '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
     '/settings', '/billing', '/admin', '/onboarding', '/contacts',
     '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
   ]
-  // Admin approve page is accessible without subscription (Irfan reviewing agents)
+
+  // Pages that require login but NOT a subscription
+  const authOnlyPaths = ['/subscribe']
+
+  // Public auth pages (logged-in users should not see these)
+  const guestOnlyPaths = ['/login', '/register', '/verify-email']
+
   const isAdminApprove = path.startsWith('/admin/approve')
   const isProtected = protectedPaths.some(p => path.startsWith(p))
-  const isAuthPage = path === '/login' || path === '/register' || path === '/verify-email'
+  const isAuthOnly = authOnlyPaths.some(p => path.startsWith(p))
+  const isGuestOnly = guestOnlyPaths.includes(path)
 
-  if (!user && isProtected) {
-    const redirectUrl = new URL('/login', request.url)
-    const redirectResponse = NextResponse.redirect(redirectUrl)
-    // Copy all cookies from supabaseResponse to the redirect
-    supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value)
-    })
-    return redirectResponse
+  function redirect(to: string) {
+    const url = new URL(to, request.url)
+    const res = NextResponse.redirect(url)
+    supabaseResponse.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value))
+    return res
   }
 
-  if (user && isAuthPage) {
-    // Check if user has an active subscription - if not, send to /subscribe not /dashboard
-    let hasSub = false
-    try {
-      const bizRes = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${user.id}&select=id`,
-        { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
-      )
-      const bizData: { id: string }[] = await bizRes.json()
-      if (bizData.length > 0) {
-        const ids = bizData.map(b => b.id).join(',')
-        const subRes = await fetch(
-          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids})&status=in.(active,trialing)&select=status&limit=1`,
-          { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
-        )
-        const subData: { status: string }[] = await subRes.json()
-        hasSub = subData.length > 0
-      }
-    } catch {}
-    const redirectUrl = new URL(hasSub ? '/dashboard' : '/subscribe', request.url)
-    const redirectResponse = NextResponse.redirect(redirectUrl)
-    supabaseResponse.cookies.getAll().forEach(cookie => {
-      redirectResponse.cookies.set(cookie.name, cookie.value)
-    })
-    return redirectResponse
+  // Not logged in → send to login
+  if (!user && (isProtected || isAuthOnly)) {
+    return redirect('/login')
   }
 
-  // Subscription gate: authenticated users on protected paths must have an active subscription.
-  // /onboarding is excluded so users can complete setup immediately after payment
-  // (the webhook may not have fired yet when Stripe redirects them back).
+  // Logged in on a guest-only page → check sub and send to dashboard or subscribe
+  if (user && isGuestOnly) {
+    const hasSub = await checkHasActiveSub(user.id)
+    return redirect(hasSub ? '/dashboard' : '/subscribe')
+  }
+
+  // Logged in on a protected path → must have active sub (except /onboarding and admin/approve)
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
-    try {
-      const bizRes2 = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${user.id}&select=id`,
-        { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
-      )
-      const bizData2: { id: string }[] = await bizRes2.json()
-      if (bizData2.length > 0) {
-        const ids2 = bizData2.map(b => b.id).join(',')
-        const subRes2 = await fetch(
-          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids2})&status=in.(active,trialing)&select=status&limit=1`,
-          { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
-        )
-        const subData2: { status: string }[] = await subRes2.json()
-        if (subData2.length === 0) {
-          const redirectUrl = new URL('/subscribe', request.url)
-          const redirectResponse = NextResponse.redirect(redirectUrl)
-          supabaseResponse.cookies.getAll().forEach(cookie => {
-            redirectResponse.cookies.set(cookie.name, cookie.value)
-          })
-          return redirectResponse
-        }
-      }
-    } catch {}
+    const hasSub = await checkHasActiveSub(user.id)
+    if (!hasSub) {
+      return redirect('/subscribe')
+    }
   }
 
   return supabaseResponse
