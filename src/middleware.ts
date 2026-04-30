@@ -47,10 +47,11 @@ export async function middleware(request: NextRequest) {
 
   if (user && isAuthPage) {
     // Check if user has an active subscription - if not, send to /subscribe not /dashboard
-    const { data: biz } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+    const { data: bizList } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id)
     let hasSub = false
-    if (biz) {
-      const { data: sub } = await supabase.from('subscriptions').select('status').eq('business_id', biz.id).in('status', ['active', 'trialing']).maybeSingle()
+    if (bizList && bizList.length > 0) {
+      const bizIds = bizList.map((b: { id: string }) => b.id)
+      const { data: sub } = await supabase.from('subscriptions').select('status').in('business_id', bizIds).in('status', ['active', 'trialing']).maybeSingle()
       hasSub = !!sub
     }
     const redirectUrl = new URL(hasSub ? '/dashboard' : '/subscribe', request.url)
@@ -65,20 +66,10 @@ export async function middleware(request: NextRequest) {
   // /onboarding is excluded so users can complete setup immediately after payment
   // (the webhook may not have fired yet when Stripe redirects them back).
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
-    const { data: biz } = await supabase
-      .from('businesses')
-      .select('id')
-      .eq('owner_user_id', user.id)
-      .single()
-
-    if (biz) {
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('status')
-        .eq('business_id', biz.id)
-        .in('status', ['active', 'trialing'])
-        .maybeSingle()
-
+    const { data: bizList2 } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id)
+    if (bizList2 && bizList2.length > 0) {
+      const bizIds2 = bizList2.map((b: { id: string }) => b.id)
+      const { data: sub } = await supabase.from('subscriptions').select('status').in('business_id', bizIds2).in('status', ['active', 'trialing']).maybeSingle()
       if (!sub) {
         const redirectUrl = new URL('/subscribe', request.url)
         const redirectResponse = NextResponse.redirect(redirectUrl)
