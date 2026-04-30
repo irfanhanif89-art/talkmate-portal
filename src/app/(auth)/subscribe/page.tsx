@@ -1,12 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { loadStripe } from '@stripe/stripe-js'
+import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js'
+
+const stripePromise = loadStripe('pk_live_51NbbW7CzrOLgF5MUozZxFYByT5Pd71yoSnv4aVcPb9c0uRRyvD36q5jvijBNk3tJ9iEXnp1PVCveDhE1fjKGJba00zFkyvFpQ')
 
 type Plan = {
   name: string
   price: number
   planKey: string
-  stripeUrl: string
   description: string
   features: string[]
   highlight: boolean
@@ -19,7 +22,6 @@ const PLANS: Plan[] = [
     name: 'Starter',
     price: 299,
     planKey: 'starter',
-    stripeUrl: 'https://buy.stripe.com/test_28E9AS5djfkA0sv3ypd3i00',
     description: 'For single-location businesses that want to stop missing calls.',
     features: [
       '1 location',
@@ -38,7 +40,6 @@ const PLANS: Plan[] = [
     name: 'Growth',
     price: 499,
     planKey: 'growth',
-    stripeUrl: 'https://buy.stripe.com/test_00w14m9tz2xO1wz3ypd3i02',
     description: 'For businesses ready to go further.',
     features: [
       'Everything in Starter',
@@ -57,7 +58,6 @@ const PLANS: Plan[] = [
     name: 'Pro',
     price: 799,
     planKey: 'pro',
-    stripeUrl: 'https://buy.stripe.com/test_7sYdR8axD6O44ILfh7d3i01',
     description: 'Built for multi-location and high-volume operators.',
     features: [
       'Everything in Growth',
@@ -80,7 +80,43 @@ const GUARANTEES = [
 ]
 
 export default function SubscribePage() {
-  const [loadingPlan] = useState<string | null>(null)
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
+  const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleChoosePlan = async (planKey: string) => {
+    setLoading(true)
+    setError(null)
+    setSelectedPlan(planKey)
+
+    try {
+      const res = await fetch('/api/stripe/embedded-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planKey }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to create checkout session')
+      }
+
+      const { clientSecret: secret } = await res.json()
+      setClientSecret(secret)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+      setSelectedPlan(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClose = () => {
+    setSelectedPlan(null)
+    setClientSecret(null)
+    setError(null)
+  }
 
   return (
     <div style={{
@@ -118,6 +154,23 @@ export default function SubscribePage() {
         14-day money-back guarantee · No setup fees · Cancel anytime
       </p>
 
+      {error && (
+        <div style={{
+          background: 'rgba(232,98,42,0.15)',
+          border: '1px solid rgba(232,98,42,0.4)',
+          borderRadius: 8,
+          padding: '10px 16px',
+          marginBottom: 20,
+          fontSize: 13,
+          color: '#E8622A',
+          maxWidth: 480,
+          width: '100%',
+          boxSizing: 'border-box',
+        }}>
+          {error}
+        </div>
+      )}
+
       {/* Cards */}
       <div style={{
         display: 'flex',
@@ -127,7 +180,7 @@ export default function SubscribePage() {
         maxWidth: 480,
       }}>
         {PLANS.map((plan) => {
-          const isLoading = loadingPlan === plan.name
+          const isLoading = loading && selectedPlan === plan.planKey
 
           return (
             <div
@@ -190,8 +243,9 @@ export default function SubscribePage() {
               </div>
 
               {/* CTA */}
-              <a
-                href={plan.stripeUrl}
+              <button
+                onClick={() => handleChoosePlan(plan.planKey)}
+                disabled={loading}
                 style={{
                   display: 'block',
                   width: '100%',
@@ -203,13 +257,14 @@ export default function SubscribePage() {
                   fontWeight: 700,
                   fontSize: 14,
                   textAlign: 'center',
-                  textDecoration: 'none',
                   fontFamily: 'inherit',
                   boxSizing: 'border-box',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading && !isLoading ? 0.6 : 1,
                 }}
               >
-                {isLoading ? 'Redirecting...' : plan.buttonLabel}
-              </a>
+                {isLoading ? 'Loading...' : plan.buttonLabel}
+              </button>
             </div>
           )
         })}
@@ -242,6 +297,55 @@ export default function SubscribePage() {
         Wrong account?{' '}
         <a href="/api/auth/signout" style={{ color: '#4A7FBB', textDecoration: 'underline' }}>Log out</a>
       </p>
+
+      {/* Embedded checkout overlay */}
+      {clientSecret && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          background: 'rgba(0,0,0,0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <div style={{ position: 'relative', maxWidth: 600, width: '100%', margin: '0 20px' }}>
+            {/* Close button */}
+            <button
+              onClick={handleClose}
+              style={{
+                position: 'absolute',
+                top: -40,
+                right: 0,
+                background: 'transparent',
+                border: 'none',
+                color: 'white',
+                fontSize: 28,
+                cursor: 'pointer',
+                lineHeight: 1,
+                padding: '4px 8px',
+                fontFamily: 'inherit',
+              }}
+              aria-label="Close checkout"
+            >
+              ×
+            </button>
+
+            <div style={{
+              maxWidth: 600,
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              borderRadius: 16,
+              padding: 0,
+            }}>
+              <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret }}>
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
