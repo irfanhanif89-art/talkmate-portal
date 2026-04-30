@@ -1,21 +1,20 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Sends alert via Twilio SMS (falls back to Telegram bot if SMS fails)
 async function sendAlert(message: string) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID!
   const authToken = process.env.TWILIO_AUTH_TOKEN!
 
   // SMS to Irfan's mobile
-  const body = new URLSearchParams({
-    From: process.env.TWILIO_PHONE_NUMBER || '+61468024020',
-    To: process.env.IRFAN_MOBILE || '+61422613708',
-    Body: message,
-  })
-
   try {
+    const body = new URLSearchParams({
+      From: process.env.TWILIO_PHONE_NUMBER || '+61468024020',
+      To: process.env.IRFAN_MOBILE || '+61422613708',
+      Body: message,
+    })
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
@@ -27,17 +26,13 @@ async function sendAlert(message: string) {
         body: body.toString(),
       }
     )
-    if (!res.ok) {
-      const err = await res.text()
-      console.error('[health-monitor] Twilio SMS error:', err)
-    } else {
-      console.log('[health-monitor] SMS alert sent')
-    }
+    if (!res.ok) console.error('[health-monitor] SMS error:', await res.text())
+    else console.log('[health-monitor] SMS alert sent')
   } catch (e) {
-    console.error('[health-monitor] Failed to send SMS:', e)
+    console.error('[health-monitor] SMS failed:', e)
   }
 
-  // WhatsApp to Irfan's WhatsApp number
+  // WhatsApp
   try {
     const waBody = new URLSearchParams({
       From: `whatsapp:+61468024020`,
@@ -55,64 +50,82 @@ async function sendAlert(message: string) {
         body: waBody.toString(),
       }
     )
-    if (!waRes.ok) {
-      console.error('[health-monitor] Twilio WhatsApp error:', await waRes.text())
-    } else {
-      console.log('[health-monitor] WhatsApp alert sent')
-    }
+    if (!waRes.ok) console.error('[health-monitor] WhatsApp error:', await waRes.text())
+    else console.log('[health-monitor] WhatsApp alert sent')
   } catch (e) {
-    console.error('[health-monitor] Failed to send WhatsApp alert:', e)
+    console.error('[health-monitor] WhatsApp failed:', e)
   }
 
-  // Telegram as final backup
+  // Telegram backup
   try {
-    const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
-    const chatId = '7809273812'
-    await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+    const token = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message }),
+      body: JSON.stringify({ chat_id: '7809273812', text: message }),
     })
     console.log('[health-monitor] Telegram alert sent')
   } catch (e) {
-    console.error('[health-monitor] Failed to send Telegram alert:', e)
+    console.error('[health-monitor] Telegram failed:', e)
   }
 }
 
 export async function GET(request: Request) {
-  // Verify this is called by Vercel Cron
   const authHeader = request.headers.get('authorization')
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
+  const timestamp = new Date().toISOString()
+  const checks: Record<string, boolean> = {}
 
-  let health: { status: string; checks: Record<string, boolean>; timestamp: string }
+  // Check 1: Supabase — direct DB query (no self-call)
   try {
-    const res = await fetch(`${appUrl}/api/health`, {
-      signal: AbortSignal.timeout(8000),
-    })
-    health = await res.json()
-  } catch {
-    const timestamp = new Date().toISOString()
-    await sendAlert(
-      `TalkMate ALERT: Health endpoint unreachable (full outage). Time: ${timestamp}. Check app.talkmate.com.au immediately.`
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    return NextResponse.json({ alerted: true, reason: 'health endpoint unreachable' })
+    const { error } = await supabase.from('businesses').select('id').limit(1)
+    checks.database = !error
+  } catch {
+    checks.database = false
   }
 
-  if (health.status !== 'ok') {
-    const failing = Object.entries(health.checks)
-      .filter(([, ok]) => !ok)
-      .map(([svc]) => svc)
-      .join(', ')
+  // Check 2: Vapi — external API ping
+  try {
+    const res = await fetch('https://api.vapi.ai/assistant?limit=1', {
+      headers: { Authorization: `Bearer ${process.env.VAPI_API_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    })
+    checks.vapi = res.ok
+  } catch {
+    checks.vapi = false
+  }
 
-    const message = `TalkMate ALERT: ${failing} is down. Time: ${health.timestamp}. Check app.talkmate.com.au immediately.`
+  // Check 3: Stripe — external API ping
+  try {
+    const res = await fetch('https://api.stripe.com/v1/customers?limit=1', {
+      headers: {
+        Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      },
+      signal: AbortSignal.timeout(5000),
+    })
+    checks.stripe = res.ok
+  } catch {
+    checks.stripe = false
+  }
+
+  const failing = Object.entries(checks)
+    .filter(([, ok]) => !ok)
+    .map(([svc]) => svc)
+
+  if (failing.length > 0) {
+    const message = `TalkMate ALERT: ${failing.join(', ')} is down. Time: ${timestamp}. Check app.talkmate.com.au immediately.`
     await sendAlert(message)
-    return NextResponse.json({ alerted: true, failing, timestamp: health.timestamp })
+    return NextResponse.json({ alerted: true, failing, timestamp })
   }
 
   // All good — silent exit
-  return NextResponse.json({ alerted: false, status: 'ok', timestamp: health.timestamp })
+  console.log('[health-monitor] All checks passed:', timestamp)
+  return NextResponse.json({ alerted: false, status: 'ok', checks, timestamp })
 }
