@@ -11,7 +11,7 @@ async function sendAlert(message: string) {
   // SMS to Irfan's mobile
   const body = new URLSearchParams({
     From: process.env.TWILIO_PHONE_NUMBER || '+61468024020',
-    To: process.env.IRFAN_MOBILE || '+61468024020', // Set IRFAN_MOBILE in Vercel env
+    To: process.env.IRFAN_MOBILE || '+61422613708',
     Body: message,
   })
 
@@ -37,7 +37,34 @@ async function sendAlert(message: string) {
     console.error('[health-monitor] Failed to send SMS:', e)
   }
 
-  // Also notify via Telegram (OpenClaw bot) as a reliable backup
+  // WhatsApp to Irfan's WhatsApp number
+  try {
+    const waBody = new URLSearchParams({
+      From: `whatsapp:+61468024020`,
+      To: `whatsapp:${process.env.IRFAN_WHATSAPP || '+61450749863'}`,
+      Body: message,
+    })
+    const waRes = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: waBody.toString(),
+      }
+    )
+    if (!waRes.ok) {
+      console.error('[health-monitor] Twilio WhatsApp error:', await waRes.text())
+    } else {
+      console.log('[health-monitor] WhatsApp alert sent')
+    }
+  } catch (e) {
+    console.error('[health-monitor] Failed to send WhatsApp alert:', e)
+  }
+
+  // Telegram as final backup
   try {
     const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
     const chatId = '7809273812'
