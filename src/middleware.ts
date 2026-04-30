@@ -47,13 +47,23 @@ export async function middleware(request: NextRequest) {
 
   if (user && isAuthPage) {
     // Check if user has an active subscription - if not, send to /subscribe not /dashboard
-    const { data: bizList } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id)
     let hasSub = false
-    if (bizList && bizList.length > 0) {
-      const bizIds = bizList.map((b: { id: string }) => b.id)
-      const { data: sub } = await supabase.from('subscriptions').select('status').in('business_id', bizIds).in('status', ['active', 'trialing']).maybeSingle()
-      hasSub = !!sub
-    }
+    try {
+      const bizRes = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${user.id}&select=id`,
+        { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
+      )
+      const bizData: { id: string }[] = await bizRes.json()
+      if (bizData.length > 0) {
+        const ids = bizData.map(b => b.id).join(',')
+        const subRes = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids})&status=in.(active,trialing)&select=status&limit=1`,
+          { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
+        )
+        const subData: { status: string }[] = await subRes.json()
+        hasSub = subData.length > 0
+      }
+    } catch {}
     const redirectUrl = new URL(hasSub ? '/dashboard' : '/subscribe', request.url)
     const redirectResponse = NextResponse.redirect(redirectUrl)
     supabaseResponse.cookies.getAll().forEach(cookie => {
@@ -66,19 +76,29 @@ export async function middleware(request: NextRequest) {
   // /onboarding is excluded so users can complete setup immediately after payment
   // (the webhook may not have fired yet when Stripe redirects them back).
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
-    const { data: bizList2 } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id)
-    if (bizList2 && bizList2.length > 0) {
-      const bizIds2 = bizList2.map((b: { id: string }) => b.id)
-      const { data: sub } = await supabase.from('subscriptions').select('status').in('business_id', bizIds2).in('status', ['active', 'trialing']).maybeSingle()
-      if (!sub) {
-        const redirectUrl = new URL('/subscribe', request.url)
-        const redirectResponse = NextResponse.redirect(redirectUrl)
-        supabaseResponse.cookies.getAll().forEach(cookie => {
-          redirectResponse.cookies.set(cookie.name, cookie.value)
-        })
-        return redirectResponse
+    try {
+      const bizRes2 = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${user.id}&select=id`,
+        { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
+      )
+      const bizData2: { id: string }[] = await bizRes2.json()
+      if (bizData2.length > 0) {
+        const ids2 = bizData2.map(b => b.id).join(',')
+        const subRes2 = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids2})&status=in.(active,trialing)&select=status&limit=1`,
+          { headers: { 'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!, 'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }
+        )
+        const subData2: { status: string }[] = await subRes2.json()
+        if (subData2.length === 0) {
+          const redirectUrl = new URL('/subscribe', request.url)
+          const redirectResponse = NextResponse.redirect(redirectUrl)
+          supabaseResponse.cookies.getAll().forEach(cookie => {
+            redirectResponse.cookies.set(cookie.name, cookie.value)
+          })
+          return redirectResponse
+        }
       }
-    }
+    } catch {}
   }
 
   return supabaseResponse
