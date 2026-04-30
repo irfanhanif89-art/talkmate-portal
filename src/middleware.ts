@@ -82,6 +82,8 @@ export async function middleware(request: NextRequest) {
 
   // Logged in on a guest-only page → check sub and send to dashboard or subscribe
   if (user && isGuestOnly) {
+    // Safety: never redirect /subscribe → /subscribe (would loop)
+    if (path === '/subscribe') return supabaseResponse
     const hasSub = await checkHasActiveSub(user.id)
     return redirect(hasSub ? '/dashboard' : '/subscribe')
   }
@@ -90,6 +92,8 @@ export async function middleware(request: NextRequest) {
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
     const hasSub = await checkHasActiveSub(user.id)
     if (!hasSub) {
+      // Safety: if already heading to /subscribe, don't redirect again
+      if (path.startsWith('/subscribe')) return supabaseResponse
       return redirect('/subscribe')
     }
   }
