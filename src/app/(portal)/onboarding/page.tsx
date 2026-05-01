@@ -1049,13 +1049,11 @@ export default function OnboardingPage() {
 }
 
 // ── Floating support button ────────────────────────────────────────────────
-// Reads the support number from NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER. Falls
-// back to the public TalkMate hello number if the env var is unset, so the
-// button is never broken in dev.
+// Reads the support number from NEXT_PUBLIC_SUPPORT_PHONE_NUMBER.
+// Clicking opens a call panel with a tel: link to Sam (AI support agent).
 function SupportFloater({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const raw = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || ''
-  const digits = raw.replace(/\D/g, '')
-  const waLink = digits ? `https://wa.me/${digits}` : 'https://wa.me/'
+  const phoneNumber = process.env.NEXT_PUBLIC_SUPPORT_PHONE_NUMBER || '+61468005893'
+  const telLink = `tel:${phoneNumber.replace(/\s/g, '')}`
   return (
     <>
       {open && (
@@ -1068,20 +1066,18 @@ function SupportFloater({ open, onToggle }: { open: boolean; onToggle: () => voi
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Need a hand?</div>
           <div style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.5, marginBottom: 14 }}>
-            Hi! We&apos;re setting up our live AI support chat. In the meantime, send us a message on WhatsApp and we&apos;ll help you within a few minutes.
+            Call our AI support agent Sam — available 24/7 to help you complete your setup.
           </div>
           <a
-            href={waLink}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={telLink}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: '11px 14px', background: '#22c55e', color: 'white',
+              padding: '11px 14px', background: '#E8622A', color: 'white',
               borderRadius: 10, fontWeight: 700, fontSize: 14,
               textDecoration: 'none',
             }}
           >
-            <MessageCircle size={16} /> Chat on WhatsApp
+            <MessageCircle size={16} /> Call Support
           </a>
         </div>
       )}
