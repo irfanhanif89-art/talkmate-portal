@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useOnboardingStore } from '@/store/onboarding-store'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
-import { Plus, Trash2, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { INDUSTRY_LIBRARY, type ServiceItem, type FAQItem } from '@/lib/industryLibrary'
+import { ONBOARDING_VIDEOS } from '@/lib/onboardingVideos'
+import { Plus, Trash2, Check, ChevronLeft, ChevronRight, Play, X, MessageCircle } from 'lucide-react'
 import LegalAcceptanceForm from '@/components/portal/legal-acceptance-form'
 
 // ── Custom Toggle (no base-ui) ──────────────────────────────────────────────
@@ -20,8 +22,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface HourEntry { open: string; close: string; closed: boolean }
-interface CatalogRow { name: string; category: string; price: string; description: string }
-interface Faq { question: string; answer: string }
+interface CatalogRow { name: string; category: string; price: string; description: string; prefilled?: boolean }
+interface Faq { question: string; answer: string; prefilled?: boolean }
 interface Notifs { emailOnTransfer: boolean; dailySummary: boolean; weeklyReport: boolean; email: string; whatsapp: boolean; whatsappNum: string; telegram: boolean; telegramUser: string; urgentCall: boolean; urgentNum: string }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -55,12 +57,19 @@ const defaultNotifs: Notifs = {
   urgentCall: false, urgentNum: '',
 }
 
+// Step 4 voice options. Voice IDs are ElevenLabs IDs and are stored directly
+// in onboarding state so the Vapi assistant builder picks them up unchanged.
 const voices = [
-  { id: 'sarah', name: 'Sarah', desc: 'Professional Female', sample: 'Hi, thank you for calling! How can I help you today?' },
-  { id: 'james', name: 'James', desc: 'Professional Male', sample: 'Good day, thanks for calling. What can I do for you?' },
-  { id: 'emma', name: 'Emma', desc: 'Friendly Female', sample: "Hey there! I'm Emma. How can I help?" },
-  { id: 'liam', name: 'Liam', desc: 'Casual Male', sample: "Hey, what's up! How can I help you out today?" },
+  { id: 'IKne3meq5aSn9XLyUdCD', key: 'charlie',       name: 'Charlie',          desc: 'Casual Aussie Male' },
+  { id: 'snyKKuaGYk1VUEh42zbW', key: 'chris',         name: 'Chris',            desc: 'Friendly Aussie Male' },
+  { id: '56bWURjYFHyYyVf490Dp', key: 'emma',          name: 'Emma',             desc: 'Warm Aussie Female' },
+  { id: 'cvpTJfe9LINpHIOmB2Hp', key: 'charlotteWarm', name: 'Charlotte (Warm)', desc: 'Casual Aussie Female' },
+  { id: 'gEdKKVxVhNCulBgRQ9GW', key: 'charlottePro',  name: 'Charlotte (Pro)',  desc: 'Professional Aussie Female' },
 ]
+
+function applyGreetingTemplate(template: string, businessName: string): string {
+  return template.replace(/\{\{businessName\}\}/g, businessName || 'us')
+}
 
 const inp = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '11px 14px', width: '100%', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none' } as React.CSSProperties
 const ta = { ...inp, resize: 'vertical' } as React.CSSProperties
@@ -130,6 +139,15 @@ export default function OnboardingPage() {
   const [payProcessing, setPayProcessing] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
+  const [videoOpen, setVideoOpen] = useState(false)
+  const [supportOpen, setSupportOpen] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  // Track which industry we last pre-filled for so we re-seed services / FAQs /
+  // escalation when the user picks a different industry on Step 1, but never
+  // overwrite their edits on a subsequent re-render of the same industry.
+  const lastPrefilledIndustry = useRef<string | null>(null)
 
   // Derived state
   const config = BUSINESS_TYPE_CONFIG[bizType]
@@ -137,8 +155,11 @@ export default function OnboardingPage() {
   const catalog = (responses.catalog as CatalogRow[]) || defaultCatalog
   const faqs = (responses.faqs as Faq[]) || defaultFaqs
   const notifs = (responses.notifications as Notifs) || defaultNotifs
-  const voice = (responses.voice as string) || 'sarah'
+  const voice = (responses.voice as string) || voices[0].id
   const tone = (responses.tone as string) || 'Friendly'
+  const industryKey = (responses.industry as string) || ''
+  const industry = industryKey && INDUSTRY_LIBRARY[industryKey] ? INDUSTRY_LIBRARY[industryKey] : null
+  const businessName = (responses.businessName as string) || ''
 
   useEffect(() => {
     async function load() {
@@ -148,14 +169,68 @@ export default function OnboardingPage() {
       if (biz) {
         setBizId(biz.id)
         setBizType(biz.business_type as BusinessType)
-        if (!responses.catalog) setResponse('catalog', defaultCatalog)
-        if (!responses.faqs) setResponse('faqs', defaultFaqs)
+        // Hours and notification defaults are industry-agnostic. Catalog and
+        // FAQ defaults are seeded by the industry pre-fill effect below so we
+        // don't double-seed and clobber pre-fills.
         if (!responses.openingHours) setResponse('openingHours', defaultHours)
         if (!responses.notifications) setResponse('notifications', defaultNotifs)
+        if (!responses.catalog && !INDUSTRY_LIBRARY[(responses.industry as string) || '']) {
+          setResponse('catalog', defaultCatalog)
+        }
+        if (!responses.faqs && !INDUSTRY_LIBRARY[(responses.industry as string) || '']) {
+          setResponse('faqs', defaultFaqs)
+        }
       }
     }
     load()
   }, [])
+
+  // Industry-aware pre-fill: when the user picks (or changes) an industry on
+  // Step 1, seed services / FAQs / escalation / voice / greeting from
+  // INDUSTRY_LIBRARY. Subsequent re-renders for the same industry don't
+  // re-seed, so the user's edits are preserved.
+  useEffect(() => {
+    if (!industryKey) return
+    if (lastPrefilledIndustry.current === industryKey) return
+    const data = INDUSTRY_LIBRARY[industryKey]
+    if (!data) {
+      // Industry exists but isn't in the library (e.g. legacy "other") —
+      // still mark it as "seen" so we don't loop, but don't overwrite.
+      lastPrefilledIndustry.current = industryKey
+      return
+    }
+
+    setResponse('catalog', data.services.map((s: ServiceItem) => ({
+      name: s.name,
+      category: s.category,
+      price: s.priceRange ?? '',
+      description: s.description,
+      prefilled: true,
+    })))
+    setResponse('faqs', data.faqs.slice(0, 5).map((f: FAQItem) => ({
+      question: f.question,
+      answer: f.answer,
+      prefilled: true,
+    })))
+    setResponse('escalationRules', data.escalationRules)
+    setResponse('voice', data.recommendedVoiceId)
+    // Greeting is set when the user reaches Step 4 (see effect below) so we
+    // can pick up the latest businessName they entered on Step 1.
+
+    lastPrefilledIndustry.current = industryKey
+  }, [industryKey])
+
+  // On Step 4 entry, seed the greeting from the industry template if the user
+  // hasn't already edited it.
+  const greetingSeededRef = useRef(false)
+  useEffect(() => {
+    if (currentStep !== 4) return
+    if (greetingSeededRef.current) return
+    if (responses.greeting) return
+    if (!industry) return
+    setResponse('greeting', applyGreetingTemplate(industry.greetingTemplate, businessName))
+    greetingSeededRef.current = true
+  }, [currentStep, industry, businessName, responses.greeting])
 
   async function save() {
     if (!bizId) return
@@ -205,17 +280,38 @@ export default function OnboardingPage() {
     setResponse('notifications', { ...notifs, [field]: val })
   }
 
-  async function previewVoice(voiceId: string) {
+  async function previewVoice(voiceId: string, text?: string) {
+    if (previewLoading) return
+    if (previewAudioRef.current) {
+      try { previewAudioRef.current.pause() } catch {}
+      previewAudioRef.current = null
+    }
+    setPreviewLoading(true)
     try {
-      const res = await fetch(`/api/voice/preview?voice=${voiceId}&t=${Date.now()}`)
+      const res = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice: voiceId, text }),
+      })
       if (!res.ok) return
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const audio = new Audio(url)
+      previewAudioRef.current = audio
       audio.play()
-      audio.onended = () => URL.revokeObjectURL(url)
+      audio.onended = () => { URL.revokeObjectURL(url); previewAudioRef.current = null }
     } catch (e) { console.error('Voice preview failed', e) }
+    finally { setPreviewLoading(false) }
   }
+
+  // ESC closes the video modal and the support panel.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { setVideoOpen(false); setSupportOpen(false) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Styles
   const card = { background: '#0A1E38', border: '1px solid rgba(232,98,42,0.2)', borderRadius: 20, padding: 36 }
@@ -255,7 +351,27 @@ export default function OnboardingPage() {
         </p>
 
         {/* Card */}
-        <div style={card}>
+        <div style={{ ...card, position: 'relative' }}>
+
+          {/* "Watch how this works" — top right of card, only renders when a
+              video URL is configured for this step. */}
+          {ONBOARDING_VIDEOS[currentStep] && (
+            <button
+              type="button"
+              onClick={() => setVideoOpen(true)}
+              style={{
+                position: 'absolute', top: 14, right: 14,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(74,159,232,0.08)',
+                border: '1px solid rgba(74,159,232,0.25)',
+                color: '#4A9FE8',
+                fontFamily: 'Outfit,sans-serif', fontSize: 11, fontWeight: 600,
+                padding: '6px 10px', borderRadius: 8, cursor: 'pointer',
+              }}
+            >
+              <Play size={11} /> Watch how this works
+            </button>
+          )}
 
           {/* STEP 1: Business Details + Industry Selection */}
           {currentStep === 1 && (
@@ -263,42 +379,68 @@ export default function OnboardingPage() {
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Tell us about your business</h2>
               <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Your AI agent will use this to introduce itself and answer questions.</p>
 
-              {/* Industry selection (Session 1 brief Part 5) */}
+              {/* Industry selection — dynamic from INDUSTRY_LIBRARY. Selecting
+                  an industry pre-fills services, FAQs, voice and escalation
+                  rules in later steps. */}
               <label style={lbl}>What type of business are you?</label>
-              <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: -4 }}>This configures the right CRM features and smart lists for your industry.</p>
+              <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: -4 }}>This configures the right CRM features and pre-fills the wizard for your industry.</p>
               <div style={{
-                display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 24,
+                display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 16,
               }}>
-                {[
-                  ['restaurants', '🍕', 'Restaurant & Takeaway'],
-                  ['towing', '🚗', 'Towing & Transport'],
-                  ['real_estate', '🏠', 'Real Estate'],
-                  ['trades', '🔧', 'Trades & Services'],
-                  ['healthcare', '🏥', 'Healthcare & Clinics'],
-                  ['ndis', '💙', 'NDIS Provider'],
-                  ['retail', '🛍️', 'Retail'],
-                  ['professional_services', '💼', 'Professional Services'],
-                  ['other', '⚙️', 'Other'],
-                ].map(([key, emoji, name]) => {
-                  const selected = (responses.industry as string) === key
+                {Object.entries(INDUSTRY_LIBRARY).map(([key, data]) => {
+                  const selected = industryKey === key
                   return (
                     <button
                       key={key} type="button"
                       onClick={() => setResponse('industry', key)}
                       style={{
                         padding: 14, borderRadius: 10,
-                        background: selected ? 'rgba(232,98,42,0.08)' : '#071829',
-                        border: `1.5px solid ${selected ? '#E8622A' : 'rgba(255,255,255,0.06)'}`,
+                        background: selected ? `${data.color}15` : '#071829',
+                        border: `1.5px solid ${selected ? data.color : 'rgba(255,255,255,0.06)'}`,
+                        boxShadow: selected ? `0 0 0 3px ${data.color}22` : 'none',
+                        color: 'white', cursor: 'pointer', textAlign: 'left',
+                        fontFamily: 'Outfit, sans-serif',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>{data.emoji}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{data.label}</div>
+                    </button>
+                  )
+                })}
+                {/* "Other" — keeps the existing escape hatch; no pre-fill. */}
+                {(() => {
+                  const selected = industryKey === 'other'
+                  return (
+                    <button
+                      key="other" type="button"
+                      onClick={() => setResponse('industry', 'other')}
+                      style={{
+                        padding: 14, borderRadius: 10,
+                        background: selected ? 'rgba(255,255,255,0.06)' : '#071829',
+                        border: `1.5px solid ${selected ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.06)'}`,
                         color: 'white', cursor: 'pointer', textAlign: 'left',
                         fontFamily: 'Outfit, sans-serif',
                       }}
                     >
-                      <div style={{ fontSize: 22, marginBottom: 6 }}>{emoji}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{name}</div>
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>⚙️</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>Other</div>
                     </button>
                   )
-                })}
+                })()}
               </div>
+
+              {industry && (
+                <div style={{
+                  marginBottom: 24, padding: '10px 14px',
+                  background: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                  borderRadius: 10, fontSize: 13, color: '#22c55e',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <Check size={14} /> Services, FAQs, voice and escalation rules will be pre-filled for {industry.label}
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 {[['Business Name', 'businessName', 'My Business Pty Ltd'], ['Phone Number', 'phone', '+61 4XX XXX XXX'], ['Address', 'address', '123 Main St, Brisbane QLD 4000'], ['Website', 'website', 'www.mybusiness.com.au']].map(([label, key, ph]) => (
@@ -365,6 +507,18 @@ export default function OnboardingPage() {
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Your {config.catalogLabel}</h2>
               <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Your AI will describe, quote, and book these for callers.</p>
 
+              {industry && catalog.some(r => r.prefilled) && (
+                <div style={{
+                  marginBottom: 16, padding: '10px 14px',
+                  background: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                  borderRadius: 10, fontSize: 13, color: '#22c55e',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <Check size={14} /> Pre-filled from {industry.label} — edit to match your pricing
+                </div>
+              )}
+
               {/* Upload zone */}
               {!uploadDone ? (
                 <div style={{ marginBottom: 20 }}>
@@ -412,7 +566,11 @@ export default function OnboardingPage() {
                   {['Name', 'Category', 'Price', ''].map(h => <div key={h} style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</div>)}
                 </div>
                 {catalog.map((row, i) => (
-                  <div key={i} style={{ marginBottom: 8 }}>
+                  <div key={i} style={{
+                    marginBottom: 8,
+                    paddingLeft: row.prefilled ? 10 : 0,
+                    borderLeft: row.prefilled ? '2px solid #22c55e' : 'none',
+                  }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 32px', gap: 8, marginBottom: 6 }}>
                       <input value={row.name} onChange={e => updateCatalog(i, 'name', e.target.value)} placeholder="Service name" style={inp} />
                       <input value={row.category} onChange={e => updateCatalog(i, 'category', e.target.value)} placeholder="Category" style={inp} />
@@ -435,24 +593,48 @@ export default function OnboardingPage() {
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>AI Voice & Tone</h2>
               <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Choose how your AI receptionist sounds.</p>
               <div style={{ marginBottom: 24 }}>
-                <label style={lbl}>Greeting message</label>
-                <textarea value={(responses.greeting as string) || `Thank you for calling ${(responses.businessName as string) || 'us'}. How can I help you today?`}
-                  onChange={e => setResponse('greeting', e.target.value)} rows={3} style={ta} />
+                <label style={{ ...lbl, color: industry ? '#22c55e' : '#4A7FBB' }}>
+                  {industry ? 'Auto-generated — edit to match how you answer' : 'Greeting message'}
+                </label>
+                <textarea
+                  value={(responses.greeting as string) || (industry ? applyGreetingTemplate(industry.greetingTemplate, businessName) : `Thank you for calling ${businessName || 'us'}. How can I help you today?`)}
+                  onChange={e => setResponse('greeting', e.target.value)} rows={3} style={ta}
+                />
               </div>
               <div style={{ marginBottom: 24 }}>
                 <label style={lbl}>Voice</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {voices.map(v => (
-                    <div key={v.id} onClick={() => setResponse('voice', v.id)}
-                      style={{ padding: 14, borderRadius: 12, border: `1.5px solid ${voice === v.id ? '#E8622A' : 'rgba(255,255,255,0.08)'}`, background: voice === v.id ? 'rgba(232,98,42,0.08)' : '#071829', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: 'white' }}>🎙️ {v.name}</div>
-                        <div style={{ fontSize: 12, color: '#4A7FBB' }}>{v.desc}</div>
+                  {voices.map(v => {
+                    const isRecommended = !!industry && industry.recommendedVoiceId === v.id
+                    const isSelected = voice === v.id
+                    return (
+                      <div key={v.id} onClick={() => setResponse('voice', v.id)}
+                        style={{ position: 'relative', padding: 14, borderRadius: 12, border: `1.5px solid ${isSelected ? '#E8622A' : 'rgba(255,255,255,0.08)'}`, background: isSelected ? 'rgba(232,98,42,0.08)' : '#071829', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {isRecommended && (
+                          <span style={{
+                            position: 'absolute', top: -8, right: 10,
+                            background: '#22c55e', color: 'white',
+                            fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
+                            padding: '3px 8px', borderRadius: 6,
+                          }}>RECOMMENDED</span>
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: 'white' }}>🎙️ {v.name}</div>
+                          <div style={{ fontSize: 12, color: '#4A7FBB' }}>{v.desc}</div>
+                        </div>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            const text = (responses.greeting as string) || (industry ? applyGreetingTemplate(industry.greetingTemplate, businessName) : undefined)
+                            previewVoice(v.id, text)
+                          }}
+                          disabled={previewLoading}
+                          style={{ background: isSelected ? '#E8622A' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: previewLoading ? 'wait' : 'pointer', fontFamily: 'Outfit,sans-serif', flexShrink: 0, opacity: previewLoading ? 0.6 : 1 }}>
+                          {previewLoading ? '…' : '▶ Preview'}
+                        </button>
                       </div>
-                      <button onClick={e => { e.stopPropagation(); previewVoice(v.id) }}
-                        style={{ background: voice === v.id ? '#E8622A' : 'rgba(255,255,255,0.08)', border: 'none', color: 'white', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif', flexShrink: 0 }}>▶ Preview</button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
               <div>
@@ -506,9 +688,25 @@ export default function OnboardingPage() {
           {currentStep === 5 && (
             <div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Custom FAQs</h2>
-              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Questions your AI will confidently answer on every call.</p>
+              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 16 }}>Questions your AI will confidently answer on every call.</p>
+
+              {industry && faqs.some(f => f.prefilled) && (
+                <div style={{
+                  marginBottom: 16, padding: '10px 14px',
+                  background: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                  borderRadius: 10, fontSize: 13, color: '#22c55e',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <Check size={14} /> Pre-filled from {industry.label} — edit answers to match your responses
+                </div>
+              )}
+
               {faqs.map((faq, i) => (
-                <div key={i} style={{ padding: 16, background: '#071829', borderRadius: 12, marginBottom: 10 }}>
+                <div key={i} style={{
+                  padding: 16, background: '#071829', borderRadius: 12, marginBottom: 10,
+                  borderLeft: faq.prefilled ? '2px solid #22c55e' : '2px solid transparent',
+                }}>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <input value={faq.question} onChange={e => updateFaq(i, 'question', e.target.value)} placeholder={`Question ${i + 1}`} style={{ ...inp, flex: 1 }} />
                     <button onClick={() => removeFaq(i)} style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', padding: '0 12px', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
@@ -526,9 +724,22 @@ export default function OnboardingPage() {
           {currentStep === 6 && (
             <div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>Escalation rules</h2>
-              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Tell the AI when to stop and transfer the call to you.</p>
+              <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 16 }}>Tell the AI when to stop and transfer the call to you.</p>
+
+              {industry && (responses.escalationRules as string) === industry.escalationRules && (
+                <div style={{
+                  marginBottom: 16, padding: '10px 14px',
+                  background: 'rgba(34,197,94,0.08)',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                  borderRadius: 10, fontSize: 13, color: '#22c55e',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <Check size={14} /> Pre-filled from {industry.label} — edit to match your requirements
+                </div>
+              )}
+
               <textarea
-                value={(responses.escalationRules as string) || config.escalationTemplate}
+                value={(responses.escalationRules as string) || (industry ? industry.escalationRules : config.escalationTemplate)}
                 onChange={e => setResponse('escalationRules', e.target.value)}
                 rows={7} style={ta} />
               <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>Tip: Be specific. The more clearly you define triggers, the fewer unnecessary transfers you&apos;ll get.</p>
@@ -794,6 +1005,100 @@ export default function OnboardingPage() {
           )}
         </div>
       </div>
+
+      {/* Video modal — opens when "Watch how this works" is clicked. */}
+      {videoOpen && ONBOARDING_VIDEOS[currentStep] && (
+        <div
+          onClick={() => setVideoOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(6,19,34,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 20,
+          }}
+        >
+          <div onClick={e => e.stopPropagation()}
+            style={{ position: 'relative', width: '100%', maxWidth: 880, aspectRatio: '16 / 9', background: '#000', borderRadius: 14, overflow: 'hidden' }}>
+            <button
+              onClick={() => setVideoOpen(false)}
+              aria-label="Close video"
+              style={{
+                position: 'absolute', top: 10, right: 10, zIndex: 2,
+                background: 'rgba(0,0,0,0.6)', border: 'none', color: 'white',
+                width: 34, height: 34, borderRadius: '50%', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <X size={18} />
+            </button>
+            <iframe
+              src={ONBOARDING_VIDEOS[currentStep] as string}
+              title="How this works"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              style={{ width: '100%', height: '100%', border: 0 }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Floating support button — opens a panel with a WhatsApp link. */}
+      <SupportFloater open={supportOpen} onToggle={() => setSupportOpen(o => !o)} />
+
     </div>
+  )
+}
+
+// ── Floating support button ────────────────────────────────────────────────
+// Reads the support number from NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER. Falls
+// back to the public TalkMate hello number if the env var is unset, so the
+// button is never broken in dev.
+function SupportFloater({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const raw = process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP_NUMBER || ''
+  const digits = raw.replace(/\D/g, '')
+  const waLink = digits ? `https://wa.me/${digits}` : 'https://wa.me/'
+  return (
+    <>
+      {open && (
+        <div style={{
+          position: 'fixed', bottom: 92, right: 24, zIndex: 999,
+          width: 320, maxWidth: 'calc(100vw - 48px)',
+          background: '#0A1E38', border: '1px solid rgba(232,98,42,0.25)',
+          borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+          padding: 18, color: 'white', fontFamily: 'Outfit, sans-serif',
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Need a hand?</div>
+          <div style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.5, marginBottom: 14 }}>
+            Hi! We&apos;re setting up our live AI support chat. In the meantime, send us a message on WhatsApp and we&apos;ll help you within a few minutes.
+          </div>
+          <a
+            href={waLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '11px 14px', background: '#22c55e', color: 'white',
+              borderRadius: 10, fontWeight: 700, fontSize: 14,
+              textDecoration: 'none',
+            }}
+          >
+            <MessageCircle size={16} /> Chat on WhatsApp
+          </a>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={open ? 'Close support' : 'Open support'}
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 999,
+          width: 56, height: 56, borderRadius: '50%',
+          background: '#f97316', border: 'none', cursor: 'pointer',
+          color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 8px 24px rgba(249,115,22,0.4)',
+        }}
+      >
+        {open ? <X size={22} /> : <MessageCircle size={22} />}
+      </button>
+    </>
   )
 }
