@@ -70,6 +70,53 @@ async function sendAlert(message: string) {
   }
 }
 
+async function runChecks(): Promise<{ checks: Record<string, { ok: boolean; statusCode?: number; latencyMs?: number; error?: string }> }> {
+  const checks: Record<string, { ok: boolean; statusCode?: number; latencyMs?: number; error?: string }> = {}
+
+  // Check 1: Supabase
+  try {
+    const t0 = Date.now()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    const { error } = await supabase.from('businesses').select('id').limit(1)
+    checks.database = { ok: !error, latencyMs: Date.now() - t0, error: error?.message }
+  } catch (e: unknown) {
+    checks.database = { ok: false, error: String(e) }
+  }
+
+  // Check 2: Vapi
+  try {
+    const t0 = Date.now()
+    const res = await fetch('https://api.vapi.ai/assistant?limit=1', {
+      headers: { Authorization: `Bearer ${process.env.VAPI_API_KEY}` },
+      signal: AbortSignal.timeout(6000),
+    })
+    checks.vapi = { ok: res.ok, statusCode: res.status, latencyMs: Date.now() - t0 }
+  } catch (e: unknown) {
+    checks.vapi = { ok: false, error: String(e) }
+  }
+
+  // Check 3: Stripe
+  try {
+    const t0 = Date.now()
+    const res = await fetch('https://api.stripe.com/v1/customers?limit=1', {
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+      signal: AbortSignal.timeout(6000),
+    })
+    checks.stripe = { ok: res.ok, statusCode: res.status, latencyMs: Date.now() - t0 }
+  } catch (e: unknown) {
+    checks.stripe = { ok: false, error: String(e) }
+  }
+
+  return { checks }
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -77,55 +124,55 @@ export async function GET(request: Request) {
   }
 
   const timestamp = new Date().toISOString()
-  const checks: Record<string, boolean> = {}
 
-  // Check 1: Supabase — direct DB query (no self-call)
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    const { error } = await supabase.from('businesses').select('id').limit(1)
-    checks.database = !error
-  } catch {
-    checks.database = false
-  }
-
-  // Check 2: Vapi — external API ping
-  try {
-    const res = await fetch('https://api.vapi.ai/assistant?limit=1', {
-      headers: { Authorization: `Bearer ${process.env.VAPI_API_KEY}` },
-      signal: AbortSignal.timeout(5000),
-    })
-    checks.vapi = res.ok
-  } catch {
-    checks.vapi = false
-  }
-
-  // Check 3: Stripe — external API ping
-  try {
-    const res = await fetch('https://api.stripe.com/v1/customers?limit=1', {
-      headers: {
-        Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
-      },
-      signal: AbortSignal.timeout(5000),
-    })
-    checks.stripe = res.ok
-  } catch {
-    checks.stripe = false
-  }
-
-  const failing = Object.entries(checks)
-    .filter(([, ok]) => !ok)
-    .map(([svc]) => svc)
-
-  if (failing.length > 0) {
-    const message = `TalkMate ALERT: ${failing.join(', ')} is down. Time: ${timestamp}. Check app.talkmate.com.au immediately.`
-    await sendAlert(message)
-    return NextResponse.json({ alerted: true, failing, timestamp })
-  }
+  // First check
+  const { checks: firstChecks } = await runChecks()
+  const firstFailing = Object.entries(firstChecks).filter(([, v]) => !v.ok).map(([svc]) => svc)
 
   // All good — silent exit
-  console.log('[health-monitor] All checks passed:', timestamp)
-  return NextResponse.json({ alerted: false, status: 'ok', checks, timestamp })
+  if (firstFailing.length === 0) {
+    console.log('[health-monitor] All checks passed:', timestamp)
+    return NextResponse.json({ alerted: false, status: 'ok', checks: firstChecks, timestamp })
+  }
+
+  // Something failed — wait 2 minutes then retry before alerting
+  console.log('[health-monitor] First check failed for:', firstFailing, '— retrying in 2 min')
+  await sleep(120_000)
+
+  const { checks: retryChecks } = await runChecks()
+  const retryFailing = Object.entries(retryChecks).filter(([, v]) => !v.ok).map(([svc]) => svc)
+
+  // Recovered — no alert needed
+  if (retryFailing.length === 0) {
+    console.log('[health-monitor] Recovered after retry — no alert sent:', timestamp)
+    return NextResponse.json({ alerted: false, status: 'recovered', checks: retryChecks, timestamp })
+  }
+
+  // Still failing after 2 min — build a detailed diagnosis message
+  const brisTime = new Date().toLocaleString('en-AU', { timeZone: 'Australia/Brisbane', dateStyle: 'short', timeStyle: 'short' })
+
+  const lines: string[] = [`🚨 TalkMate ALERT — ${brisTime} (Brisbane)`]
+  lines.push('')
+
+  for (const svc of retryFailing) {
+    const detail = retryChecks[svc]
+    const statusStr = detail.statusCode ? ` (HTTP ${detail.statusCode})` : ''
+    const errStr = detail.error ? ` — ${detail.error.slice(0, 80)}` : ''
+    lines.push(`❌ ${svc.toUpperCase()} is DOWN${statusStr}${errStr}`)
+  }
+
+  const healthy = Object.entries(retryChecks).filter(([, v]) => v.ok)
+  if (healthy.length > 0) {
+    lines.push('')
+    lines.push('✅ Still healthy: ' + healthy.map(([svc, v]) => `${svc} (${v.latencyMs}ms)`).join(', '))
+  }
+
+  lines.push('')
+  lines.push('Confirmed down for 2+ minutes. Portal may be affected.')
+  lines.push('No action needed from you — Donna is monitoring.')
+
+  const message = lines.join('\n')
+  await sendAlert(message)
+
+  return NextResponse.json({ alerted: true, failing: retryFailing, checks: retryChecks, timestamp })
 }
