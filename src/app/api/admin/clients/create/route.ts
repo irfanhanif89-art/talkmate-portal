@@ -6,8 +6,12 @@ import { postEmailTrigger } from '@/lib/make-webhook'
 import { sendEmail } from '@/lib/resend'
 
 const ALLOWED_INDUSTRIES = new Set([
-  'restaurants', 'towing', 'real_estate', 'trades', 'healthcare',
-  'ndis', 'retail', 'professional_services', 'other',
+  // Legacy keys (businesses created before library-aligned update)
+  'restaurants', 'real_estate', 'professional_services',
+  // Library-aligned keys (used by admin create form)
+  'restaurant', 'towing', 'realestate', 'trades', 'healthcare',
+  'ndis', 'retail', 'dental', 'medispa', 'mechanic', 'physio',
+  'accounting', 'cleaning', 'pest', 'landscaping', 'other',
 ])
 
 export async function POST(req: Request) {
@@ -44,6 +48,22 @@ export async function POST(req: Request) {
   const referred_by = body.referred_by ? String(body.referred_by).trim() : null
   const initial_note = body.initial_note ? String(body.initial_note).trim() : null
   const send_welcome_email = body.send_welcome_email !== false
+
+  // Extended onboarding fields
+  const receptionist_name = body.receptionist_name ? String(body.receptionist_name).trim() : null
+  const voice_id = body.voice_id ? String(body.voice_id).trim() : null
+  const opening_hours = body.opening_hours && typeof body.opening_hours === 'object' ? body.opening_hours : null
+  const services = Array.isArray(body.services) ? body.services : null
+  const faqs = Array.isArray(body.faqs) ? body.faqs : null
+  const escalation_number = body.escalation_number ? String(body.escalation_number).trim() : null
+  const notif_email_on_transfer = body.notif_email_on_transfer !== false
+  const notification_email = body.notification_email ? String(body.notification_email).trim() : null
+  const notif_daily_summary = body.notif_daily_summary !== false
+  const notif_weekly_report = body.notif_weekly_report !== false
+  const notif_whatsapp = !!body.notif_whatsapp
+  const notif_whatsapp_number = body.notif_whatsapp_number ? String(body.notif_whatsapp_number).trim() : null
+  const notif_urgent_call = !!body.notif_urgent_call
+  const notif_urgent_number = body.notif_urgent_number ? String(body.notif_urgent_number).trim() : null
 
   const admin = createAdminClient()
 
@@ -106,12 +126,27 @@ export async function POST(req: Request) {
     welcome_email_sent: false,
     onboarding_completed: false,
     referred_by: referred_by || null,
-    // Persist the agent setup answers so the View/Edit modal Agent Setup tab
-    // can render the same values without a second insert.
+    // Persist all onboarding answers so the View/Edit modal Agent Setup tab
+    // can render values without a second insert, and the provisioner can
+    // use them when building the Vapi assistant.
     notifications_config: {
       agent_answer_phrase,
       services_summary,
       after_hours_instruction,
+      receptionist_name,
+      voice_id,
+      opening_hours,
+      services,
+      faqs,
+      escalation_number,
+      email_on_transfer: notif_email_on_transfer,
+      notification_email,
+      daily_summary: notif_daily_summary,
+      weekly_report: notif_weekly_report,
+      whatsapp: notif_whatsapp,
+      whatsapp_number: notif_whatsapp_number,
+      urgent_call: notif_urgent_call,
+      urgent_call_number: notif_urgent_number,
     },
   }).select('*').single()
 

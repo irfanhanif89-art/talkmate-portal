@@ -70,9 +70,29 @@ export function planLabel(p: string | null): string {
   return p.charAt(0).toUpperCase() + p.slice(1)
 }
 
+// Legacy keys used by businesses created before the library-aligned update.
+const LEGACY_INDUSTRY_LABELS: Record<string, string> = {
+  restaurants: 'Restaurants & Hospitality',
+  real_estate: 'Real Estate',
+  professional_services: 'Professional Services',
+  // Library-aligned keys not in the original INDUSTRIES list:
+  restaurant: 'Restaurant & Takeaway',
+  realestate: 'Real Estate',
+  dental: 'Dental Practice',
+  medispa: 'Medi-Spa & Beauty',
+  mechanic: 'Mechanic & Automotive',
+  physio: 'Physio & Allied Health',
+  accounting: 'Accounting & Bookkeeping',
+  cleaning: 'Cleaning Services',
+  pest: 'Pest Control',
+  landscaping: 'Landscaping & Gardens',
+}
+
 export function industryLabel(i: string | null): string {
   if (!i) return '—'
-  return INDUSTRIES.find(x => x.value === i)?.label ?? i
+  return INDUSTRIES.find(x => x.value === i)?.label
+    ?? LEGACY_INDUSTRY_LABELS[i]
+    ?? i.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 export function planAud(p: string | null): number {
