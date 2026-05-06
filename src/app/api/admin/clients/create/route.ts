@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { generateTempPassword, isAdminPlan, requireAdmin } from '@/lib/admin-auth'
 import { postEmailTrigger } from '@/lib/make-webhook'
+import { sendEmail } from '@/lib/resend'
 
 const ALLOWED_INDUSTRIES = new Set([
   'restaurants', 'towing', 'real_estate', 'trades', 'healthcare',
@@ -150,6 +151,57 @@ export async function POST(req: Request) {
         from_email: 'hello@talkmate.com.au',
       },
     }).catch(() => {})
+
+    // Make.com has no email module yet — send the welcome email directly via Resend.
+    await sendEmail({
+      to: email,
+      subject: `Welcome to TalkMate, ${owner_name} — your account is ready`,
+      html: `
+        <div style="font-family:'Outfit',Arial,sans-serif;max-width:560px;margin:0 auto;background:#061322;color:white;padding:40px;border-radius:16px;">
+          <div style="margin-bottom:28px;">
+            <span style="font-size:28px;font-weight:800;">Talk</span><span style="font-size:18px;font-weight:300;color:#4A9FE8;letter-spacing:4px;">Mate</span>
+          </div>
+
+          <h1 style="font-size:26px;font-weight:800;margin:0 0 12px;">Welcome, ${owner_name}!</h1>
+          <p style="font-size:16px;color:rgba(255,255,255,0.7);line-height:1.7;margin:0 0 28px;">
+            Your TalkMate account for <strong style="color:white;">${business_name}</strong> has been set up and is ready to go.
+          </p>
+
+          <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-bottom:28px;">
+            <p style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.12em;margin:0 0 16px;">Your login details</p>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td style="font-size:14px;color:rgba(255,255,255,0.55);padding:6px 0;width:160px;">Email</td>
+                <td style="font-size:14px;color:white;font-weight:600;padding:6px 0;">${email}</td>
+              </tr>
+              <tr>
+                <td style="font-size:14px;color:rgba(255,255,255,0.55);padding:6px 0;">Temporary password</td>
+                <td style="font-size:14px;color:white;font-weight:600;padding:6px 0;font-family:monospace;">${temp_password}</td>
+              </tr>
+            </table>
+            <p style="font-size:12px;color:rgba(255,255,255,0.35);margin:16px 0 0;">Change your password after your first login.</p>
+          </div>
+
+          <p style="font-size:15px;color:rgba(255,255,255,0.7);line-height:1.7;margin:0 0 20px;">
+            Before you get started, please accept the TalkMate terms of service — it only takes a moment.
+          </p>
+
+          <a href="https://app.talkmate.com.au/accept-terms"
+             style="display:inline-block;background:#E8622A;color:white;font-size:16px;font-weight:700;padding:16px 32px;border-radius:10px;text-decoration:none;margin-bottom:20px;">
+            Accept Terms &amp; Get Started →
+          </a>
+
+          <p style="font-size:14px;color:rgba(255,255,255,0.45);margin:20px 0 0;">
+            Already accepted? <a href="https://app.talkmate.com.au/login" style="color:#4A9FE8;text-decoration:none;">Log in to your dashboard →</a>
+          </p>
+
+          <hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);margin:32px 0;" />
+          <p style="font-size:13px;color:rgba(255,255,255,0.3);margin:0;">
+            Questions? Reply to this email — we're a real team on the Gold Coast.
+          </p>
+        </div>
+      `,
+    }).catch(console.error)
 
     await admin.from('businesses').update({ welcome_email_sent: true }).eq('id', business.id)
     business.welcome_email_sent = true
