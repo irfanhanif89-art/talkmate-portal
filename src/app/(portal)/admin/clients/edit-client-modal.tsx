@@ -4,6 +4,245 @@ import { useEffect, useState } from 'react'
 import { AdminBusiness, INDUSTRIES, PLAN_OPTIONS, planAud, planLabel } from './types'
 import { ModalShell } from './create-client-modal'
 
+// ── Services library — quick-add chips per industry ───────────────────────────
+const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
+  automotive: [
+    {
+      label: 'Plant & Machinery',
+      icon: '🏗️',
+      text: 'Plant & Machinery Transport — Tilt tray service for excavators, bobcats, compactors, forklifts, rollers and other heavy equipment. Capacity up to 11 tonne / 8.5m length. Available in 4T, 7T and 11T trucks depending on equipment size. Pricing based on distance. Jobs over 100km are price on application (POA). Extra attachments quoted on request. Toll fees apply on routes using Citylink or Eastlink.',
+    },
+    {
+      label: '20ft Containers',
+      icon: '📦',
+      text: '20ft Shipping Container Transport — Empty and loaded container moves within 100km. Account rates available for approved clients (Budget Self Pack, 21 Logistics and similar). Retail rates apply for all others. Chain booking fee applies for container park pickups. Weighbridge fee applies for international port destinations. Tolls extra where applicable. Jobs over 100km are price on application.',
+    },
+    {
+      label: 'Cars & Light Vehicles',
+      icon: '🚗',
+      text: 'Car & Light Vehicle Towing — Towing and transport for sedans, hatchbacks, SUVs, utes and 4WDs. Flatbed tilt tray or wheel-lift available. Local and metro distances covered. Pricing based on distance and vehicle type.',
+    },
+    {
+      label: 'Breakdown Recovery',
+      icon: '🔧',
+      text: 'Breakdown & Accident Recovery — Roadside breakdown response, vehicle recovery from accident scenes, off-road recovery and after-hours emergency towing. Available 24/7. After-hours surcharge may apply.',
+    },
+    {
+      label: 'Motorcycles',
+      icon: '🏍️',
+      text: 'Motorcycle Transport — Safe towing and transport of motorcycles, scooters and dirt bikes. Secure tie-down strapping. Local and metro coverage.',
+    },
+    {
+      label: 'Heavy Vehicles',
+      icon: '🚛',
+      text: 'Heavy Vehicle Recovery & Transport — Recovery and transport of trucks, semi-trailers, buses and other heavy vehicles. Pricing on application based on size, weight and job complexity.',
+    },
+  ],
+  trades: [
+    {
+      label: 'Service Calls',
+      icon: '🔨',
+      text: 'Service calls and on-site inspections. Emergency callouts available. Standard and after-hours rates apply. Travel charge applies beyond standard service area.',
+    },
+    {
+      label: 'Quotes',
+      icon: '📋',
+      text: 'Free quotes available for all work. Quote valid for 30 days. Fixed-price and hourly options depending on job type.',
+    },
+    {
+      label: 'Maintenance',
+      icon: '⚙️',
+      text: 'Scheduled maintenance and preventative servicing. Annual service plans available. Discounts for ongoing maintenance contracts.',
+    },
+    {
+      label: 'Emergency',
+      icon: '🚨',
+      text: '24/7 emergency response available. Priority dispatch for urgent callouts. After-hours rates apply.',
+    },
+  ],
+  hospitality: [
+    {
+      label: 'Bookings',
+      icon: '📅',
+      text: 'Table reservations accepted for lunch and dinner service. Group bookings welcome. Cancellation policy: 24 hours notice required for groups of 8 or more.',
+    },
+    {
+      label: 'Takeaway',
+      icon: '🥡',
+      text: 'Takeaway and pickup orders available. Online ordering available. Estimated wait times provided at time of order.',
+    },
+    {
+      label: 'Functions',
+      icon: '🎉',
+      text: 'Private functions and events catering available. Seated and cocktail-style events. Minimum spend applies. Contact us for a functions package.',
+    },
+    {
+      label: 'Catering',
+      icon: '🍽️',
+      text: 'Offsite catering available for corporate events, private parties and community events. Minimum 48 hours notice required. Delivery fees apply.',
+    },
+  ],
+  medical: [
+    {
+      label: 'Consultations',
+      icon: '🩺',
+      text: 'Standard and extended consultations available. Bulk billing available for eligible patients. Telehealth appointments available.',
+    },
+    {
+      label: 'Appointments',
+      icon: '📅',
+      text: 'Same-day and next-day appointments available where possible. Online booking available. Cancellation required at least 2 hours before appointment time.',
+    },
+    {
+      label: 'Procedures',
+      icon: '💉',
+      text: 'Minor procedures and treatments available on-site. Pre-procedure preparation instructions provided at time of booking.',
+    },
+    {
+      label: 'Referrals',
+      icon: '📄',
+      text: 'Specialist referrals arranged as needed. Scripts and repeat scripts available at appointment or via phone request.',
+    },
+  ],
+  beauty: [
+    {
+      label: 'Hair',
+      icon: '✂️',
+      text: 'Haircuts, colours, highlights, balayage, blowdries and styling. Consultation included for colour services. Prices vary based on hair length and service.',
+    },
+    {
+      label: 'Nails',
+      icon: '💅',
+      text: 'Manicures, pedicures, gel, acrylic and nail art. Removal service available. Prices based on nail type and length.',
+    },
+    {
+      label: 'Treatments',
+      icon: '🧖',
+      text: 'Facial treatments, skin care, waxing and body treatments available. Patch test required for some services — please advise allergies at time of booking.',
+    },
+    {
+      label: 'Bookings',
+      icon: '📅',
+      text: 'Appointments available 7 days. Online booking preferred. Walk-ins welcome subject to availability. Deposit required for some services.',
+    },
+  ],
+  fitness: [
+    {
+      label: 'Memberships',
+      icon: '🏋️',
+      text: 'Casual, weekly and monthly memberships available. No joining fee. Freeze options available. Student and senior discounts apply.',
+    },
+    {
+      label: 'Personal Training',
+      icon: '💪',
+      text: 'One-on-one personal training sessions available. Programs tailored to individual goals. Packages of 5, 10 and 20 sessions available at discounted rates.',
+    },
+    {
+      label: 'Classes',
+      icon: '🧘',
+      text: 'Group fitness classes available. Timetable on website. Booking required for popular classes. Included with all memberships.',
+    },
+    {
+      label: 'Enquiries',
+      icon: '📞',
+      text: 'Free initial consultation available. Tour of facilities on request. Speak to one of our team about the best membership option for your goals.',
+    },
+  ],
+  real_estate: [
+    {
+      label: 'Sales',
+      icon: '🏠',
+      text: 'Residential and commercial property sales. Free appraisals available. Auction and private treaty options. Market updates provided.',
+    },
+    {
+      label: 'Property Management',
+      icon: '🔑',
+      text: 'Full property management service including tenant sourcing, rent collection, maintenance coordination and inspections. Competitive management fees.',
+    },
+    {
+      label: 'Rentals',
+      icon: '📋',
+      text: 'Rental applications and availability enquiries. Property inspections by appointment. Application processing within 24 business hours.',
+    },
+    {
+      label: 'Appraisals',
+      icon: '📊',
+      text: 'Free property appraisals for sales and rentals. Market comparables provided. No obligation.',
+    },
+  ],
+  professional: [
+    {
+      label: 'Consultations',
+      icon: '💼',
+      text: 'Initial consultations available. Fixed-fee and hourly billing options. Confidential discussions. Please have relevant documents ready.',
+    },
+    {
+      label: 'Appointments',
+      icon: '📅',
+      text: 'Appointments available in-office, via phone and video call. Same-week availability for urgent matters.',
+    },
+    {
+      label: 'Documents',
+      icon: '📄',
+      text: 'Document preparation, review and execution available. Turnaround times vary by matter complexity. Rush service available on request.',
+    },
+  ],
+}
+
+const SERVICES_FALLBACK = [
+  { label: 'General Services', icon: '⚡', text: 'General services and enquiries handled. Pricing available on request. Contact us for a quote or to discuss your requirements.' },
+  { label: 'Bookings', icon: '📅', text: 'Appointments and bookings accepted. Availability enquiries welcome. Confirmation sent at time of booking.' },
+  { label: 'Quotes', icon: '📋', text: 'Free quotes available. Response within 1 business day. No obligation.' },
+]
+
+function ServicesQuickAdd({ industry, value, onChange }: { industry: string; value: string; onChange: (v: string) => void }) {
+  const chips = SERVICES_LIBRARY[industry] ?? SERVICES_FALLBACK
+
+  function toggle(text: string) {
+    if (value.includes(text)) {
+      // Remove it
+      onChange(value.replace('\n\n' + text, '').replace(text + '\n\n', '').replace(text, '').trim())
+    } else {
+      // Add it
+      onChange(value ? value.trim() + '\n\n' + text : text)
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <p style={{ fontSize: 11, color: '#7BAED4', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Quick add services
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {chips.map(chip => {
+          const active = value.includes(chip.text.slice(0, 40))
+          return (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => toggle(chip.text)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 20,
+                border: `1px solid ${active ? '#E8622A' : 'rgba(255,255,255,0.12)'}`,
+                background: active ? 'rgba(232,98,42,0.15)' : 'rgba(255,255,255,0.04)',
+                color: active ? '#E8622A' : '#C8D8EA',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'Outfit, sans-serif',
+                transition: 'all 0.15s',
+              }}
+            >
+              <span>{chip.icon}</span>
+              <span>{chip.label}</span>
+              {active && <span style={{ fontSize: 14, lineHeight: 1 }}>×</span>}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 type Tab = 'details' | 'agent' | 'billing' | 'history'
 
 export default function EditClientModal({
@@ -283,6 +522,11 @@ under this client's Agent Setup tab and confirm back.`
       </Field>
       <div style={{ marginTop: 14 }}>
         <Field label="Services summary" full>
+          <ServicesQuickAdd
+            industry={business.industry ?? ''}
+            value={form.services_summary}
+            onChange={v => setForm(f => ({ ...f, services_summary: v }))}
+          />
           <TextArea value={form.services_summary} onChange={v => setForm(f => ({ ...f, services_summary: v }))} />
         </Field>
       </div>
