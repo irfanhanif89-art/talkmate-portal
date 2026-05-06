@@ -1,8 +1,119 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2 + CRM Session 3
+**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2 + CRM Session 3 + Session 4 (Admin client management)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 4 ADDENDUM — Admin client management
+
+Session 4 ships the admin-side "manual onboarding" flow: create a client account on
+behalf of a prospect, generate a Stripe payment link, send a welcome email, hold them
+on a hard T&C gate the first time they log in, and manage their lifecycle (activate,
+suspend, cancel) from a dedicated admin surface.
+
+### Migration
+
+**`supabase/migrations/011_admin_client_management.sql`** — idempotent. Run once in the Supabase SQL editor.
+
+What it adds:
+- `businesses.account_status` (`active`/`pending`/`suspended`/`cancelled`, default `active`)
+- `businesses.onboarded_by` (`self`/`admin`/`partner`, default `self`)
+- `businesses.temp_password`, `welcome_email_sent`, `agent_phone_number`,
+  `stripe_payment_link`, `stripe_payment_link_id`, `billing_override_note`,
+  `manual_next_billing_date`
+- New table `client_comms_log` — chronological customer-touch log, admin-only
+- New table `client_admin_notes` — internal notes about a client, admin-only
+- Indexes on `account_status`, `stripe_payment_link`, and the `(business_id, created_at)` keys for both new tables
+
+**RLS DECISION (recorded here on purpose):** the brief asked for an RLS policy
+comparing the caller's email to `current_setting('app.admin_email', true)`.
+Supabase doesn't expose a stable per-request hook to set that GUC, so the API
+routes always go through the service-role client (`createAdminClient`) — which
+bypasses RLS — and the admin gate is enforced in the route handler via
+`requireAdmin()` (super-admin email + `users.role = 'admin'`). The two new tables
+keep RLS *enabled* with only a service-role policy, so no anon/authenticated
+session can ever read or write them. Same effective result, simpler ops.
+
+### What's new
+
+| Surface | What landed |
+|---|---|
+| `/admin/clients` | Client management page. Stats strip (total/active/pending/suspended/cancelled), pending banner, search + status filter, full client table with View/Edit, Payment Link, Login as Client, and Activate row actions. |
+| `/admin/clients/overview` | One-row-per-client health dashboard. Sortable columns: business, plan, agent live/not, calls this month, status, T&C accepted, welcome email, first login (from `auth.users.last_sign_in_at`), next billing (Stripe `current_period_end` or manual override). |
+| Create New Client modal | 5 sections: Business details, Plan (3-card selector with Growth recommended), Agent setup (answer phrase / services summary / after-hours), optional initial note, send-welcome-email toggle. Success screen shows login + temp password (copyable, plain text), Generate payment link button. |
+| View/Edit modal | 4 tabs. **Details** — every business field editable, plus suspend/cancel danger zone with reason capture and "send pause offer" checkbox. **Agent Setup** — agent fields editable, auto-generated Donna build prompt with copy button, onboarding checklist visual, downloadable HTML onboarding sheet (print to PDF). **Billing** — payment link with copy/regenerate, SMS template, billing override note + manual next billing date. **History** — admin notes column + comms log column, both append-only with timestamps. |
+| Impersonation | Red sticky banner on every portal page when `?impersonate=1` is in the URL. Banner reads "Admin view — you are viewing this portal as [Business Name]" with an Exit link back to /admin/clients. State held in `sessionStorage` so it survives client navigation but doesn't leak to other tabs. |
+| T&C hard gate | Middleware redirects any user where `businesses.onboarded_by = 'admin'` AND no `legal_acceptances` row exists to `/accept-terms?next=<original>`. Runs **before** the subscription check so unsigned admin clients land on the T&C screen even if they haven't paid yet. |
+| Existing admin dashboard | Section nav now includes Clients (with pending count badge) and Client Overview. Total Clients card shows `X active / Y pending`. Amber banner appears at the top of `/admin` when any pending accounts exist. |
+
+### API routes (all admin-gated via `requireAdmin()`)
+
+| Method · Route | Purpose |
+|---|---|
+| `GET /api/admin/clients` | List every business with admin-view fields. |
+| `POST /api/admin/clients/create` | Create auth user + business with `account_status='pending'`, `onboarded_by='admin'`. Generates 10-char alphanumeric mixed-case temp password. Duplicate-email guard returns 409 with `existing_business_id`. Optionally fires the welcome email via Make. |
+| `PATCH /api/admin/clients/[id]` | Whitelisted partial update for the View/Edit modal. Agent setup fields merge into `businesses.notifications_config`. |
+| `POST /api/admin/clients/[id]/activate` | Sets status to active. |
+| `POST /api/admin/clients/[id]/suspend` | Sets status to suspended. |
+| `POST /api/admin/clients/[id]/cancel` | Cancels live Stripe subscriptions, sets status to cancelled, logs the reason, optionally fires the pause-offer email. |
+| `POST /api/admin/clients/[id]/generate-payment-link` | Creates a Stripe recurring price + payment link at the plan's AUD price ($299/$499/$799), embeds `business_id` in metadata, persists the URL + payment-link id on the business row. |
+| `POST /api/admin/clients/[id]/notes` (and GET) | Append/list admin notes. |
+| `POST /api/admin/clients/[id]/comms-log` (and GET) | Append/list comms log entries. |
+| `POST /api/admin/clients/[id]/impersonate` | Mints a Supabase magic link for the client owner with redirect to `/dashboard?impersonate=1&biz=<id>`. Logs the impersonation start in admin notes. |
+| `POST /api/stripe/payment-link-paid` | Stripe webhook listening for `checkout.session.completed`. Resolves the business via `payment_link.metadata.business_id`, activates the account, upserts the subscription, and fires the welcome email if not already sent. Verifies signatures against a **separate** secret (`STRIPE_PAYMENT_LINK_WEBHOOK_SECRET`) so the existing `/api/webhooks/stripe` endpoint is untouched. |
+
+### Welcome-email payload (Make.com)
+
+`POST` to `MAKE_WEBHOOK_EMAIL_TRIGGER` with `event: 'welcome_post_payment'` and a `data` object shaped:
+
+```json
+{
+  "type": "welcome_admin_created",
+  "to": "<client email>",
+  "owner_name": "...",
+  "business_name": "...",
+  "temp_password": "...",
+  "plan": "starter | growth | pro",
+  "login_url": "https://app.talkmate.com.au/login",
+  "accept_terms_url": "https://app.talkmate.com.au/accept-terms",
+  "from_name": "Irfan from TalkMate",
+  "from_email": "hello@talkmate.com.au"
+}
+```
+
+Make.com routes by `data.type` — set up a new route for `welcome_admin_created`
+that includes login URL, temp password, and accept-terms URL.
+
+### Manual deployment steps for Donna
+
+1. **Migration** — open Supabase SQL editor, paste `supabase/migrations/011_admin_client_management.sql`, run. Idempotent.
+2. **Stripe webhook** — Stripe Dashboard → Developers → Webhooks → Add endpoint:
+   - URL: `https://app.talkmate.com.au/api/stripe/payment-link-paid`
+   - Events: `checkout.session.completed`
+   - Copy the signing secret, add as Vercel env var **`STRIPE_PAYMENT_LINK_WEBHOOK_SECRET`** (Production), redeploy.
+3. **Make.com welcome email** — add a new route in the existing email-trigger scenario for `data.type = "welcome_admin_created"`. Body must include owner name, business name, temp password, login URL, and accept-terms URL. From: `hello@talkmate.com.au`.
+4. No Vapi changes needed.
+
+### Testing checklist
+
+- [ ] Create client → appears in Supabase `auth.users` and `businesses` with `account_status='pending'`, `onboarded_by='admin'`
+- [ ] Duplicate email returns 409 with `existing_business_id`
+- [ ] Temp password visible + copyable on success screen
+- [ ] Payment link creates Stripe recurring subscription at correct AUD price
+- [ ] `payment-link-paid` webhook auto-activates account when paid
+- [ ] First login for admin-created account is redirected to `/accept-terms` and cannot navigate away
+- [ ] After acceptance lands on dashboard
+- [ ] Donna build prompt copies cleanly
+- [ ] SMS template copies with payment link interpolated
+- [ ] Impersonation opens client portal in new tab with red banner; Exit returns to `/admin/clients`
+- [ ] Overview page renders all clients with calls/mo, T&C, last login, next billing
+- [ ] Admin notes + comms log both append-only with timestamps
+- [ ] Cancellation cancels Stripe subscription and sets account status
+- [ ] Download onboarding sheet generates HTML (print → PDF)
+- [ ] Pending banner shows on `/admin` when any pending accounts exist
+- [ ] Existing CRM, billing, partner, white-label flows unaffected
 
 ---
 

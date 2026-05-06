@@ -18,8 +18,12 @@ export default async function AdminPage() {
   const adminClient = createAdminClient()
 
   const { data: businesses } = await adminClient.from('businesses').select(`
-    id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at, signup_at, owner_user_id, industry
+    id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at, signup_at, owner_user_id, industry, account_status
   `).order('created_at', { ascending: false }).limit(100)
+
+  // Active vs pending split for the clients header card + pending banner.
+  const activeClientCount = (businesses ?? []).filter(b => (b as { account_status?: string }).account_status === 'active').length
+  const pendingClientCount = (businesses ?? []).filter(b => (b as { account_status?: string }).account_status === 'pending').length
 
   // CRM Overview (Session 1 brief Part 9)
   const { count: contactsTotal } = await adminClient.from('contacts')
@@ -135,8 +139,10 @@ export default async function AdminPage() {
       <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 14 }}>Admin</h1>
 
       {/* Admin section nav */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
         {[
+          { href: '/admin/clients', label: 'Clients', badge: pendingClientCount },
+          { href: '/admin/clients/overview', label: 'Client Overview' },
           { href: '/admin/partners', label: 'Partners' },
           { href: '/admin/white-label', label: 'White Label' },
           { href: '/admin/make-setup', label: 'Make.com Setup' },
@@ -148,15 +154,40 @@ export default async function AdminPage() {
               padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: 'rgba(74,159,232,0.08)', border: '1px solid rgba(74,159,232,0.25)',
               color: '#4A9FE8', textDecoration: 'none', fontFamily: 'Outfit, sans-serif',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
             }}
-          >{l.label} →</Link>
+          >{l.label} →
+            {typeof l.badge === 'number' && l.badge > 0 && (
+              <span style={{
+                background: '#F59E0B', color: 'white', fontSize: 10, fontWeight: 700,
+                padding: '2px 7px', borderRadius: 99,
+              }}>{l.badge}</span>
+            )}
+          </Link>
         ))}
       </div>
+
+      {/* Pending clients banner — Session 4 brief Part 6. */}
+      {pendingClientCount > 0 && (
+        <Link
+          href="/admin/clients?status=pending"
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '12px 18px', background: 'rgba(245,158,11,0.10)',
+            border: '1px solid rgba(245,158,11,0.4)', borderRadius: 10,
+            color: '#F59E0B', textDecoration: 'none', marginBottom: 18,
+            fontSize: 13, fontWeight: 600,
+          }}
+        >
+          <span>{pendingClientCount} client{pendingClientCount === 1 ? '' : 's'} pending activation</span>
+          <span style={{ fontWeight: 700 }}>Review →</span>
+        </Link>
+      )}
 
       {/* MRR / Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 22 }}>
         {[
-          { label: 'Total Clients', value: businesses?.length || 0, color: '#4A9FE8' },
+          { label: 'Total Clients', value: `${activeClientCount} active / ${pendingClientCount} pending`, color: '#4A9FE8' },
           { label: 'MRR', value: `$${totalMRR.toLocaleString()}`, color: '#E8622A' },
           { label: 'New This Month', value: newThisMonth, color: '#22C55E' },
           { label: 'Active Subs', value: subscriptions?.filter(s => s.status === 'active').length || 0, color: '#8B5CF6' },

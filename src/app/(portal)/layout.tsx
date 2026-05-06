@@ -1,9 +1,11 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { BusinessTypeProvider } from '@/context/business-type-context'
 import { type BusinessType } from '@/lib/business-types'
 import { getPlan } from '@/lib/plan'
 import PortalShell from '@/components/portal/portal-shell'
+import ImpersonationBanner from '@/components/portal/impersonation-banner'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -74,6 +76,9 @@ export default async function PortalLayout({ children }: { children: React.React
         isWhiteLabelPartner={Boolean((business as { is_partner?: boolean }).is_partner)}
         unseenChangelog={unseenChangelog}
       >
+        <Suspense fallback={null}>
+          <ImpersonationBanner businessName={business.name} />
+        </Suspense>
         {children}
       </PortalShell>
     </BusinessTypeProvider>

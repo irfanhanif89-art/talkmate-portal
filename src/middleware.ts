@@ -26,6 +26,36 @@ async function checkHasActiveSub(userId: string): Promise<boolean> {
   }
 }
 
+// T&C HARD GATE for admin-created accounts (Session 4 brief Part 5).
+// If the user's business was onboarded by admin and they've never recorded
+// a legal_acceptances row, they're trapped on /accept-terms until they sign.
+// Anything else (self-signups, partner signups, already-signed admin
+// accounts) is unaffected by this check.
+async function needsAdminTosGate(userId: string): Promise<boolean> {
+  try {
+    const bizRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=id,onboarded_by,tos_accepted_at`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    )
+    const bizData: { id: string; onboarded_by: string | null; tos_accepted_at: string | null }[] = await bizRes.json()
+    if (!Array.isArray(bizData) || bizData.length === 0) return false
+    const biz = bizData[0]
+    if (biz.onboarded_by !== 'admin') return false
+    if (biz.tos_accepted_at) return false
+
+    // Double-check the audit log in case tos_accepted_at was wiped.
+    const accRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/legal_acceptances?client_id=eq.${biz.id}&select=id&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    )
+    const accData: { id: string }[] = await accRes.json()
+    return !Array.isArray(accData) || accData.length === 0
+  } catch {
+    // Fail OPEN — never trap a user behind a transient network blip.
+    return false
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -57,8 +87,9 @@ export async function middleware(request: NextRequest) {
     '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
   ]
 
-  // Pages that require login but NOT a subscription
-  const authOnlyPaths = ['/subscribe']
+  // Pages that require login but NOT a subscription. /accept-terms must
+  // be reachable before payment so admin-created accounts can sign first.
+  const authOnlyPaths = ['/subscribe', '/accept-terms']
 
   // Public auth pages (logged-in users should not see these)
   const guestOnlyPaths = ['/login', '/register', '/verify-email']
@@ -86,6 +117,22 @@ export async function middleware(request: NextRequest) {
     if (path === '/subscribe') return supabaseResponse
     const hasSub = await checkHasActiveSub(user.id)
     return redirect(hasSub ? '/dashboard' : '/subscribe')
+  }
+
+  // T&C HARD GATE — admin-created accounts must accept terms on first login
+  // before they can access ANY portal page. Runs BEFORE the sub check so
+  // unsigned admin clients land on /accept-terms even if they haven't paid yet.
+  if (
+    user &&
+    isProtected &&
+    !path.startsWith('/accept-terms') &&
+    !path.startsWith('/onboarding') &&
+    !isAdminApprove
+  ) {
+    const needsTos = await needsAdminTosGate(user.id)
+    if (needsTos) {
+      return redirect(`/accept-terms?next=${encodeURIComponent(path)}`)
+    }
   }
 
   // Logged in on a protected path → must have active sub (except /onboarding and admin/approve)
