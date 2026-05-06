@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
+import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/server'
-import { generateTempPassword, isAdminPlan, requireAdmin } from '@/lib/admin-auth'
+import { generateTempPassword, isAdminPlan, PLAN_PRICE_AUD, requireAdmin } from '@/lib/admin-auth'
 import { postEmailTrigger } from '@/lib/make-webhook'
 import { sendEmail } from '@/lib/resend'
 
@@ -132,6 +133,43 @@ export async function POST(req: Request) {
     note: `Account created by admin. Plan: ${plan}. Pending payment.`,
   })
 
+  // Generate Stripe payment link now so it can be included in the welcome email.
+  let stripe_payment_link: string | null = null
+  if (process.env.STRIPE_SECRET_KEY) {
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
+      const price = await stripe.prices.create({
+        currency: 'aud',
+        unit_amount: PLAN_PRICE_AUD[plan] * 100,
+        recurring: { interval: 'month' },
+        product_data: { name: `TalkMate ${plan.charAt(0).toUpperCase() + plan.slice(1)} — ${business_name}` },
+        nickname: plan,
+        metadata: { business_id: business.id, plan },
+      })
+      const link = await stripe.paymentLinks.create({
+        line_items: [{ price: price.id, quantity: 1 }],
+        metadata: { business_id: business.id, plan },
+        after_completion: {
+          type: 'redirect',
+          redirect: { url: 'https://app.talkmate.com.au/login?payment=success' },
+        },
+      })
+      stripe_payment_link = link.url
+      await admin.from('businesses').update({
+        stripe_payment_link: link.url,
+        stripe_payment_link_id: link.id,
+      }).eq('id', business.id)
+      business.stripe_payment_link = link.url
+      business.stripe_payment_link_id = link.id
+      await admin.from('client_admin_notes').insert({
+        business_id: business.id,
+        note: `Payment link generated for ${plan} plan ($${PLAN_PRICE_AUD[plan]} AUD/mo).`,
+      })
+    } catch (e) {
+      console.error('[create] Failed to generate Stripe payment link:', e)
+    }
+  }
+
   if (send_welcome_email) {
     await postEmailTrigger({
       // Reuse the existing typed channel — Make.com routes by `data.type`.
@@ -186,10 +224,24 @@ export async function POST(req: Request) {
             Before you get started, please accept the TalkMate terms of service — it only takes a moment.
           </p>
 
-          <a href="https://app.talkmate.com.au/accept-terms"
-             style="display:inline-block;background:#E8622A;color:white;font-size:16px;font-weight:700;padding:16px 32px;border-radius:10px;text-decoration:none;margin-bottom:20px;">
-            Accept Terms &amp; Get Started →
-          </a>
+          <div style="margin-bottom:28px;">
+            <p style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px;">Step 1</p>
+            <a href="https://app.talkmate.com.au/accept-terms"
+               style="display:inline-block;background:#E8622A;color:white;font-size:16px;font-weight:700;padding:16px 32px;border-radius:10px;text-decoration:none;">
+              Accept Terms &amp; Get Started →
+            </a>
+          </div>
+
+          ${stripe_payment_link ? `
+          <div style="padding:24px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;margin-bottom:28px;">
+            <p style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.12em;margin:0 0 8px;">Step 2 — Activate your account</p>
+            <p style="font-size:14px;color:rgba(255,255,255,0.6);line-height:1.6;margin:0 0 16px;">Once you've accepted the terms, complete payment to go live. Your AI agent will be provisioned immediately after payment.</p>
+            <a href="${stripe_payment_link}"
+               style="display:inline-block;background:#16a34a;color:white;font-size:16px;font-weight:700;padding:16px 32px;border-radius:10px;text-decoration:none;">
+              Pay Now and Go Live →
+            </a>
+          </div>
+          ` : ''}
 
           <p style="font-size:14px;color:rgba(255,255,255,0.45);margin:20px 0 0;">
             Already accepted? <a href="https://app.talkmate.com.au/login" style="color:#4A9FE8;text-decoration:none;">Log in to your dashboard →</a>
