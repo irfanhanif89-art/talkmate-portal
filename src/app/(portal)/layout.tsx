@@ -6,11 +6,24 @@ import { type BusinessType } from '@/lib/business-types'
 import { getPlan } from '@/lib/plan'
 import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
+import AdminShell from '@/components/portal/admin-shell'
+
+const ADMIN_EMAIL = 'hello@talkmate.com.au'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  // Super-admin bypass — hello@talkmate.com.au has no business record.
+  // Render a minimal shell so /admin pages work without a business context.
+  if (user.email === ADMIN_EMAIL) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        {children}
+      </div>
+    )
+  }
 
   const { data: business } = await supabase
     .from('businesses')
@@ -28,7 +41,6 @@ export default async function PortalLayout({ children }: { children: React.React
 
   const planConfig = getPlan(business.plan)
 
-  // Quick stats — used to render the sidebar plan card and the topbar badges.
   const startOfMonth = new Date()
   startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
