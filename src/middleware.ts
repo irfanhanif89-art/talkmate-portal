@@ -119,6 +119,13 @@ export async function middleware(request: NextRequest) {
     return redirect(hasSub ? '/dashboard' : '/subscribe')
   }
 
+  // Admin user bypass — hello@talkmate.com.au has no business record so the
+  // subscription and ToS checks would wrongly redirect them. Let them through.
+  const isAdminUser = user?.email === 'hello@talkmate.com.au'
+  if (isAdminUser || path.startsWith('/admin')) {
+    return supabaseResponse
+  }
+
   // T&C HARD GATE — admin-created accounts must accept terms on first login
   // before they can access ANY portal page. Runs BEFORE the sub check so
   // unsigned admin clients land on /accept-terms even if they haven't paid yet.
