@@ -21,16 +21,10 @@ async function checkHasActiveSub(userId: string): Promise<boolean> {
     const subData: { status: string }[] = await subRes.json()
     return Array.isArray(subData) && subData.length > 0
   } catch {
-    // If check fails, fail OPEN — let them through rather than cause a redirect loop
     return true
   }
 }
 
-// T&C HARD GATE for admin-created accounts (Session 4 brief Part 5).
-// If the user's business was onboarded by admin and they've never recorded
-// a legal_acceptances row, they're trapped on /accept-terms until they sign.
-// Anything else (self-signups, partner signups, already-signed admin
-// accounts) is unaffected by this check.
 async function needsAdminTosGate(userId: string): Promise<boolean> {
   try {
     const bizRes = await fetch(
@@ -43,7 +37,6 @@ async function needsAdminTosGate(userId: string): Promise<boolean> {
     if (biz.onboarded_by !== 'admin') return false
     if (biz.tos_accepted_at) return false
 
-    // Double-check the audit log in case tos_accepted_at was wiped.
     const accRes = await fetch(
       `${SUPABASE_URL}/rest/v1/legal_acceptances?client_id=eq.${biz.id}&select=id&limit=1`,
       { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
@@ -51,10 +44,12 @@ async function needsAdminTosGate(userId: string): Promise<boolean> {
     const accData: { id: string }[] = await accRes.json()
     return !Array.isArray(accData) || accData.length === 0
   } catch {
-    // Fail OPEN — never trap a user behind a transient network blip.
     return false
   }
 }
+
+// Super-admin email — bypasses all subscription and ToS checks
+const ADMIN_EMAIL = 'hello@talkmate.com.au'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -80,18 +75,26 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname
 
-  // Pages that require login AND an active subscription
+  // Admin user — short-circuit ALL checks immediately after we have the user.
+  // hello@talkmate.com.au has no business/subscription and must never be
+  // redirected to /subscribe or /accept-terms.
+  if (user?.email === ADMIN_EMAIL) {
+    if (path === '/login' || path === '/register') {
+      const url = new URL('/admin', request.url)
+      const res = NextResponse.redirect(url)
+      supabaseResponse.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value))
+      return res
+    }
+    return supabaseResponse
+  }
+
   const protectedPaths = [
     '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
     '/settings', '/billing', '/admin', '/onboarding', '/contacts',
     '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
   ]
 
-  // Pages that require login but NOT a subscription. /accept-terms must
-  // be reachable before payment so admin-created accounts can sign first.
   const authOnlyPaths = ['/subscribe', '/accept-terms']
-
-  // Public auth pages (logged-in users should not see these)
   const guestOnlyPaths = ['/login', '/register', '/verify-email']
 
   const isAdminApprove = path.startsWith('/admin/approve')
@@ -106,29 +109,21 @@ export async function middleware(request: NextRequest) {
     return res
   }
 
-  // Not logged in → send to login
   if (!user && (isProtected || isAuthOnly)) {
     return redirect('/login')
   }
 
-  // Logged in on a guest-only page → check sub and send to dashboard or subscribe
   if (user && isGuestOnly) {
-    // Safety: never redirect /subscribe → /subscribe (would loop)
     if (path === '/subscribe') return supabaseResponse
     const hasSub = await checkHasActiveSub(user.id)
     return redirect(hasSub ? '/dashboard' : '/subscribe')
   }
 
-  // Admin user bypass — hello@talkmate.com.au has no business record so the
-  // subscription and ToS checks would wrongly redirect them. Let them through.
-  const isAdminUser = user?.email === 'hello@talkmate.com.au'
-  if (isAdminUser || path.startsWith('/admin')) {
+  // /admin paths bypass subscription check (admin/approve already did this)
+  if (path.startsWith('/admin')) {
     return supabaseResponse
   }
 
-  // T&C HARD GATE — admin-created accounts must accept terms on first login
-  // before they can access ANY portal page. Runs BEFORE the sub check so
-  // unsigned admin clients land on /accept-terms even if they haven't paid yet.
   if (
     user &&
     isProtected &&
@@ -142,11 +137,9 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Logged in on a protected path → must have active sub (except /onboarding and admin/approve)
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
     const hasSub = await checkHasActiveSub(user.id)
     if (!hasSub) {
-      // Safety: if already heading to /subscribe, don't redirect again
       if (path.startsWith('/subscribe')) return supabaseResponse
       return redirect('/subscribe')
     }
