@@ -114,9 +114,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isGuestOnly) {
-    if (path === '/subscribe') return supabaseResponse
-    const hasSub = await checkHasActiveSub(user.id)
-    return redirect(hasSub ? '/dashboard' : '/subscribe')
+    // Always redirect to /dashboard — no async DB calls, no loop risk.
+    // Dashboard and protected routes handle subscription + TOS gates from there.
+    return redirect('/dashboard')
   }
 
   // /admin paths bypass subscription check (admin/approve already did this)
