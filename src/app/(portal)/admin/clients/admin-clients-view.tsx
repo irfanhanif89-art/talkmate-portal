@@ -57,8 +57,23 @@ export default function AdminClientsView({
     setTimeout(() => setToast(null), 3500)
   }
 
+  // Refresh the admin session before any API mutation.
+  // If the cookie has expired, redirects to login instead of showing
+  // a confusing "Unauthorized" toast.
+  async function ensureSession(): Promise<boolean> {
+    try {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { window.location.href = '/login'; return false }
+      await supabase.auth.refreshSession()
+      return true
+    } catch { return true }
+  }
+
   async function handleActivate(id: string) {
     setActivateBusy(id)
+    if (!await ensureSession()) { setActivateBusy(null); return }
     try {
       const res = await fetch(`/api/admin/clients/${id}/activate`, { method: 'POST' })
       const data = await res.json()
@@ -74,6 +89,7 @@ export default function AdminClientsView({
 
   async function handlePaymentLink(id: string) {
     setPaymentLinkBusy(id)
+    if (!await ensureSession()) { setPaymentLinkBusy(null); return }
     try {
       const res = await fetch(`/api/admin/clients/${id}/generate-payment-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       const data = await res.json()
@@ -91,6 +107,7 @@ export default function AdminClientsView({
   async function handleImpersonate(id: string) {
     setImpersonateBusy(id)
     try {
+      if (!await ensureSession()) return
       const res = await fetch(`/api/admin/clients/${id}/impersonate`, { method: 'POST' })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Failed')
