@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -43,6 +44,8 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordMsg, setPasswordMsg] = useState('')
   const [changingPw, setChangingPw] = useState(false)
+  const [servicePricing, setServicePricing] = useState<ServicePricing>({})
+  const [bizId, setBizId] = useState<string | null>(null)
 
   async function changePassword() {
     if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match ❌'); return }
@@ -64,10 +67,13 @@ export default function SettingsPage() {
     if (!user) return
     const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
     if (b) {
-      const biz = b as Record<string, string>
-      setBiz(biz)
-      setGreeting(biz.greeting || 'Thank you for calling. How can I help you today?')
-      setAgentName(biz.agent_name || '')
+      const biz = b as Record<string, unknown>
+      setBiz(biz as Record<string, string>)
+      setBizId((biz.id as string) ?? null)
+      setGreeting((biz.greeting as string) || 'Thank you for calling. How can I help you today?')
+      setAgentName((biz.agent_name as string) || '')
+      const cfg = (biz.notifications_config ?? {}) as Record<string, unknown>
+      setServicePricing((cfg.service_pricing as ServicePricing) ?? {})
     }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
@@ -148,7 +154,7 @@ export default function SettingsPage() {
             <div>
               <label style={{ ...lbl, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>ABN</span>
-                {biz.abn_verified === 'true' || biz.abn_verified === true ? (
+                {(biz.abn_verified === 'true' || (biz.abn_verified as unknown) === true) ? (
                   <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E', letterSpacing: '0.05em' }}>
                     ✓ Verified
                   </span>
@@ -227,6 +233,15 @@ export default function SettingsPage() {
           <div style={{ marginBottom: 24 }}>
             <label style={lbl}>Escalation rules</label>
             <textarea value={escalation} onChange={e => setEscalation(e.target.value)} rows={4} style={ta} />
+          </div>
+
+          <div style={{ marginBottom: 28 }}>
+            <ServicePricingEditor value={servicePricing} onChange={async (v) => {
+              setServicePricing(v)
+              if (!bizId) return
+              const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
+              await supabase.from('businesses').update({ notifications_config: { ...cfg, service_pricing: v } }).eq('id', bizId)
+            }} />
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>

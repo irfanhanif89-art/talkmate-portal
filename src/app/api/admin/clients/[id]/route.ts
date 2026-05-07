@@ -54,9 +54,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Agent setup answers live in the businesses.notifications_config jsonb so
   // we have to merge rather than overwrite.
   const agentSetupKeys = ['agent_answer_phrase', 'services_summary', 'after_hours_instruction'] as const
-  const agentSetupPatch: Record<string, string> = {}
+  const agentSetupPatch: Record<string, unknown> = {}
   for (const k of agentSetupKeys) {
     if (typeof body[k] === 'string') agentSetupPatch[k] = String(body[k]).trim()
+  }
+  if (typeof body.service_pricing === 'object' && body.service_pricing !== null) {
+    agentSetupPatch.service_pricing = body.service_pricing
   }
   if (Object.keys(agentSetupPatch).length > 0) {
     const { data: current } = await admin.from('businesses')
