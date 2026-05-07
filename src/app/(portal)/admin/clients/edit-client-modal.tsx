@@ -195,8 +195,34 @@ const SERVICES_FALLBACK = [
   { label: 'Quotes', icon: '📋', text: 'Free quotes available. Response within 1 business day. No obligation.' },
 ]
 
+// Industry aliases — map variant values to library keys
+const INDUSTRY_ALIAS: Record<string, string> = {
+  towing: 'automotive',
+  transport: 'automotive',
+  smash_repairs: 'automotive',
+  mechanic: 'automotive',
+  roadside: 'automotive',
+  plumbing: 'trades',
+  electrical: 'trades',
+  building: 'trades',
+  construction: 'trades',
+  hvac: 'trades',
+  restaurant: 'hospitality',
+  cafe: 'hospitality',
+  takeaway: 'hospitality',
+  gym: 'fitness',
+  pharmacy: 'medical',
+  dental: 'medical',
+  physio: 'medical',
+  salon: 'beauty',
+  accounting: 'professional',
+  legal: 'professional',
+  law: 'professional',
+}
+
 function ServicesQuickAdd({ industry, value, onChange }: { industry: string; value: string; onChange: (v: string) => void }) {
-  const chips = SERVICES_LIBRARY[industry] ?? SERVICES_FALLBACK
+  const key = INDUSTRY_ALIAS[industry] ?? industry
+  const chips = SERVICES_LIBRARY[key] ?? SERVICES_FALLBACK
 
   function toggle(text: string) {
     if (value.includes(text)) {
