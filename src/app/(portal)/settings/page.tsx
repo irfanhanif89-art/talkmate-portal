@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
+import DivertInstructions from '@/components/portal/divert-instructions'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -259,7 +260,9 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 12 }}>
+          <DivertInstructions agentNumber={(biz as Record<string,string>).agent_phone_number || undefined} />
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
             <button onClick={syncAI} disabled={syncing} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>
               {syncing ? 'Syncing…' : 'Save & Sync to AI'}
             </button>

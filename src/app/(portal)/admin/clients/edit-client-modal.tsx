@@ -5,6 +5,7 @@ import { AdminBusiness, INDUSTRIES, PLAN_OPTIONS, planAud, planLabel } from './t
 import { ModalShell } from './create-client-modal'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
+import DivertInstructions from '@/components/portal/divert-instructions'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -686,6 +687,7 @@ under this client's Agent Setup tab and confirm back.`
         <Field label="Agent phone number" full>
           <Input value={form.agent_phone_number} onChange={v => setForm(f => ({ ...f, agent_phone_number: v }))} placeholder="+61 4xx xxx xxx (set by Donna once agent is built)" />
         </Field>
+        <DivertInstructions agentNumber={form.agent_phone_number || undefined} />
       </div>
 
       {err && <Err msg={err} />}
