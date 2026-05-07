@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -32,7 +32,7 @@ const testimonials = [
   { text: "Set it up on a Friday, had 12 bookings by Monday. Pays for itself.", name: 'Mike R.', biz: 'Rapid Auto, Melbourne' },
 ]
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const nextUrl = searchParams.get('next') ?? '/dashboard'
@@ -263,5 +263,13 @@ export default function LoginPage() {
         }
       `}</style>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#061322' }} />}>
+      <LoginPageInner />
+    </Suspense>
   )
 }
