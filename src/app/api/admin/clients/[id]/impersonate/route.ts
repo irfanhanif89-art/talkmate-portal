@@ -38,9 +38,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     note: `Admin impersonation session started by ${auth.user.email}.`,
   })
 
+  // Wrap in /admin/view-as so it signs out the admin session before
+  // following the magic link — otherwise the existing admin cookie blocks it.
+  const viewAsUrl = `https://app.talkmate.com.au/admin/view-as?url=${encodeURIComponent(data.properties.action_link)}`
+
   return NextResponse.json({
     ok: true,
-    url: data.properties.action_link,
+    url: viewAsUrl,
     business_name: business.name,
     business_id: business.id,
   })

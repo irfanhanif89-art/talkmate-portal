@@ -122,6 +122,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // /admin paths bypass subscription check (admin/approve already did this)
+  // /admin/view-as is a transitional signout page — always allow through
   if (path.startsWith('/admin')) {
     return supabaseResponse
   }
