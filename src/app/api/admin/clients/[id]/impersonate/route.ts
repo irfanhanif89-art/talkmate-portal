@@ -22,11 +22,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // Magic link lands the admin on /dashboard. The dashboard banner shows
   // "admin view — impersonating X" because the URL carries ?impersonate=1.
+  // Must go through /auth/callback so the SSR client can exchange the code
+  // for a session and set cookies. Direct redirect to /dashboard skips this
+  // and leaves the user with no session — they see the login page.
+  const next = encodeURIComponent(`/dashboard?impersonate=1&biz=${business.id}`)
   const { data, error } = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email: owner.email,
     options: {
-      redirectTo: `https://app.talkmate.com.au/dashboard?impersonate=1&biz=${business.id}`,
+      redirectTo: `https://app.talkmate.com.au/auth/callback?next=${next}`,
     },
   })
   if (error || !data?.properties?.action_link) {
