@@ -110,6 +110,7 @@ export default function PortalSidebar(props: Props) {
       label: 'Account',
       items: [
         { href: '/billing', label: 'Billing', icon: CreditCard, show: true },
+        { href: '/profile', label: 'My Profile', icon: UserIcon, show: true },
         { href: '/settings', label: 'Settings', icon: UserIcon, show: true },
         { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner },
         { href: '/admin', label: 'Admin', icon: Shield, show: props.userRole === 'admin' },
