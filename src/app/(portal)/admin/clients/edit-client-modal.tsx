@@ -629,9 +629,26 @@ under this client's Agent Setup tab and confirm back.`
           </button>
         </div>
         {form.live_transfer_enabled && (
-          <Field label="Transfer to number" full>
-            <Input value={form.live_transfer_number} onChange={v => setForm(f => ({ ...f, live_transfer_number: v }))} placeholder="+61 4xx xxx xxx — customer is bridged to this number" />
-          </Field>
+          <div>
+            <Field label="Transfer to number" full>
+              <Input value={form.live_transfer_number} onChange={v => setForm(f => ({ ...f, live_transfer_number: v }))} placeholder="+61 4xx xxx xxx — customer is bridged to this number" />
+            </Field>
+            {/* Loop warning */}
+            <div style={{ marginTop: 10, padding: '10px 13px', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 9 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#FBB624', marginBottom: 5 }}>⚠️ Avoid call forwarding loops</div>
+              <div style={{ fontSize: 12, color: '#c9a84c', lineHeight: 1.6 }}>
+                <strong>Do NOT use the same number the client diverts from.</strong> If they divert all calls from their mobile to TalkMate, transferring back to that mobile will loop.
+              </div>
+              <div style={{ fontSize: 12, color: '#c9a84c', lineHeight: 1.6, marginTop: 6 }}>
+                <strong>Best options:</strong>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+                  <li>A <strong>landline</strong> or office number (can&apos;t be mobile-diverted)</li>
+                  <li>A <strong>different mobile</strong> (manager, spouse, second phone)</li>
+                  <li>Tell client to use <strong>&ldquo;Divert on no answer&rdquo;</strong> instead of &ldquo;Divert all calls&rdquo; — then their mobile rings first and they just pick up</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
