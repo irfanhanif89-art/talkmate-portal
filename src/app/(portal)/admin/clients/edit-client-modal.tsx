@@ -10,12 +10,12 @@ const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: stri
     {
       label: 'Plant & Machinery',
       icon: '🏗️',
-      text: 'Plant & Machinery Transport — Tilt tray service for excavators, bobcats, compactors, forklifts, rollers and other heavy equipment. Capacity up to 11 tonne / 8.5m length. Available in 4T, 7T and 11T trucks depending on equipment size. Pricing based on distance. Jobs over 100km are price on application (POA). Extra attachments quoted on request. Toll fees apply on routes using Citylink or Eastlink.',
+      text: 'Plant & Machinery Transport — Tilt tray service for excavators, bobcats, compactors, forklifts, rollers and other heavy equipment. Capacity up to 11 tonne / 8.5m length. Pricing based on distance. Jobs over 100km are price on application (POA). Extra attachments quoted on request. Toll fees apply on routes using Citylink or Eastlink.',
     },
     {
       label: '20ft Containers',
       icon: '📦',
-      text: '20ft Shipping Container Transport — Empty and loaded container moves within 100km. Account rates available for approved clients (Budget Self Pack, 21 Logistics and similar). Retail rates apply for all others. Chain booking fee applies for container park pickups. Weighbridge fee applies for international port destinations. Tolls extra where applicable. Jobs over 100km are price on application.',
+      text: '20ft Shipping Container Transport — Empty and loaded container moves within 100km. Account rates available for approved clients. Retail rates apply for all others. Container Chain booking fee applies for container park pickups. Weighbridge fee applies for international port destinations. Tolls extra where applicable. Jobs over 100km are price on application.',
     },
     {
       label: 'Cars & Light Vehicles',
