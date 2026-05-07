@@ -103,10 +103,12 @@ function AddOnCard({ iconBg, iconStroke, iconPath, title, dataProof, features, p
 
 export default function BillingPage() {
   const supabase = createClient()
-  const [cancelling, setCancelling] = useState(false)
+  const [cancelStep, setCancelStep] = useState<0|1|2|3>(0) // 0=hidden 1=reasons 2=counter-offer 3=final-confirm
   const [cancelReason, setCancelReason] = useState('')
+  const [cancelReasonOther, setCancelReasonOther] = useState('')
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelMessage, setCancelMessage] = useState<string | null>(null)
+  const cancelling = cancelStep > 0
   const [missedCallCount, setMissedCallCount] = useState(0)
   const [callsThisMonth, setCallsThisMonth] = useState(0)
   const [plan, setPlan] = useState<string>('starter')
@@ -163,26 +165,66 @@ export default function BillingPage() {
   const willEndAt = stripeSummary?.subscription?.current_period_end ?? null
   const alreadyCancelled = stripeSummary?.subscription?.cancel_at_period_end ?? false
 
+  const CANCEL_REASONS = [
+    { id: 'price',    label: 'Too expensive',                        offer: 'pause' },
+    { id: 'calls',    label: 'Not getting enough calls / leads',      offer: 'review' },
+    { id: 'broken',   label: 'Something isn\'t working properly',     offer: 'fix' },
+    { id: 'switch',   label: 'Moving to a different solution',        offer: 'talk' },
+    { id: 'closing',  label: 'My business is closing / pausing',      offer: 'pause' },
+    { id: 'other',    label: 'Other reason',                         offer: 'talk' },
+  ]
+
+  const OFFERS: Record<string, { heading: string; body: string; cta: string; href?: string }> = {
+    pause: {
+      heading: 'Want to pause instead of cancel?',
+      body: 'We can freeze your account for up to 60 days — no charge, no data loss. Your AI agent, contacts, and call history will be waiting when you\'re ready.',
+      cta: 'Request a pause',
+      href: 'mailto:hello@talkmate.com.au?subject=Pause%20Request&body=Hi%20Irfan%2C%20I%27d%20like%20to%20pause%20my%20TalkMate%20account.',
+    },
+    review: {
+      heading: 'Let us fix your setup — for free',
+      body: 'Low call volume is usually a configuration issue, not a product issue. Irfan will personally review your AI agent, script, and phone routing and make sure it\'s set up to capture every lead.',
+      cta: 'Book a free review call',
+      href: 'mailto:hello@talkmate.com.au?subject=Free%20Setup%20Review&body=Hi%20Irfan%2C%20I%27d%20like%20a%20free%20review%20of%20my%20TalkMate%20setup.',
+    },
+    fix: {
+      heading: 'Don\'t cancel — let us fix it',
+      body: 'We\'re sorry something isn\'t working. Irfan can jump on a 15-minute call with you right now to diagnose and fix the issue before you lose your number and setup.',
+      cta: 'Book a 15-min fix call',
+      href: 'mailto:hello@talkmate.com.au?subject=Support%20Request&body=Hi%20Irfan%2C%20I%27m%20having%20an%20issue%20with%20my%20TalkMate%20account.',
+    },
+    talk: {
+      heading: 'Before you go — let\'s talk',
+      body: 'Whatever the reason, we\'d love 10 minutes to understand what we could have done better, and whether there\'s anything we can do to keep you. No hard sell.',
+      cta: 'Chat with Irfan',
+      href: 'mailto:hello@talkmate.com.au?subject=Cancellation%20Chat&body=Hi%20Irfan%2C%20I%27d%20like%20to%20chat%20before%20I%20cancel.',
+    },
+  }
+
   async function confirmCancel() {
     setCancelBusy(true); setCancelMessage(null)
+    const fullReason = cancelReason === 'other' ? cancelReasonOther : (CANCEL_REASONS.find(r => r.id === cancelReason)?.label ?? cancelReason)
     try {
       const res = await fetch('/api/stripe/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: cancelReason }),
+        body: JSON.stringify({ reason: fullReason }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error ?? 'Cancellation failed')
       setCancelMessage(data.effectiveAt
-        ? `Cancellation confirmed. Access continues until ${new Date(data.effectiveAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}.`
+        ? `Cancellation confirmed. You have full access until ${new Date(data.effectiveAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}.`
         : 'Cancellation confirmed.')
-      setCancelling(false)
+      setCancelStep(0)
     } catch (e) {
       setCancelMessage((e as Error).message)
     } finally {
       setCancelBusy(false)
     }
   }
+
+  const selectedReason = CANCEL_REASONS.find(r => r.id === cancelReason)
+  const offer = selectedReason ? OFFERS[selectedReason.offer] : null
 
   return (
     <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
@@ -384,46 +426,79 @@ export default function BillingPage() {
       {/* Cancel */}
       <div style={{ textAlign: 'center' as const }}>
         {cancelMessage && (
-          <div style={{
-            margin: '0 auto 12px', padding: '10px 14px', borderRadius: 8, fontSize: 13,
-            background: 'rgba(34,197,94,0.12)', color: '#22C55E', maxWidth: 480,
-          }}>{cancelMessage}</div>
+          <div style={{ margin: '0 auto 12px', padding: '10px 14px', borderRadius: 8, fontSize: 13, background: 'rgba(34,197,94,0.12)', color: '#22C55E', maxWidth: 520 }}>{cancelMessage}</div>
         )}
-        {!alreadyCancelled && !cancelling && (
-          <button onClick={() => setCancelling(true)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
-            Cancel subscription
-          </button>
-        )}
+
         {alreadyCancelled && willEndAt && (
-          <div style={{ fontSize: 13, color: '#F59E0B', padding: '12px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, maxWidth: 480, margin: '0 auto' }}>
+          <div style={{ fontSize: 13, color: '#F59E0B', padding: '12px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, maxWidth: 520, margin: '0 auto' }}>
             Your subscription is set to cancel on {new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}.
           </div>
         )}
-        {cancelling && (
-          <div style={{ marginTop: 8, padding: 24, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 14, maxWidth: 480, margin: '8px auto 0', textAlign: 'left' as const }}>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: 'white' }}>We&apos;re sorry to see you go.</div>
-            <ul style={{ fontSize: 13, color: '#7BAED4', marginBottom: 14, lineHeight: 1.8, paddingLeft: 18 }}>
-              <li>You&apos;ll lose access to your AI agent and all incoming call answering.</li>
-              <li>Your contacts, smart lists, and call history will be retained for 90 days.</li>
-              <li>Your call number will be released back to TalkMate.</li>
-            </ul>
-            <label style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 6, display: 'block' }}>
-              What&apos;s the reason for cancelling? (optional)
-            </label>
-            <textarea
-              value={cancelReason}
-              onChange={e => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="Tell us what we could have done better..."
-              style={{ width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 13, fontFamily: 'Outfit,sans-serif', marginBottom: 14, resize: 'vertical' as const }}
-            />
+
+        {!alreadyCancelled && cancelStep === 0 && (
+          <button onClick={() => setCancelStep(1)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
+            Cancel subscription
+          </button>
+        )}
+
+        {/* Step 1 — Reason selection */}
+        {cancelStep === 1 && (
+          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 10 }}>Cancel subscription</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: 'white', marginBottom: 6 }}>Before you go — what happened?</div>
+            <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 20, lineHeight: 1.6 }}>Your feedback helps us improve. Please pick the main reason.</p>
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: 20 }}>
+              {CANCEL_REASONS.map(r => (
+                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: cancelReason === r.id ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.03)', border: `1.5px solid ${cancelReason === r.id ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 10, cursor: 'pointer' }}>
+                  <input type="radio" name="cancelReason" value={r.id} checked={cancelReason === r.id} onChange={() => setCancelReason(r.id)}
+                    style={{ accentColor: '#EF4444', width: 16, height: 16, flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, color: 'white' }}>{r.label}</span>
+                </label>
+              ))}
+            </div>
+            {cancelReason === 'other' && (
+              <textarea value={cancelReasonOther} onChange={e => setCancelReasonOther(e.target.value)} rows={2}
+                placeholder="Tell us more..."
+                style={{ width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 13, fontFamily: 'Outfit,sans-serif', marginBottom: 14, resize: 'vertical' as const }}
+              />
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setCancelling(false)} style={{ flex: 1, padding: 11, background: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, fontFamily: 'Outfit,sans-serif', fontWeight: 600, cursor: 'pointer' }}>Keep my subscription</button>
-              <button
-                onClick={confirmCancel}
-                disabled={cancelBusy}
-                style={{ flex: 1, padding: 11, background: '#EF4444', color: 'white', border: 'none', borderRadius: 8, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: cancelBusy ? 'wait' : 'pointer', opacity: cancelBusy ? 0.7 : 1 }}
-              >{cancelBusy ? 'Cancelling…' : 'Cancel at period end'}</button>
+              <button onClick={() => { setCancelStep(0); setCancelReason('') }} style={{ flex: 1, padding: 12, background: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>Keep my subscription</button>
+              <button onClick={() => setCancelStep(2)} disabled={!cancelReason} style={{ flex: 1, padding: 12, background: cancelReason ? '#EF4444' : 'rgba(239,68,68,0.3)', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: cancelReason ? 'pointer' : 'not-allowed', fontSize: 14 }}>Continue →</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — Retention offer */}
+        {cancelStep === 2 && offer && (
+          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(74,159,232,0.25)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#4A9FE8', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 10 }}>Wait — one moment</div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: 'white', marginBottom: 10 }}>{offer.heading}</div>
+            <p style={{ fontSize: 14, color: '#7BAED4', marginBottom: 22, lineHeight: 1.65 }}>{offer.body}</p>
+            <a href={offer.href} style={{ display: 'block', width: '100%', padding: '14px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: 'pointer', fontSize: 15, textAlign: 'center' as const, textDecoration: 'none', marginBottom: 10, boxSizing: 'border-box' as const }}>
+              {offer.cta} →
+            </a>
+            <button onClick={() => setCancelStep(3)} style={{ width: '100%', padding: '11px', background: 'transparent', color: '#4A7FBB', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 500, cursor: 'pointer', fontSize: 13 }}>
+              No thanks, I still want to cancel
+            </button>
+          </div>
+        )}
+
+        {/* Step 3 — Final confirm */}
+        {cancelStep === 3 && (
+          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: 'white', marginBottom: 12 }}>Are you sure?</div>
+            <ul style={{ fontSize: 13, color: '#7BAED4', marginBottom: 20, lineHeight: 1.8, paddingLeft: 18 }}>
+              <li>Your AI agent will stop answering calls at the end of the billing period.</li>
+              <li>Your contacts, call history, and smart lists are kept for 90 days.</li>
+              <li>Your dedicated phone number will be released back to TalkMate.</li>
+              <li>You can re-subscribe at any time — setup fee waived for returning clients.</li>
+            </ul>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setCancelStep(0)} style={{ flex: 1, padding: 12, background: 'rgba(34,197,94,0.12)', color: '#22C55E', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>Keep my subscription ✓</button>
+              <button onClick={confirmCancel} disabled={cancelBusy} style={{ flex: 1, padding: 12, background: '#EF4444', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: cancelBusy ? 'wait' : 'pointer', fontSize: 14, opacity: cancelBusy ? 0.7 : 1 }}>
+                {cancelBusy ? 'Cancelling…' : 'Yes, cancel my subscription'}
+              </button>
             </div>
           </div>
         )}
