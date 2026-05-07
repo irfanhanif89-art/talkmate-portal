@@ -18,7 +18,7 @@ import {
 export async function POST(req: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ ok: false, error: 'Your session has expired. Please log in again.', redirect: '/login?next=%2Faccept-terms' }, { status: 401 })
 
   const body = await req.json().catch(() => ({})) as { signature?: string; acceptedDocs?: DocumentType[] }
   const signature = (body.signature ?? '').trim()

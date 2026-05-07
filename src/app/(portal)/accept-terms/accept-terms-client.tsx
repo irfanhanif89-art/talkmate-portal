@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import LegalAcceptanceForm from '@/components/portal/legal-acceptance-form'
+import { createClient } from '@/lib/supabase/client'
 import type { DocumentType, LegalDoc } from '@/lib/legal-docs'
 
 export default function AcceptTermsClient({ docs, businessName, nextUrl }: {
@@ -17,6 +18,18 @@ export default function AcceptTermsClient({ docs, businessName, nextUrl }: {
   async function submit(signature: string, acceptedDocs: DocumentType[]) {
     setBusy(true); setError(null)
     try {
+      // Refresh the session first — prevents 401 if the token expired
+      // while the user was reading the T&Cs
+      const supabase = createClient()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session) {
+        // Session is gone — send them to login and bring them back here after
+        router.push('/login?next=%2Faccept-terms')
+        return
+      }
+      // Force-refresh the access token so the cookie is fresh
+      await supabase.auth.refreshSession()
+
       const res = await fetch('/api/legal/accept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -24,6 +37,11 @@ export default function AcceptTermsClient({ docs, businessName, nextUrl }: {
       })
       const data = await res.json()
       if (!data.ok) {
+        // If still unauthorized after refresh, session is truly gone
+        if (res.status === 401) {
+          router.push('/login?next=%2Faccept-terms')
+          return
+        }
         setError(data.error || 'Could not record acceptance.')
         setBusy(false)
         return
