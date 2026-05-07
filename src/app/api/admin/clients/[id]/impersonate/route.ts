@@ -22,18 +22,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   // Magic link lands the admin on /dashboard. The dashboard banner shows
   // "admin view — impersonating X" because the URL carries ?impersonate=1.
-  // Must go through /auth/callback so the SSR client can exchange the code
-  // for a session and set cookies. Direct redirect to /dashboard skips this
-  // and leaves the user with no session — they see the login page.
-  const next = encodeURIComponent(`/dashboard?impersonate=1&biz=${business.id}`)
+  // Generate a magic link and return the raw hashed_token.
+  // We use verifyOtp(token_hash) on the client side — this avoids the PKCE
+  // code_verifier problem that breaks exchangeCodeForSession for admin-minted links.
   const { data, error } = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email: owner.email,
-    options: {
-      redirectTo: `https://app.talkmate.com.au/auth/callback?next=${next}`,
-    },
   })
-  if (error || !data?.properties?.action_link) {
+  if (error || !data?.properties?.hashed_token) {
     return NextResponse.json({ ok: false, error: error?.message ?? 'Failed to mint link' }, { status: 500 })
   }
 
@@ -42,9 +38,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     note: `Admin impersonation session started by ${auth.user.email}.`,
   })
 
-  // Wrap in /admin/view-as so it signs out the admin session before
-  // following the magic link — otherwise the existing admin cookie blocks it.
-  const viewAsUrl = `https://app.talkmate.com.au/admin/view-as?url=${encodeURIComponent(data.properties.action_link)}`
+  const next = encodeURIComponent(`/dashboard?impersonate=1&biz=${business.id}`)
+  const viewAsUrl = `https://app.talkmate.com.au/admin/view-as?token=${encodeURIComponent(data.properties.hashed_token)}&next=${next}`
 
   return NextResponse.json({
     ok: true,

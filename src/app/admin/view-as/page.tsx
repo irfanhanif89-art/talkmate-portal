@@ -1,25 +1,63 @@
 'use client'
 
-import { useEffect, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
-// This page:
-// 1. Signs out the current admin session
-// 2. Redirects to the magic link (which signs in as the client)
-// This is needed because magic links don't work when another session is active.
+// Admin impersonation relay page.
+// Flow:
+//   1. Admin clicks "View Client Portal" → API generates a magic link hashed_token
+//   2. New tab opens this page with ?token=<hashed_token>&next=<destination>
+//   3. We sign out the admin session, then call verifyOtp(token_hash) to sign in as the client
+//   4. On success → redirect to destination (client's dashboard)
+//   5. On failure → redirect to login with error
 
 function ViewAsInner() {
   const searchParams = useSearchParams()
-  const url = searchParams.get('url')
+  const router = useRouter()
+  const [status, setStatus] = useState('Switching to client view…')
 
   useEffect(() => {
-    if (!url) return
-    const supabase = createClient()
-    supabase.auth.signOut().then(() => {
-      window.location.href = decodeURIComponent(url)
-    })
-  }, [url])
+    const token = searchParams.get('token')
+    const next = searchParams.get('next') ?? '/dashboard'
+
+    if (!token) {
+      router.replace('/login?error=missing_token')
+      return
+    }
+
+    async function swap() {
+      try {
+        const supabase = createClient()
+
+        // 1. Sign out the current admin session so cookies are clean
+        await supabase.auth.signOut()
+
+        // 2. Exchange the hashed token for a session using verifyOtp.
+        //    This works without a PKCE code_verifier — correct for server-generated links.
+        setStatus('Verifying session…')
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: token!,
+          type: 'email',
+        })
+
+        if (error) {
+          console.error('[view-as] verifyOtp failed:', error.message)
+          router.replace(`/login?error=impersonate_failed`)
+          return
+        }
+
+        // 3. Session is now set — go to client dashboard
+        setStatus('Redirecting…')
+        router.replace(decodeURIComponent(next))
+      } catch (e) {
+        console.error('[view-as] unexpected error:', e)
+        router.replace('/login?error=impersonate_failed')
+      }
+    }
+
+    swap()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -34,7 +72,7 @@ function ViewAsInner() {
       gap: 16,
     }}>
       <div style={{ fontSize: 32 }}>⚡</div>
-      <p style={{ fontSize: 16, color: '#7BAED4' }}>Switching to client view…</p>
+      <p style={{ fontSize: 16, color: '#7BAED4' }}>{status}</p>
     </div>
   )
 }
