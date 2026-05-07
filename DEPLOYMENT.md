@@ -103,7 +103,7 @@ BEGIN
   SELECT id, COALESCE(services, '[]'::jsonb)
   INTO v_business_id, v_existing
   FROM businesses
-  WHERE industry = 'towing'
+  WHERE name = 'Hume Towing'
   LIMIT 1;
 
   v_new_fields := jsonb_build_array(
