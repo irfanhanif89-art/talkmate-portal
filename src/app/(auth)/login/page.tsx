@@ -245,7 +245,7 @@ function LoginPageInner() {
           color: '#4A9FE8', fontFamily: 'Outfit, sans-serif', fontSize: 15, fontWeight: 600,
           textDecoration: 'none', transition: 'border-color 0.15s',
         }}>
-          Create a free account →
+          Create an account →
         </a>
 
         {/* Trust badges */}
