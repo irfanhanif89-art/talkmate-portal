@@ -3,9 +3,20 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { isAdminPlan, requireAdmin } from '@/lib/admin-auth'
 
 const ALLOWED_ACCOUNT_STATUS = new Set(['active', 'pending', 'suspended', 'cancelled'])
+// Library-aligned keys (used by the current Create modal) PLUS legacy
+// keys that older businesses still carry. PATCH is a partial update so any
+// industry already in the database must remain accepted.
 const ALLOWED_INDUSTRIES = new Set([
-  'restaurants', 'towing', 'real_estate', 'trades', 'healthcare',
-  'ndis', 'retail', 'professional_services', 'other',
+  'restaurant', 'towing', 'realestate', 'trades', 'healthcare',
+  'ndis', 'retail', 'dental', 'medispa', 'mechanic', 'physio',
+  'accounting', 'cleaning', 'pest', 'landscaping', 'other',
+  // Legacy keys preserved
+  'restaurants', 'real_estate', 'professional_services',
+  // Brief-preferred underscore keys (in case any business uses them)
+  'medi_spa', 'pest_control',
+])
+const ALLOWED_TRADE_TYPES = new Set([
+  'plumber', 'electrician', 'locksmith', 'builder', 'air_conditioning',
 ])
 
 // PATCH /api/admin/clients/[id]
@@ -47,6 +58,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.billing_override_note === 'string') update.billing_override_note = body.billing_override_note.trim() || null
   if (typeof body.manual_next_billing_date === 'string') {
     update.manual_next_billing_date = body.manual_next_billing_date.trim() || null
+  }
+
+  // New industry service fields (migration 020). Top-level columns, not
+  // merged into notifications_config. Only updated when the request
+  // explicitly carries the key, so partial PATCHes leave them alone.
+  if (Array.isArray(body.services)) {
+    update.services = body.services
+  }
+  if (body.trade_type === null) {
+    update.trade_type = null
+  } else if (typeof body.trade_type === 'string') {
+    const trimmed = body.trade_type.trim()
+    if (trimmed === '') {
+      update.trade_type = null
+    } else if (!ALLOWED_TRADE_TYPES.has(trimmed)) {
+      return NextResponse.json({ ok: false, error: 'invalid trade_type' }, { status: 400 })
+    } else {
+      update.trade_type = trimmed
+    }
   }
 
   const admin = createAdminClient()

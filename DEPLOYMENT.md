@@ -1,8 +1,139 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Session 1 + CRM Session 2 + CRM Session 3 + Session 4 (Admin client management)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 5 ADDENDUM — Industry service fields (May 2026)
+
+Adds a per-industry "Services and Pricing" template UI to the Agent Builder
+tab in both the admin portal and the client portal. Each business gets a
+list of pre-suggested services with price + unit hints, can toggle them
+on/off, and add custom rows. Trades industry shows a sub-type selector
+first (plumber / electrician / locksmith / builder / air conditioning).
+
+### Migration
+
+**`supabase/migrations/020_services_and_trade_type.sql`** — idempotent.
+Run once in the Supabase SQL editor:
+
+```sql
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS services JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT NULL;
+```
+
+No new tables, no RLS changes — existing `owner_all` policy on
+`businesses` covers both new columns automatically.
+
+These are **separate from** the existing `notifications_config.service_pricing`
+object Hume Towing uses for their vehicle-class pricing matrix. That data
+is preserved untouched.
+
+### Service object shape
+
+Each item in the `services` JSONB array:
+
+```ts
+interface Service {
+  id: string        // uuid, generated on creation, never changes
+  name: string      // editable by admin; read-only for clients on template rows
+  price: string     // dollar amount entered by user, blank by default
+  unit: string      // template-set hint, e.g. "per job", "per hour"
+  enabled: boolean  // active for this business
+  custom: boolean   // true only for user-added rows
+}
+```
+
+### What's new
+
+| Surface | What landed |
+|---|---|
+| `src/lib/service-templates.ts` | All 13 industry templates plus 5 trade sub-type templates. Includes `getInitialServices()` that returns the saved array if it exists, otherwise falls back to the matching template. **Saved data is never overwritten.** Aliases for `medi_spa` / `real_estate` / `pest_control` / `restaurants` so legacy or brief-preferred industry keys all map to the same template. |
+| `src/components/portal/services-editor.tsx` | New reusable `<ServicesEditor mode="admin" \| "client" />`. Admin mode: edit names, units, prices, toggle, add custom, delete custom, change trade_type via dropdown. Client mode: prices + toggle + custom-row CRUD only; template names/units render as read-only text and trade_type is a read-only label. Mobile-collapsing grid. |
+| `src/app/(portal)/admin/clients/edit-client-modal.tsx` | New "Services and Pricing" section dropped into the Agent Setup tab between the existing `<ServicePricingEditor>` (towing-specific vehicle matrix) and `<ServiceAreaEditor>`. Saves alongside the rest of the Agent Setup form via the existing "Save changes" button. |
+| `src/app/(portal)/settings/page.tsx` | Same editor mounted in client mode inside the AI Voice Agent tab, right after `<ServicePricingEditor>`. Save is debounced per change via `PATCH /api/portal/services`. |
+| `src/app/(portal)/admin/clients/page.tsx` | Initial businesses query now selects `services` and `trade_type` so the modal can hydrate without an extra fetch. |
+| `src/app/(portal)/admin/clients/types.ts` | `AdminBusiness` interface gains `services` (array) and `trade_type` (string). |
+
+### API routes
+
+| Method · Route | Purpose |
+|---|---|
+| `PATCH /api/admin/clients/[id]` (extended) | Now accepts `services?: Service[]` and `trade_type?: string \| null` as **top-level columns** (not merged into `notifications_config`). `trade_type` validated against the 5-value allowlist. Industry allowlist widened to cover library-aligned + legacy + brief-preferred keys. |
+| `PATCH /api/portal/services` (new) | Client-side save for the services array. Auth via Supabase user session cookie. RLS scopes the update to the caller's own business via the `owner_all` policy. Body: `{ services: Service[] }`. |
+
+### Permissions
+
+Admin can: edit names, enter prices, toggle, change trade_type, add custom rows, delete custom rows, save.
+Client can: enter prices, toggle, add custom rows, edit/delete their own custom rows, save.
+Client cannot: edit names or units on template rows, delete template rows, change trade_type.
+
+### Future work flagged for a later session
+
+- **Vapi knowledge base integration**: the `services` array is not yet pushed to the Vapi assistant on save. The data is stored and ready; the next session will wire it into the existing `/api/vapi/sync` route so the agent can quote prices on calls.
+
+### Donna's manual tasks (after Vercel shows Ready)
+
+**1. Run migration 020** in Supabase SQL editor:
+
+```sql
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS services JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT NULL;
+```
+
+Confirm both columns appear on the `businesses` table before continuing.
+
+**2. Run the Hume Towing additive SQL** (only after migration 020 has run).
+This appends the 5 new towing fields to Hume Towing's `services` array, but
+**only** if a field with the same name does not already exist on their record.
+Existing fields and any prices Hume has entered are preserved exactly as-is.
+
+```sql
+DO $$
+DECLARE
+  v_business_id uuid;
+  v_existing jsonb;
+  v_new_fields jsonb;
+  v_field jsonb;
+  v_name text;
+  v_exists boolean;
+BEGIN
+  SELECT id, COALESCE(services, '[]'::jsonb)
+  INTO v_business_id, v_existing
+  FROM businesses
+  WHERE industry = 'towing'
+  LIMIT 1;
+
+  v_new_fields := jsonb_build_array(
+    jsonb_build_object('id', gen_random_uuid()::text, 'name', 'After-hours callout',                          'price', '', 'unit', 'per job',     'enabled', true, 'custom', false),
+    jsonb_build_object('id', gen_random_uuid()::text, 'name', 'Vehicle storage (holding yard)',               'price', '', 'unit', 'per day',     'enabled', true, 'custom', false),
+    jsonb_build_object('id', gen_random_uuid()::text, 'name', 'After-hours release fee',                      'price', '', 'unit', 'per release', 'enabled', true, 'custom', false),
+    jsonb_build_object('id', gen_random_uuid()::text, 'name', 'Go jacks (vehicle stuck in park or no keys)',  'price', '', 'unit', 'per job',     'enabled', true, 'custom', false),
+    jsonb_build_object('id', gen_random_uuid()::text, 'name', 'Lowered ramp / low clearance surcharge',       'price', '', 'unit', 'per job',     'enabled', true, 'custom', false)
+  );
+
+  FOR v_field IN SELECT * FROM jsonb_array_elements(v_new_fields) LOOP
+    v_name := v_field->>'name';
+    SELECT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(v_existing) s WHERE s->>'name' = v_name
+    ) INTO v_exists;
+    IF NOT v_exists THEN
+      v_existing := v_existing || jsonb_build_array(v_field);
+    END IF;
+  END LOOP;
+
+  UPDATE businesses SET services = v_existing WHERE id = v_business_id;
+END $$;
+```
+
+**3. QA**:
+- Open Hume Towing in admin Agent Builder → confirm existing fields intact and 5 new fields present
+- Log in as Hume Towing client → confirm services section loads without error
+- Pick one other client (any non-towing, non-trades industry) in admin → confirm template loads with blank prices
+- Pick a trades client (or create a test one) → confirm trade-type dropdown appears before the service list
+- Report back to Irfan with status
 
 ---
 

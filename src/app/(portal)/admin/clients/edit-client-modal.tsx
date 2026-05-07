@@ -6,6 +6,7 @@ import { ModalShell } from './create-client-modal'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 import DivertInstructions from '@/components/portal/divert-instructions'
+import ServicesEditor, { type Service } from '@/components/portal/services-editor'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -522,6 +523,9 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
   })
   const [servicePricing, setServicePricing] = useState<ServicePricing>((cfg.service_pricing as ServicePricing) ?? {})
   const [serviceArea, setServiceArea] = useState<ServiceArea>((cfg.service_area as ServiceArea) ?? {})
+  // Migration 020 — separate top-level columns, not in notifications_config.
+  const [services, setServices] = useState<Service[] | null>(business.services ?? null)
+  const [tradeType, setTradeType] = useState<string | null>(business.trade_type ?? null)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -532,12 +536,23 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
       const res = await fetch(`/api/admin/clients/${business.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, service_pricing: servicePricing, service_area: serviceArea }),
+        body: JSON.stringify({
+          ...form,
+          service_pricing: servicePricing,
+          service_area: serviceArea,
+          ...(services !== null ? { services } : {}),
+          ...(tradeType !== business.trade_type ? { trade_type: tradeType } : {}),
+        }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Failed')
       const newCfg = { ...cfg, ...form, service_pricing: servicePricing, service_area: serviceArea }
-      onUpdate({ agent_phone_number: form.agent_phone_number || null, notifications_config: newCfg })
+      onUpdate({
+        agent_phone_number: form.agent_phone_number || null,
+        notifications_config: newCfg,
+        services,
+        trade_type: tradeType,
+      })
       setSavedAt(new Date().toLocaleTimeString('en-AU'))
     } catch (e) {
       setErr((e as Error).message)
@@ -584,6 +599,18 @@ under this client's Agent Setup tab and confirm back.`
       </div>
       <div style={{ marginTop: 16 }}>
         <ServicePricingEditor value={servicePricing} onChange={setServicePricing} />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <ServicesEditor
+          mode="admin"
+          industry={business.industry}
+          trade_type={tradeType}
+          saved={services}
+          onChange={({ services: nextServices, trade_type: nextTradeType }) => {
+            setServices(nextServices)
+            setTradeType(nextTradeType)
+          }}
+        />
       </div>
       <div style={{ marginTop: 16 }}>
         <ServiceAreaEditor

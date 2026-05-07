@@ -26,6 +26,16 @@ export interface AdminBusiness {
   created_at: string
   signup_at: string | null
   notifications_config: Record<string, unknown> | null
+  // Migration 020 — industry service fields
+  services: Array<{
+    id: string
+    name: string
+    price: string
+    unit: string
+    enabled: boolean
+    custom: boolean
+  }> | null
+  trade_type: string | null
 }
 
 export interface PartnerOption {

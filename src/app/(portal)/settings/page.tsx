@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 import DivertInstructions from '@/components/portal/divert-instructions'
+import ServicesEditor, { type Service } from '@/components/portal/services-editor'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -49,6 +50,14 @@ export default function SettingsPage() {
   const [servicePricing, setServicePricing] = useState<ServicePricing>({})
   const [serviceArea, setServiceArea] = useState<ServiceArea>({})
   const [bizId, setBizId] = useState<string | null>(null)
+  // Migration 020 — top-level services + trade_type columns.
+  // Null on first paint until loadData() returns. Set to [] (or saved array)
+  // once the business row arrives so the editor knows whether to seed defaults.
+  const [services, setServices] = useState<Service[] | null>(null)
+  const [tradeType, setTradeType] = useState<string | null>(null)
+  const [industry, setIndustry] = useState<string | null>(null)
+  const [loadedServices, setLoadedServices] = useState(false)
+  const [savingServices, setSavingServices] = useState(false)
 
   async function changePassword() {
     if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match ❌'); return }
@@ -78,6 +87,11 @@ export default function SettingsPage() {
       const cfg = (biz.notifications_config ?? {}) as Record<string, unknown>
       setServicePricing((cfg.service_pricing as ServicePricing) ?? {})
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
+      setIndustry((biz.industry as string) ?? null)
+      setTradeType((biz.trade_type as string | null) ?? null)
+      const savedServices = Array.isArray(biz.services) ? biz.services as Service[] : []
+      setServices(savedServices)
+      setLoadedServices(true)
     }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
@@ -86,6 +100,32 @@ export default function SettingsPage() {
   async function saveBusiness() {
     await supabase.from('businesses').update(biz).eq('id', biz.id)
     setSaved('Saved ✅'); setTimeout(() => setSaved(''), 3000)
+  }
+
+  // PATCH /api/portal/services — client-side save for the new
+  // Services and Pricing section. Goes through the dedicated portal route
+  // so RLS scopes the update to the caller's own business row.
+  async function saveServices(next: Service[]) {
+    if (savingServices) return
+    setSavingServices(true)
+    try {
+      const res = await fetch('/api/portal/services', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ services: next }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        setSaved((data.error ?? 'Could not save services') + ' ❌')
+      } else {
+        setSaved('Services saved ✅')
+      }
+    } catch (e) {
+      setSaved((e as Error).message + ' ❌')
+    } finally {
+      setSavingServices(false)
+      setTimeout(() => setSaved(''), 3000)
+    }
   }
 
   async function syncAI() {
@@ -247,6 +287,21 @@ export default function SettingsPage() {
               await supabase.from('businesses').update({ notifications_config: { ...cfg, service_pricing: v } }).eq('id', bizId)
             }} />
           </div>
+
+          {loadedServices && (
+            <div style={{ marginBottom: 16 }}>
+              <ServicesEditor
+                mode="client"
+                industry={industry}
+                trade_type={tradeType}
+                saved={services}
+                onChange={({ services: next }) => {
+                  setServices(next)
+                  saveServices(next)
+                }}
+              />
+            </div>
+          )}
           <div style={{ marginBottom: 28 }}>
             <ServiceAreaEditor
               value={serviceArea}
