@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
+import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -45,6 +46,7 @@ export default function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState('')
   const [changingPw, setChangingPw] = useState(false)
   const [servicePricing, setServicePricing] = useState<ServicePricing>({})
+  const [serviceArea, setServiceArea] = useState<ServiceArea>({})
   const [bizId, setBizId] = useState<string | null>(null)
 
   async function changePassword() {
@@ -74,6 +76,7 @@ export default function SettingsPage() {
       setAgentName((biz.agent_name as string) || '')
       const cfg = (biz.notifications_config ?? {}) as Record<string, unknown>
       setServicePricing((cfg.service_pricing as ServicePricing) ?? {})
+      setServiceArea((cfg.service_area as ServiceArea) ?? {})
     }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
@@ -235,13 +238,25 @@ export default function SettingsPage() {
             <textarea value={escalation} onChange={e => setEscalation(e.target.value)} rows={4} style={ta} />
           </div>
 
-          <div style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 16 }}>
             <ServicePricingEditor value={servicePricing} onChange={async (v) => {
               setServicePricing(v)
               if (!bizId) return
               const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
               await supabase.from('businesses').update({ notifications_config: { ...cfg, service_pricing: v } }).eq('id', bizId)
             }} />
+          </div>
+          <div style={{ marginBottom: 28 }}>
+            <ServiceAreaEditor
+              value={serviceArea}
+              businessAddress={biz.address ?? ''}
+              onChange={async (v) => {
+                setServiceArea(v)
+                if (!bizId) return
+                const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
+                await supabase.from('businesses').update({ notifications_config: { ...cfg, service_area: v } }).eq('id', bizId)
+              }}
+            />
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>

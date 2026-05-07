@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { AdminBusiness, INDUSTRIES, PLAN_OPTIONS, planAud, planLabel } from './types'
 import { ModalShell } from './create-client-modal'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
+import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -508,6 +509,7 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
     agent_phone_number: business.agent_phone_number ?? '',
   })
   const [servicePricing, setServicePricing] = useState<ServicePricing>((cfg.service_pricing as ServicePricing) ?? {})
+  const [serviceArea, setServiceArea] = useState<ServiceArea>((cfg.service_area as ServiceArea) ?? {})
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -518,11 +520,11 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
       const res = await fetch(`/api/admin/clients/${business.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, service_pricing: servicePricing }),
+        body: JSON.stringify({ ...form, service_pricing: servicePricing, service_area: serviceArea }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Failed')
-      const newCfg = { ...cfg, agent_answer_phrase: form.agent_answer_phrase, services_summary: form.services_summary, after_hours_instruction: form.after_hours_instruction, service_pricing: servicePricing }
+      const newCfg = { ...cfg, agent_answer_phrase: form.agent_answer_phrase, services_summary: form.services_summary, after_hours_instruction: form.after_hours_instruction, service_pricing: servicePricing, service_area: serviceArea }
       onUpdate({ agent_phone_number: form.agent_phone_number || null, notifications_config: newCfg })
       setSavedAt(new Date().toLocaleTimeString('en-AU'))
     } catch (e) {
@@ -560,6 +562,13 @@ under this client's Agent Setup tab and confirm back.`
       </div>
       <div style={{ marginTop: 16 }}>
         <ServicePricingEditor value={servicePricing} onChange={setServicePricing} />
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <ServiceAreaEditor
+          value={serviceArea}
+          businessAddress={business.address ?? ''}
+          onChange={setServiceArea}
+        />
       </div>
       <div style={{ marginTop: 14 }}>
         <Field label="After hours instruction" full>

@@ -61,6 +61,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.service_pricing === 'object' && body.service_pricing !== null) {
     agentSetupPatch.service_pricing = body.service_pricing
   }
+  if (typeof body.service_area === 'object' && body.service_area !== null) {
+    agentSetupPatch.service_area = body.service_area
+  }
   if (Object.keys(agentSetupPatch).length > 0) {
     const { data: current } = await admin.from('businesses')
       .select('notifications_config').eq('id', id).single()
