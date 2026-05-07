@@ -53,7 +53,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Agent setup answers live in the businesses.notifications_config jsonb so
   // we have to merge rather than overwrite.
-  const agentSetupKeys = ['agent_answer_phrase', 'services_summary', 'after_hours_instruction'] as const
+  const agentSetupKeys = [
+    'agent_name', 'agent_answer_phrase', 'services_summary', 'after_hours_instruction',
+    'escalation_rules', 'forward_to_number', 'live_transfer_number',
+    'notification_email', 'notification_sms',
+  ] as const
   const agentSetupPatch: Record<string, unknown> = {}
   for (const k of agentSetupKeys) {
     if (typeof body[k] === 'string') agentSetupPatch[k] = String(body[k]).trim()
@@ -63,6 +67,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (typeof body.service_area === 'object' && body.service_area !== null) {
     agentSetupPatch.service_area = body.service_area
+  }
+  // Boolean flags for live transfer and notifications
+  for (const k of ['live_transfer_enabled', 'notify_every_call', 'notify_transfers', 'notify_daily_summary', 'notify_missed'] as const) {
+    if (typeof body[k] === 'boolean') agentSetupPatch[k] = body[k]
   }
   if (Object.keys(agentSetupPatch).length > 0) {
     const { data: current } = await admin.from('businesses')

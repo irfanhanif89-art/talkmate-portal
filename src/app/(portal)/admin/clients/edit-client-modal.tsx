@@ -503,10 +503,21 @@ function CancelConfirm({
 function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (patch: Partial<AdminBusiness>) => void }) {
   const cfg = (business.notifications_config ?? {}) as Record<string, unknown>
   const [form, setForm] = useState({
+    agent_name: String(cfg.agent_name ?? ''),
     agent_answer_phrase: String(cfg.agent_answer_phrase ?? ''),
     services_summary: String(cfg.services_summary ?? ''),
     after_hours_instruction: String(cfg.after_hours_instruction ?? ''),
     agent_phone_number: business.agent_phone_number ?? '',
+    escalation_rules: String(cfg.escalation_rules ?? ''),
+    forward_to_number: String(cfg.forward_to_number ?? ''),
+    live_transfer_number: String(cfg.live_transfer_number ?? ''),
+    live_transfer_enabled: Boolean(cfg.live_transfer_enabled ?? false),
+    notification_email: String(cfg.notification_email ?? business.phone_number ?? ''),
+    notification_sms: String(cfg.notification_sms ?? ''),
+    notify_every_call: Boolean(cfg.notify_every_call ?? false),
+    notify_transfers: Boolean(cfg.notify_transfers ?? true),
+    notify_daily_summary: Boolean(cfg.notify_daily_summary ?? true),
+    notify_missed: Boolean(cfg.notify_missed ?? true),
   })
   const [servicePricing, setServicePricing] = useState<ServicePricing>((cfg.service_pricing as ServicePricing) ?? {})
   const [serviceArea, setServiceArea] = useState<ServiceArea>((cfg.service_area as ServiceArea) ?? {})
@@ -524,7 +535,7 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Failed')
-      const newCfg = { ...cfg, agent_answer_phrase: form.agent_answer_phrase, services_summary: form.services_summary, after_hours_instruction: form.after_hours_instruction, service_pricing: servicePricing, service_area: serviceArea }
+      const newCfg = { ...cfg, ...form, service_pricing: servicePricing, service_area: serviceArea }
       onUpdate({ agent_phone_number: form.agent_phone_number || null, notifications_config: newCfg })
       setSavedAt(new Date().toLocaleTimeString('en-AU'))
     } catch (e) {
@@ -538,18 +549,28 @@ function AgentTab({ business, onUpdate }: { business: AdminBusiness; onUpdate: (
 
 Industry: ${business.industry ?? 'unspecified'}
 Plan: ${planLabel(business.plan)}
+Agent name: ${form.agent_name || '(not set)'}
 Answer phrase: "${form.agent_answer_phrase}"
 Services: ${form.services_summary}
 After hours: ${form.after_hours_instruction}
+Escalation rules: ${form.escalation_rules || '(not set)'}
+Call forward number: ${form.forward_to_number || '(not set)'}
+Live transfer: ${form.live_transfer_enabled ? `Enabled — ${form.live_transfer_number}` : 'Disabled'}
 
 Once built, enter the agent phone number in the admin panel
 under this client's Agent Setup tab and confirm back.`
 
   return (
     <div>
-      <Field label="Answer phrase" full>
-        <Input value={form.agent_answer_phrase} onChange={v => setForm(f => ({ ...f, agent_answer_phrase: v }))} />
+      {/* Agent name */}
+      <Field label="Agent name" full>
+        <Input value={form.agent_name} onChange={v => setForm(f => ({ ...f, agent_name: v }))} placeholder="e.g. Sarah, Jake — leave blank to use no name" />
       </Field>
+      <div style={{ marginTop: 14 }}>
+        <Field label="Answer phrase" full>
+          <Input value={form.agent_answer_phrase} onChange={v => setForm(f => ({ ...f, agent_answer_phrase: v }))} />
+        </Field>
+      </div>
       <div style={{ marginTop: 14 }}>
         <Field label="Services summary" full>
           <ServicesQuickAdd
@@ -575,6 +596,75 @@ under this client's Agent Setup tab and confirm back.`
           <Input value={form.after_hours_instruction} onChange={v => setForm(f => ({ ...f, after_hours_instruction: v }))} />
         </Field>
       </div>
+
+      {/* ── Escalation Rules ── */}
+      <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'white', marginBottom: 12 }}>🚨 Escalation Rules</div>
+        <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 0, marginBottom: 12 }}>Tell the agent when to transfer the call — e.g. complaints, interstate jobs, customer asks for manager.</p>
+        <TextArea
+          value={form.escalation_rules}
+          onChange={v => setForm(f => ({ ...f, escalation_rules: v }))}
+          placeholder={'e.g. Transfer the call if the customer:\n- Has a complaint\n- Wants to speak to the owner or manager\n- Is asking about an interstate job\n- Sounds very upset or angry'}
+        />
+        <div style={{ marginTop: 12 }}>
+          <Field label="Forward to number" full>
+            <Input value={form.forward_to_number} onChange={v => setForm(f => ({ ...f, forward_to_number: v }))} placeholder="+61 4xx xxx xxx — calls transferred here on escalation" />
+          </Field>
+        </div>
+      </div>
+
+      {/* ── Live Call Transfer ── */}
+      <div style={{ marginTop: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'white' }}>📞 Live Call Transfer</div>
+            <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 3 }}>Agent puts the customer on hold and transfers the call directly to the client</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, live_transfer_enabled: !f.live_transfer_enabled }))}
+            style={{ width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 2, background: form.live_transfer_enabled ? '#E8622A' : 'rgba(255,255,255,0.15)', position: 'relative', flexShrink: 0, transition: 'background 0.2s' }}
+          >
+            <div style={{ width: 20, height: 20, borderRadius: 10, background: 'white', position: 'absolute', top: 2, left: form.live_transfer_enabled ? 22 : 2, transition: 'left 0.2s' }} />
+          </button>
+        </div>
+        {form.live_transfer_enabled && (
+          <Field label="Transfer to number" full>
+            <Input value={form.live_transfer_number} onChange={v => setForm(f => ({ ...f, live_transfer_number: v }))} placeholder="+61 4xx xxx xxx — customer is bridged to this number" />
+          </Field>
+        )}
+      </div>
+
+      {/* ── Notifications ── */}
+      <div style={{ marginTop: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'white', marginBottom: 12 }}>🔔 Notifications</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <Field label="Notification email" full>
+            <Input value={form.notification_email} onChange={v => setForm(f => ({ ...f, notification_email: v }))} placeholder="client@business.com.au" />
+          </Field>
+          <Field label="Notification SMS number" full>
+            <Input value={form.notification_sms} onChange={v => setForm(f => ({ ...f, notification_sms: v }))} placeholder="+61 4xx xxx xxx" />
+          </Field>
+        </div>
+        {([
+          ['notify_every_call', 'Notify on every call'],
+          ['notify_transfers', 'Notify on every transfer'],
+          ['notify_daily_summary', 'Daily summary'],
+          ['notify_missed', 'Missed / unanswered calls'],
+        ] as [keyof typeof form, string][]).map(([key, label]) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+            <span style={{ fontSize: 13, color: 'white' }}>{label}</span>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, [key]: !f[key] }))}
+              style={{ width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 2, background: form[key] ? '#E8622A' : 'rgba(255,255,255,0.15)', position: 'relative', flexShrink: 0, transition: 'background 0.2s' }}
+            >
+              <div style={{ width: 20, height: 20, borderRadius: 10, background: 'white', position: 'absolute', top: 2, left: form[key] ? 22 : 2, transition: 'left 0.2s' }} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       <div style={{ marginTop: 14 }}>
         <Field label="Agent phone number" full>
           <Input value={form.agent_phone_number} onChange={v => setForm(f => ({ ...f, agent_phone_number: v }))} placeholder="+61 4xx xxx xxx (set by Donna once agent is built)" />
