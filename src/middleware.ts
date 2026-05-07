@@ -110,7 +110,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!user && (isProtected || isAuthOnly)) {
-    return redirect('/login')
+    // Preserve destination so login can redirect back after sign-in
+    const next = encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)
+    return redirect(`/login?next=${next}`)
   }
 
   if (user && isGuestOnly) {

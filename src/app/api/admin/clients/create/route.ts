@@ -261,7 +261,7 @@ export async function POST(req: Request) {
 
           <div style="margin-bottom:28px;">
             <p style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.12em;margin:0 0 10px;">Step 1</p>
-            <a href="https://app.talkmate.com.au/accept-terms"
+            <a href="https://app.talkmate.com.au/login?next=%2Faccept-terms"
                style="display:inline-block;background:#E8622A;color:white;font-size:16px;font-weight:700;padding:16px 32px;border-radius:10px;text-decoration:none;">
               Accept Terms &amp; Get Started →
             </a>
