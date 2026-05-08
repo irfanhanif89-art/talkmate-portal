@@ -767,7 +767,7 @@ export default function OnboardingPage() {
                 {[['emailOnTransfer', 'Email on every call transfer'], ['dailySummary', 'Daily summary (6pm)'], ['weeklyReport', 'Weekly report (Monday 6am)']].map(([k, l]) => (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <span style={{ fontSize: 14, color: 'white' }}>{l}</span>
-                    <Toggle checked={!!(notifs as Record<string, unknown>)[k]} onChange={v => updateNotif(k as keyof Notifs, v)} />
+                    <Toggle checked={!!(notifs as unknown as Record<string, unknown>)[k]} onChange={v => updateNotif(k as keyof Notifs, v)} />
                   </div>
                 ))}
               </div>

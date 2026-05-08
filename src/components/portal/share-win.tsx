@@ -35,7 +35,7 @@ export default function ShareYourWin({ businessName, monthlyRevenue, callsThisMo
   }
 
   async function copyShareText() {
-    const text = `🎉 ${businessName} just hit $${milestone.toLocaleString()}+ in revenue captured by TalkMate this month — across ${callsThisMonth} calls.`
+    const text = `🎉 ${businessName} just hit $${milestone!.toLocaleString()}+ in revenue captured by TalkMate this month — across ${callsThisMonth} calls.`
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)

@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
   const { data: partner, error: partnerErr } = await supabase
     .from('partners')
-    .select('*, auth.users!user_id(email)')
+    .select('*')
     .eq('id', partner_id)
     .single()
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-01-27.acacia' })
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-03-25.dahlia' })
     const amount = Math.round(partner.pending_payout * 100) // cents
     const month = getCurrentMonth()
 

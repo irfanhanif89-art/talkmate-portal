@@ -10,27 +10,25 @@ interface OnboardingResponses {
   abn?: string
   timezone?: string
   openingHours?: Record<string, { open: string; close: string; closed: boolean }>
+  catalog?: unknown
   catalogItems?: Array<{ name: string; category: string; price?: number; duration?: number }>
+  industry?: string
   greeting?: string
   voice?: string
   tone?: string
-  faqs?: Array<{ question: string; answer: string }>
-  escalationRules?: Array<{ trigger: string; action: string }>
-  notifications?: {
-    emailOnTransfer: boolean
-    emailAddress: string
-    dailySummary: boolean
-    weeklyReport: boolean
-    smsOnTransfer: boolean
-    mobileNumber: string
-  }
+  faqs?: unknown
+  escalationRules?: unknown
+  notifications?: unknown
+  recordingDisclosureEnabled?: boolean
+  recordingDisclosureText?: string
+  [key: string]: unknown
 }
 
 interface OnboardingStore {
   currentStep: number
   responses: OnboardingResponses
   setStep: (step: number) => void
-  setResponse: (key: keyof OnboardingResponses, value: unknown) => void
+  setResponse: (key: string, value: unknown) => void
   reset: () => void
 }
 

@@ -145,7 +145,7 @@ export default function AnalyticsPage() {
           <h2 className="text-sm font-semibold text-white mb-4">Outcome Distribution</h2>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={outcomeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              <Pie data={outcomeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                 labelLine={{ stroke: '#4A7FBB' }}>
                 {outcomeData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>

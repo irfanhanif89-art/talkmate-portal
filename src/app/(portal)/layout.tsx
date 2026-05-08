@@ -6,7 +6,6 @@ import { type BusinessType } from '@/lib/business-types'
 import { getPlan } from '@/lib/plan'
 import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
-import AdminShell from '@/components/portal/admin-shell'
 
 const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 

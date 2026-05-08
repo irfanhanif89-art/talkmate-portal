@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-01-27.acacia' })
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-03-25.dahlia' })
 
   const month = new Date().toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
   const results = { processed: 0, skipped: 0, failed: 0, total: 0, errors: [] as string[] }

@@ -257,7 +257,7 @@ export function DashboardClient({
 
       {/* 4 stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <StatCard label="Calls Today" value={callsAnsweredToday} hint={vsLastMonthEl as string} accent="#4A9FE8" />
+        <StatCard label="Calls Today" value={callsAnsweredToday} hint={vsLastMonthEl as unknown as string} accent="#4A9FE8" />
         <StatCard label="Revenue Captured" value={`$${revenueRecoveredThisMonth.toLocaleString()}`} hint={revenueIsEstimate ? 'estimated' : 'actual'} accent="#E8622A" />
         <StatCard label="Answer Rate" value={noData ? '—' : `${stats.aiResolutionRate}%`} hint="Industry avg 77%" accent={aiRateColor} hintColor="#22C55E" />
         <StatCard label="Avg Order Value" value={revenueIsEstimate ? '$32' : `$${Math.max(85, Math.round(revenueRecoveredThisMonth / Math.max(stats.totalMonth, 1)))}`} hint="incl. upsell lift" accent="#8B5CF6" />

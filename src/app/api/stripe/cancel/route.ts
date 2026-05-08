@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       cancel_at_period_end: true,
       cancellation_details: { comment: reason || undefined },
     })
-    cancelAt = updated.current_period_end
+    cancelAt = (updated as unknown as { current_period_end?: number }).current_period_end ?? null
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }

@@ -55,8 +55,8 @@ export async function GET() {
       currency: inv.currency,
       status: inv.status ?? 'unknown',
       created: inv.created,
-      hosted_invoice_url: inv.hosted_invoice_url,
-      invoice_pdf: inv.invoice_pdf,
+      hosted_invoice_url: inv.hosted_invoice_url ?? null,
+      invoice_pdf: inv.invoice_pdf ?? null,
       description: inv.lines?.data?.[0]?.description ?? null,
     }))
   } catch (e) {

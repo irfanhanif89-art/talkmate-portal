@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const guard = verifyCron(req); if (guard) return guard
   if (!process.env.STRIPE_SECRET_KEY) return NextResponse.json({ ok: false, error: 'STRIPE_SECRET_KEY missing' }, { status: 500 })
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' as Stripe.LatestApiVersion })
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
   const supabase = createAdminClient()
   const stats = { reviewed: 0, activated: 0, planFixed: 0, errors: [] as string[] }
 

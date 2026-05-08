@@ -147,30 +147,31 @@ export async function POST(request: NextRequest) {
         .eq('stripe_transfer_id', transfer.id)
       break
     }
-    case 'transfer.paid': {
-      const transfer = event.data.object as Stripe.Transfer
-      await supabase
-        .from('partner_payouts')
-        .update({ status: 'paid', paid_at: new Date().toISOString() })
-        .eq('stripe_transfer_id', transfer.id)
-      await supabase
-        .from('partners')
-        .update({ payout_status: 'paid', last_paid_at: new Date().toISOString(), pending_payout: 0 })
-        .eq('stripe_account_id', transfer.destination as string)
-      break
-    }
-    case 'transfer.failed': {
-      const transfer = event.data.object as Stripe.Transfer & { failure_message?: string }
-      await supabase
-        .from('partner_payouts')
-        .update({ status: 'failed', failure_reason: transfer.failure_message || 'Unknown' })
-        .eq('stripe_transfer_id', transfer.id)
-      await supabase
-        .from('partners')
-        .update({ payout_status: 'failed' })
-        .eq('stripe_account_id', transfer.destination as string)
-      break
-    }
+  }
+
+  // transfer.paid / transfer.failed are not in the Stripe event type enum for
+  // this API version but are sent in practice for Connect payouts.
+  const eventType = event.type as string
+  if (eventType === 'transfer.paid') {
+    const transfer = (event as unknown as { data: { object: Stripe.Transfer } }).data.object
+    await supabase
+      .from('partner_payouts')
+      .update({ status: 'paid', paid_at: new Date().toISOString() })
+      .eq('stripe_transfer_id', transfer.id)
+    await supabase
+      .from('partners')
+      .update({ payout_status: 'paid', last_paid_at: new Date().toISOString(), pending_payout: 0 })
+      .eq('stripe_account_id', transfer.destination as string)
+  } else if (eventType === 'transfer.failed') {
+    const transfer = (event as unknown as { data: { object: Stripe.Transfer & { failure_message?: string } } }).data.object
+    await supabase
+      .from('partner_payouts')
+      .update({ status: 'failed', failure_reason: transfer.failure_message || 'Unknown' })
+      .eq('stripe_transfer_id', transfer.id)
+    await supabase
+      .from('partners')
+      .update({ payout_status: 'failed' })
+      .eq('stripe_account_id', transfer.destination as string)
   }
 
   return NextResponse.json({ received: true })
