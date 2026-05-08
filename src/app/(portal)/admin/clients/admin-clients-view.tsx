@@ -111,7 +111,10 @@ export default function AdminClientsView({
       const res = await fetch(`/api/admin/clients/${id}/impersonate`, { method: 'POST' })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Failed')
-      window.open(data.url, '_blank', 'noopener,noreferrer')
+      // Copy link to clipboard — must be opened in a private/incognito window.
+      // Opening in the same browser swaps the Supabase cookie and logs out the admin.
+      try { await navigator.clipboard.writeText(data.url) } catch {}
+      showToast(`Link copied for ${data.business_name} — paste into a private/incognito window`)
     } catch (e) {
       showToast((e as Error).message)
     } finally {
