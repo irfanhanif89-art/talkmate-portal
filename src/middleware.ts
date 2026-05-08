@@ -48,8 +48,8 @@ async function needsAdminTosGate(userId: string): Promise<boolean> {
   }
 }
 
-// Super-admin email — bypasses all subscription and ToS checks
-const ADMIN_EMAIL = 'hello@talkmate.com.au'
+// Super-admin emails - bypass all subscription and ToS checks
+const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -75,10 +75,10 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname
 
-  // Admin user — short-circuit ALL checks immediately after we have the user.
+  // Admin user - short-circuit ALL checks immediately after we have the user.
   // hello@talkmate.com.au has no business/subscription and must never be
   // redirected to /subscribe or /accept-terms.
-  if (user?.email === ADMIN_EMAIL) {
+  if (user?.email && ADMIN_EMAILS.includes(user.email)) {
     if (path === '/login' || path === '/register') {
       const url = new URL('/admin', request.url)
       const res = NextResponse.redirect(url)
@@ -116,13 +116,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isGuestOnly) {
-    // Always redirect to /dashboard — no async DB calls, no loop risk.
+    // Always redirect to /dashboard - no async DB calls, no loop risk.
     // Dashboard and protected routes handle subscription + TOS gates from there.
     return redirect('/dashboard')
   }
 
   // /admin paths bypass subscription check (admin/approve already did this)
-  // /admin/view-as is a transitional signout page — always allow through
+  // /admin/view-as is a transitional signout page - always allow through
   if (path.startsWith('/admin')) {
     return supabaseResponse
   }

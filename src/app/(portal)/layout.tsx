@@ -8,7 +8,7 @@ import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
 import AdminShell from '@/components/portal/admin-shell'
 
-const ADMIN_EMAIL = 'hello@talkmate.com.au'
+const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -17,7 +17,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   // Super-admin bypass — hello@talkmate.com.au has no business record.
   // Render a minimal shell so /admin pages work without a business context.
-  if (user.email === ADMIN_EMAIL) {
+  if (user.email && ADMIN_EMAILS.includes(user.email)) {
     return (
       <div className="min-h-screen bg-background text-foreground">
         {children}
