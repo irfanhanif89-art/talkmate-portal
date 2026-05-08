@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { AdminBusiness, PartnerOption, PLAN_OPTIONS, planLabel } from './types'
 import { INDUSTRY_LIBRARY } from '@/lib/industryLibrary'
+import ServicesEditor from '@/components/portal/services-editor'
+import { type Service } from '@/lib/service-templates'
+// Service type re-exported for pricingServices state
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface HourEntry { open: string; close: string; closed: boolean }
@@ -117,6 +120,10 @@ export default function CreateClientModal({
 
   // ── Section 7: FAQs ──────────────────────────────────────────────────────
   const [faqs, setFaqs] = useState<FaqRow[]>(mkEmptyFaqs())
+
+  // ── Trade type & pricing services (trades industry only) ──────────────────
+  const [tradeType, setTradeType] = useState('')
+  const [pricingServices, setPricingServices] = useState<Service[]>([])
 
   // ── Section 8: Escalation ────────────────────────────────────────────────
   const [afterHours, setAfterHours] = useState('')
@@ -538,6 +545,24 @@ export default function CreateClientModal({
           style={{ width: '100%', padding: 10, background: 'transparent', border: '1px dashed rgba(74,159,232,0.3)', borderRadius: 8, color: '#4A9FE8', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >+ Add service</button>
       </div>
+
+      {/* ── SECTION 6b: Trade type & pricing (trades only) ───────────────── */}
+      {industry === 'trades' && (
+        <>
+          <SectionTitle>6b · Trade type &amp; service pricing</SectionTitle>
+          <ServicesEditor
+            industry='trades'
+            trade_type={tradeType || null}
+            saved={pricingServices.length > 0 ? pricingServices : null}
+            mode='admin'
+            onChange={({ services, trade_type }) => {
+              setPricingServices(services)
+              if (trade_type !== undefined) setTradeType(trade_type ?? '')
+            }}
+          />
+          <Divider />
+        </>
+      )}
 
       {/* ── SECTION 7: FAQs ──────────────────────────────────────────────── */}
       <SectionTitle>7 · FAQs</SectionTitle>
