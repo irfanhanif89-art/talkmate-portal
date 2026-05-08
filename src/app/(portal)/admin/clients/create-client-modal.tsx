@@ -517,10 +517,27 @@ export default function CreateClientModal({
         })}
       </div>
 
-      {/* ── SECTION 6: Services ──────────────────────────────────────────── */}
-      <SectionTitle>6 · Services</SectionTitle>
+      {/* ── SECTION 6: Trade type & service pricing (trades only) ─────────── */}
+      {industry === 'trades' && (
+        <>
+          <SectionTitle>6 · Trade type &amp; service pricing</SectionTitle>
+          <ServicesEditor
+            industry='trades'
+            trade_type={tradeType || null}
+            saved={pricingServices.length > 0 ? pricingServices : null}
+            mode='admin'
+            onChange={({ services, trade_type }) => {
+              setPricingServices(services)
+              if (trade_type !== undefined) setTradeType(trade_type ?? '')
+            }}
+          />
+          <Divider />
+        </>
+      )}
+
+      {/* ── SECTION 6b / 6: Additional services (name / category / price) ─── */}
+      <SectionTitle>{industry === 'trades' ? '6b' : '6'} · Additional services</SectionTitle>
       <div style={{ marginBottom: 22 }}>
-        {/* Column headers */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 32px', gap: 8, marginBottom: 6, padding: '0 0 0 0' }}>
           {['Name', 'Category', 'Price', ''].map(h => (
             <div key={h} style={{ fontSize: 11, color: '#4A9FE8', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>{h}</div>
@@ -545,24 +562,6 @@ export default function CreateClientModal({
           style={{ width: '100%', padding: 10, background: 'transparent', border: '1px dashed rgba(74,159,232,0.3)', borderRadius: 8, color: '#4A9FE8', fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >+ Add service</button>
       </div>
-
-      {/* ── SECTION 6b: Trade type & pricing (trades only) ───────────────── */}
-      {industry === 'trades' && (
-        <>
-          <SectionTitle>6b · Trade type &amp; service pricing</SectionTitle>
-          <ServicesEditor
-            industry='trades'
-            trade_type={tradeType || null}
-            saved={pricingServices.length > 0 ? pricingServices : null}
-            mode='admin'
-            onChange={({ services, trade_type }) => {
-              setPricingServices(services)
-              if (trade_type !== undefined) setTradeType(trade_type ?? '')
-            }}
-          />
-          <Divider />
-        </>
-      )}
 
       {/* ── SECTION 7: FAQs ──────────────────────────────────────────────── */}
       <SectionTitle>7 · FAQs</SectionTitle>
