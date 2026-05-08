@@ -39,6 +39,7 @@ const INDUSTRIES: Array<{ value: string; label: string }> = [
   { value: 'cleaning',    label: 'Cleaning Services' },
   { value: 'pest',        label: 'Pest Control' },
   { value: 'landscaping', label: 'Landscaping & Gardens' },
+  { value: 'locksmith',   label: 'Locksmith & Security' },
   { value: 'other',       label: 'Other' },
 ]
 

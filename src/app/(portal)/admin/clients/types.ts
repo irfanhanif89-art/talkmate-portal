@@ -52,6 +52,7 @@ export const INDUSTRIES: Array<{ value: string; label: string }> = [
   { value: 'ndis', label: 'NDIS Services' },
   { value: 'retail', label: 'Retail' },
   { value: 'professional_services', label: 'Professional Services' },
+  { value: 'locksmith', label: 'Locksmith & Security' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -96,6 +97,7 @@ const LEGACY_INDUSTRY_LABELS: Record<string, string> = {
   cleaning: 'Cleaning Services',
   pest: 'Pest Control',
   landscaping: 'Landscaping & Gardens',
+  locksmith: 'Locksmith & Security',
 }
 
 export function industryLabel(i: string | null): string {
