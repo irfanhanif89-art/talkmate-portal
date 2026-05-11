@@ -295,10 +295,16 @@ Donna's scenario needs them, pull them from that JSON blob instead.
   "timestamp": "2026-05-11T23:00:00Z",
   "trials": [
     { "id": "uuid", "business_name": "Gold Coast Locksmiths", "industry": "trades",
-      "plan": "starter", "trial_end_date": "2026-05-12T10:00:00Z", "owner_user_id": "uuid" }
+      "plan": "starter", "trial_end_date": "2026-05-12T10:00:00Z",
+      "owner_user_id": "uuid", "owner_email": "dave@gclocksmiths.com.au" }
   ]
 }
 ```
+
+`owner_email` is fetched from the `users` table (which mirrors
+`auth.users.email`). For any owner whose `users` row is missing or has
+a null email, `owner_email` will be `null` in the payload — Donna's
+scenario should treat that as a "no email on file, alert me" branch.
 
 **Trial expired** (cron):
 
