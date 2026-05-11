@@ -73,9 +73,9 @@ export async function GET(req: Request) {
         const yyyy = d.getUTCFullYear()
         return `${b.name} (${b.plan} plan) - ended ${dd} ${mon} ${yyyy}`
       }).join('\n')
-      const plural = expiredList.length === 1 ? '' : 's'
+      const plural = expiredList.length === 1 ? '' : 'es'
       await sendSms(
-        `TRIALS EXPIRED (${expiredList.length} business${plural})\n\n${lines}\n\nACTION: Follow up each. Agents offline.`
+        `${expiredList.length} trial${plural === '' ? '' : 's'} expired today. ${lines}. Follow up and take agents offline.`
       )
     } catch (e) {
       console.error('[expire-trials] sms notification failed', e)
