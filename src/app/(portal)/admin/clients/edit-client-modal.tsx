@@ -7,6 +7,7 @@ import ServicePricingEditor, { type ServicePricing } from '@/components/portal/s
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 import DivertInstructions from '@/components/portal/divert-instructions'
 import ServicesEditor, { type Service } from '@/components/portal/services-editor'
+import { TrialManagementPanel, OnboardingCompleteButton } from './trial-panel'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -293,6 +294,8 @@ export default function EditClientModal({
           ID: <code style={{ fontSize: 11 }}>{business.id}</code>
         </p>
       </div>
+
+      <TrialManagementPanel business={business} onUpdate={onUpdate} />
 
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', marginTop: 18, marginBottom: 22 }}>
         {(['details', 'agent', 'billing', 'history'] as const).map(t => (
@@ -737,6 +740,9 @@ under this client's Agent Setup tab and confirm back.`
       <OnboardingChecklist business={business} agentPhone={form.agent_phone_number} />
 
       <DownloadOnboardingSheetButton business={business} agentPhone={form.agent_phone_number} services={form.services_summary} answerPhrase={form.agent_answer_phrase} afterHours={form.after_hours_instruction} />
+
+      {/* Session 6 — fire Make.com auto-agent-brief webhook */}
+      <OnboardingCompleteButton business={business} onUpdate={onUpdate} />
     </div>
   )
 }

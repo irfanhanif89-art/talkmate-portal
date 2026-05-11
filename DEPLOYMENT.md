@@ -1,8 +1,261 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 6 — Trial mode + auto agent brief (2026-05-11)
+
+Adds a 7-day free trial lifecycle on top of the existing admin lifecycle
+model, plus a "Mark onboarding complete and brief Donna" admin action
+that fires a Make.com webhook with the full business record so Donna can
+auto-build the Vapi agent without a manual handover.
+
+### Deviations from the brief (read before merging)
+
+1. **No `/admin/clients/[id]` page exists.** Admin client management is
+   modal-based (`edit-client-modal.tsx`). The "Trial and Billing" section
+   the brief wants "above the tabs" is rendered as `<TrialManagementPanel>`
+   between the modal header and the tab strip, and the "Mark onboarding
+   complete and brief Donna" button is rendered at the bottom of the
+   existing Agent Setup tab. Functionally identical to the brief.
+2. **Schema column names differ from the brief's wire payload.** Our
+   `businesses` table uses `name` (not `business_name`), `phone_number`
+   (not `phone`), and `opening_hours` (not `trading_hours`). The
+   onboarding-complete webhook handler does the translation in one place
+   (`src/app/api/admin/clients/[id]/onboarding-complete/route.ts`) so
+   Donna's Make.com scenario consumes the exact keys the brief specifies.
+3. **`onboarding_complete` is a NEW column distinct from
+   `onboarding_completed`.** The existing `onboarding_completed`
+   (migration 001) tracks whether the client finished the self-onboarding
+   wizard. Session 6's `onboarding_complete` is set by the admin to
+   indicate "all info captured, brief Donna." Two boolean columns,
+   intentionally.
+4. **`account_status` CHECK constraint was widened, not redefined.**
+   Migration 011 set it to `('active', 'pending', 'suspended', 'cancelled')`.
+   Session 6 drops and recreates the constraint as
+   `('trial', 'active', 'pending', 'expired', 'suspended', 'cancelled')`
+   so existing values are preserved unchanged.
+
+### Migration — `supabase/migrations/021_trial_mode.sql`
+
+Run in the Supabase SQL editor. Idempotent.
+
+Adds these columns to `businesses`:
+
+| Column | Type | Default | Purpose |
+|---|---|---|---|
+| `trial_start_date` | timestamptz | NULL | When the trial began |
+| `trial_end_date` | timestamptz | NULL | When the trial ends (or ended) |
+| `trial_converted_at` | timestamptz | NULL | When the trial converted to paid |
+| `onboarding_complete` | boolean | false | Admin "ready to brief Donna" flag |
+| `onboarding_complete_at` | timestamptz | NULL | When the brief Donna webhook fired |
+
+Plus widens the `account_status` CHECK constraint to include `'trial'`
+and `'expired'`, and backfills any NULL/empty `account_status` rows to
+`'active'`.
+
+A partial index `idx_businesses_trial_end_date` covers
+`account_status = 'trial'` so the cron jobs scan only the active-trial
+slice.
+
+### API routes added
+
+All under `src/app/api/`:
+
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `/api/admin/clients/[id]/start-trial` | POST | admin | Sets `account_status='trial'`, stamps start + 7-day end, sets `plan`. Body: `{ plan: 'starter' \| 'growth' \| 'pro' }` |
+| `/api/admin/clients/[id]/convert-trial` | POST | admin | Sets `account_status='active'`, stamps `trial_converted_at`. Body: `{ plan }`. Stripe link sent manually. |
+| `/api/admin/clients/[id]/extend-trial` | POST | admin | Adds 3 days to `trial_end_date`. Works on `trial` and `expired` accounts. |
+| `/api/admin/clients/[id]/end-trial` | POST | admin | Sets `account_status='expired'` immediately. |
+| `/api/admin/clients/[id]/reactivate-trial` | POST | admin | Restarts a 7-day trial on an expired account. |
+| `/api/admin/clients/[id]/onboarding-complete` | POST | admin | Sets `onboarding_complete=true`, fires `MAKE_AGENT_BRIEF_WEBHOOK`. Webhook failure does NOT roll back the flag. |
+| `/api/portal/trial-status` | GET | client | Returns `account_status`, trial dates, `days_remaining`, `plan`. Used by client UI. |
+
+Every admin action also writes a `client_comms_log` entry so the
+History tab in the edit modal shows the trail.
+
+### Cron routes added (and registered in `vercel.json`)
+
+| Path | Schedule (UTC) | AEST | Purpose |
+|---|---|---|---|
+| `/api/cron/expire-trials` | `0 22 * * *` | 8 am | Flips trials whose end date has passed to `'expired'`, fires `MAKE_TRIAL_EXPIRED_WEBHOOK` |
+| `/api/cron/trial-reminders` | `0 23 * * *` | 9 am | Finds trials ending within the next 24h, fires `MAKE_TRIAL_REMINDER_WEBHOOK` |
+
+Both use `verifyCron(req)` (Bearer `CRON_SECRET`). Both are best-effort
+on the webhook fire — a failed webhook is logged in the JSON response
+but does not retry or roll back the DB state.
+
+### Make.com webhook payloads
+
+Donna's scenarios receive exactly these shapes. Don't change them
+without updating Donna's Make.com modules in lock-step.
+
+**Auto agent brief** (fired by admin button on the Agent Setup tab):
+
+```json
+{
+  "trigger": "onboarding_complete",
+  "timestamp": "2026-05-11T10:00:00Z",
+  "business": {
+    "id": "uuid",
+    "business_name": "Gold Coast Locksmiths",
+    "industry": "trades",
+    "trade_type": "locksmith",
+    "plan": "starter",
+    "account_status": "trial",
+    "phone": "0412345678",
+    "address": "123 Main St, Surfers Paradise QLD 4217",
+    "service_area": null,
+    "trading_hours": { "monday": { "open": "08:00", "close": "17:00" }, "...": "..." },
+    "services": [ { "name": "Emergency lockout (residential)", "price": "120", "unit": "per job", "enabled": true } ],
+    "escalation_name": null,
+    "escalation_phone": null,
+    "notifications_config": {}
+  }
+}
+```
+
+Some keys (`service_area`, `escalation_name`, `escalation_phone`) are
+nulled out because they don't exist as top-level columns on the
+`businesses` table — they live inside `notifications_config`. If
+Donna's scenario needs them, pull them from that JSON blob instead.
+
+**Trial day-6 reminder** (cron):
+
+```json
+{
+  "trigger": "trial_day_6_reminder",
+  "timestamp": "2026-05-11T23:00:00Z",
+  "trials": [
+    { "id": "uuid", "business_name": "Gold Coast Locksmiths", "industry": "trades",
+      "plan": "starter", "trial_end_date": "2026-05-12T10:00:00Z", "owner_user_id": "uuid" }
+  ]
+}
+```
+
+**Trial expired** (cron):
+
+```json
+{
+  "trigger": "trial_expired",
+  "timestamp": "2026-05-11T22:00:00Z",
+  "expired": [
+    { "id": "uuid", "business_name": "Gold Coast Locksmiths", "industry": "trades",
+      "plan": "starter", "trial_end_date": "2026-05-11T10:00:00Z" }
+  ]
+}
+```
+
+### Environment variables (Donna's responsibility to fill)
+
+Add these to **Vercel → Production** (and local `.env.local`). Empty
+strings are fine — the code degrades gracefully when a webhook URL is
+missing (flips the DB flag, returns `webhook.status = 'skipped_no_url'`
+in the response, logs a comms-log entry telling the admin to brief
+Donna manually).
+
+```
+MAKE_AGENT_BRIEF_WEBHOOK=        # POST receiver for onboarding-complete
+MAKE_TRIAL_REMINDER_WEBHOOK=     # POST receiver for the day-6 cron
+MAKE_TRIAL_EXPIRED_WEBHOOK=      # POST receiver for the expire-trials cron
+NEXT_PUBLIC_STRIPE_STARTER_LINK= # Stripe payment link — surfaced in the client trial UI
+NEXT_PUBLIC_STRIPE_GROWTH_LINK=  # Same, Growth plan
+NEXT_PUBLIC_STRIPE_PRO_LINK=     # Same, Pro plan
+NEXT_PUBLIC_IRFAN_PHONE=         # Phone number shown on the expired-trial overlay
+```
+
+`CRON_SECRET` already exists from earlier sessions.
+
+The Stripe / Irfan-phone vars use the `NEXT_PUBLIC_` prefix because
+they're rendered in client components (trial banner, expired overlay,
+trial progress card).
+
+### Admin UI changes
+
+- **`/admin/clients` list**: trial pill ("TRIAL · X days left") and red
+  "TRIAL EXPIRED" pill next to the business name. New "Trial" and
+  "Expired" stat tiles in the header strip. New "Trial" and "Expired"
+  filter options. Trials sort to the top of the list by default.
+- **Edit client modal**: `<TrialManagementPanel>` between the modal
+  header and the tabs. Renders different controls per `account_status`
+  (Convert / Extend / End for trial; Reactivate / Mark paid for expired;
+  read-only confirmation for active; grey badge for cancelled).
+- **Edit client modal — Agent Setup tab**: `<OnboardingCompleteButton>`
+  at the bottom. Confirmation modal before firing. Shows green "✓ Donna
+  briefed" with timestamp once fired, with a small "Re-brief Donna"
+  link.
+- **New page `/admin/trials`**: table of active trials with the columns
+  the brief specified (Business, Industry, Plan, Start, End, Days left
+  with traffic-light colours, Actions). Empty state: "No active trials
+  at the moment."
+- **Create client modal**: new "Start as 7-day free trial" toggle in
+  Section 2 (Plan). When ticked, the modal calls
+  `/api/admin/clients/[id]/start-trial` immediately after creation. The
+  plan selector stays visible (plan is still selected for trial users).
+
+### Client portal UI changes
+
+- **`<TrialBanner>`** in `(portal)/layout.tsx` between the impersonation
+  banner and page content. Sticky, orange gradient. Self-fetches
+  `/api/portal/trial-status`; renders nothing unless
+  `account_status === 'trial'`. Headline morphs: "ends in N days" →
+  "ends tomorrow" → "ends today" at the boundaries.
+- **`<TrialExpiredOverlay>`** rendered at the bottom of the layout.
+  Self-fetches the same endpoint; renders nothing unless
+  `account_status === 'expired'`. Full-screen, backdrop-blurred, contains
+  the "Activate my plan" CTA and the IRFAN_PHONE fallback. `z-index:
+  1000` so it sits above all portal content.
+- **`<TrialProgressCard>`** at the top of the dashboard
+  (`dashboard-client.tsx`). Self-fetches. Renders "Day X of 7" with a
+  filled progress bar and the calls-handled count.
+
+### Files changed
+
+```
+supabase/migrations/021_trial_mode.sql                                  (new)
+src/app/api/admin/clients/[id]/start-trial/route.ts                     (new)
+src/app/api/admin/clients/[id]/convert-trial/route.ts                   (new)
+src/app/api/admin/clients/[id]/extend-trial/route.ts                    (new)
+src/app/api/admin/clients/[id]/end-trial/route.ts                       (new)
+src/app/api/admin/clients/[id]/reactivate-trial/route.ts                (new)
+src/app/api/admin/clients/[id]/onboarding-complete/route.ts             (new)
+src/app/api/portal/trial-status/route.ts                                (new)
+src/app/api/cron/expire-trials/route.ts                                 (new)
+src/app/api/cron/trial-reminders/route.ts                               (new)
+src/app/(portal)/admin/trials/page.tsx                                  (new)
+src/app/(portal)/admin/trials/trials-view.tsx                           (new)
+src/app/(portal)/admin/clients/trial-panel.tsx                          (new)
+src/components/portal/trial-banner.tsx                                  (new)
+src/components/portal/trial-progress-card.tsx                           (new)
+vercel.json                                                             (+2 cron entries)
+src/app/(portal)/admin/clients/page.tsx                                 (select adds trial cols)
+src/app/(portal)/admin/clients/types.ts                                 (extend AdminBusiness, statusColor for trial/expired, trialDaysRemaining helper)
+src/app/(portal)/admin/clients/admin-clients-view.tsx                   (badge column, stat tiles, filter, sort)
+src/app/(portal)/admin/clients/edit-client-modal.tsx                    (mount trial panel + onboarding button)
+src/app/(portal)/admin/clients/create-client-modal.tsx                  (Start as trial toggle + post-create call)
+src/app/(portal)/layout.tsx                                             (mount trial banner + overlay)
+src/app/(portal)/dashboard/dashboard-client.tsx                         (mount trial progress card)
+DEPLOYMENT.md                                                           (this section)
+```
+
+### Pre-merge checklist
+
+1. **Run migration 021** in the Supabase SQL editor.
+2. **Add the env vars** to Vercel Production (leave blank if Donna
+   hasn't built the Make.com scenarios yet — code degrades gracefully).
+3. **Verify `vercel.json`** picked up the new crons (Vercel dashboard
+   → Settings → Cron Jobs).
+4. **Smoke test** in production: create a test business, toggle Start
+   as trial, confirm the orange "TRIAL · 7 days left" pill on the
+   admin list, impersonate the business, confirm the trial banner
+   appears at the top.
+5. **Hume Towing safety**: this session does NOT touch Hume Towing's
+   `services` or `notifications_config`. The migration is additive on
+   the table; no UPDATEs target a specific business.
 
 ---
 
