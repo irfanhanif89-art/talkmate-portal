@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient as createSbClient } from '@supabase/supabase-js'
+import { sendSms } from '@/lib/twilio'
 
 // Self-serve signup route — Session 8. Public, no auth header required.
 // Replaces nothing; sits alongside the older /api/auth/register flow.
@@ -249,6 +250,37 @@ export async function POST(request: Request) {
     } catch (e) {
       console.error('[signup] make.com webhook failed', e)
     }
+  }
+
+  // ---- direct SMS notification (belt-and-braces) -------------------
+  try {
+    let smsBody: string
+    if (isTrial) {
+      const dd = String(trialEnd.getUTCDate()).padStart(2, '0')
+      const mon = trialEnd.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' })
+      const yyyy = trialEnd.getUTCFullYear()
+      smsBody = `NEW SIGNUP (trial)
+Name: ${fullName}
+Business: ${businessName}
+Industry: ${industry}
+Plan: ${plan}
+Phone: ${phone}
+Email: ${email}
+Trial ends: ${dd} ${mon} ${yyyy}
+ACTION: Set up Vapi agent & call to welcome.`
+    } else {
+      smsBody = `NEW SIGNUP (pay now)
+Name: ${fullName}
+Business: ${businessName}
+Industry: ${industry}
+Plan: ${plan}
+Phone: ${phone}
+Email: ${email}
+ACTION: Confirm payment received, set up agent.`
+    }
+    await sendSms(smsBody)
+  } catch (e) {
+    console.error('[signup] sms notification failed', e)
   }
 
   // ---- compute redirect ---------------------------------------------

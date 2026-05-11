@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyCron } from '@/lib/cron-auth'
+import { sendSms } from '@/lib/twilio'
 
 // Daily cron — runs at 8am AEST (22:00 UTC). Flips every trial whose
 // trial_end_date has passed to account_status = 'expired'. Also fires
@@ -59,6 +60,25 @@ export async function GET(req: Request) {
     } catch (e) {
       webhookStatus = 'failed'
       webhookError = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  // Direct SMS to Irfan (belt-and-braces alongside Make.com webhook)
+  if (expiredList.length > 0) {
+    try {
+      const lines = expiredList.map(b => {
+        const d = new Date(b.trial_end_date)
+        const dd = String(d.getUTCDate()).padStart(2, '0')
+        const mon = d.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' })
+        const yyyy = d.getUTCFullYear()
+        return `${b.name} (${b.plan} plan) - ended ${dd} ${mon} ${yyyy}`
+      }).join('\n')
+      const plural = expiredList.length === 1 ? '' : 's'
+      await sendSms(
+        `TRIALS EXPIRED (${expiredList.length} business${plural})\n\n${lines}\n\nACTION: Follow up each. Agents offline.`
+      )
+    } catch (e) {
+      console.error('[expire-trials] sms notification failed', e)
     }
   }
 
