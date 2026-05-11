@@ -8,6 +8,7 @@ import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service
 import DivertInstructions from '@/components/portal/divert-instructions'
 import ServicesEditor, { type Service } from '@/components/portal/services-editor'
 import { TrialManagementPanel, OnboardingCompleteButton } from './trial-panel'
+import { AdminTeamTab, AdminCallRoutingTab, AdminBookingsTab } from './admin-feature-tabs'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -274,7 +275,7 @@ function ServicesQuickAdd({ industry, value, onChange }: { industry: string; val
   )
 }
 
-type Tab = 'details' | 'agent' | 'billing' | 'history'
+type Tab = 'details' | 'agent' | 'team' | 'call_routing' | 'bookings' | 'billing' | 'history'
 
 export default function EditClientModal({
   business, onClose, onUpdate, onCancelled,
@@ -297,8 +298,8 @@ export default function EditClientModal({
 
       <TrialManagementPanel business={business} onUpdate={onUpdate} />
 
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', marginTop: 18, marginBottom: 22 }}>
-        {(['details', 'agent', 'billing', 'history'] as const).map(t => (
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', marginTop: 18, marginBottom: 22, flexWrap: 'wrap' as const }}>
+        {(['details', 'agent', 'team', 'call_routing', 'bookings', 'billing', 'history'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -309,12 +310,21 @@ export default function EditClientModal({
               color: tab === t ? 'white' : '#7BAED4', cursor: 'pointer',
               fontFamily: 'Outfit, sans-serif',
             }}
-          >{t === 'details' ? 'Details' : t === 'agent' ? 'Agent Setup' : t === 'billing' ? 'Billing' : 'History'}</button>
+          >{t === 'details' ? 'Details'
+            : t === 'agent' ? 'Agent Setup'
+            : t === 'team' ? 'Team'
+            : t === 'call_routing' ? 'Call Routing'
+            : t === 'bookings' ? 'Bookings'
+            : t === 'billing' ? 'Billing'
+            : 'History'}</button>
         ))}
       </div>
 
       {tab === 'details' && <DetailsTab business={business} onUpdate={onUpdate} onCancelled={onCancelled} />}
       {tab === 'agent' && <AgentTab business={business} onUpdate={onUpdate} />}
+      {tab === 'team' && <AdminTeamTab business={business} />}
+      {tab === 'call_routing' && <AdminCallRoutingTab business={business} />}
+      {tab === 'bookings' && <AdminBookingsTab business={business} />}
       {tab === 'billing' && <BillingTab business={business} onUpdate={onUpdate} />}
       {tab === 'history' && <HistoryTab business={business} />}
     </ModalShell>

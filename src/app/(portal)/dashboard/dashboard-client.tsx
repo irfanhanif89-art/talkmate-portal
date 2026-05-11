@@ -11,6 +11,7 @@ import NpsModal from '@/components/portal/nps-modal'
 import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
+import ReceptionistStats from '@/components/portal/receptionist-stats'
 
 interface Call {
   id: string
@@ -203,6 +204,18 @@ export function DashboardClient({
       {/* Session 6 — trial progress card. Self-fetches; renders nothing
           when the account isn't on trial. */}
       <TrialProgressCard callsThisMonth={stats.totalMonth} />
+
+      {/* Session 9 — pending bookings + callbacks + recent outcomes.
+          Self-fetches counts; receives recent calls from the server. */}
+      <ReceptionistStats recentCalls={recentCalls as unknown as Array<{
+        id: string
+        caller_number: string | null
+        outcome: string | null
+        transfer_to: string | null
+        is_vip_caller: boolean
+        is_repeat_caller: boolean
+        created_at: string
+      }>} />
 
       {/* Retroactive T&C banner (Session 1 brief Part 1) */}
       <RetroactiveTCBanner pendingCount={pendingLegalAcceptances} />
