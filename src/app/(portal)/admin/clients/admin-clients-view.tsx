@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   AdminBusiness, PartnerOption, planLabel, statusColor, statusLabel,
-  industryLabel,
+  industryLabel, trialDaysRemaining,
 } from './types'
 import CreateClientModal from './create-client-modal'
 import EditClientModal from './edit-client-modal'
@@ -19,7 +19,7 @@ export default function AdminClientsView({
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'active' | 'suspended' | 'cancelled'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'trial' | 'pending' | 'active' | 'expired' | 'suspended' | 'cancelled'>('all')
   const [search, setSearch] = useState('')
   const [paymentLinkBusy, setPaymentLinkBusy] = useState<string | null>(null)
   const [impersonateBusy, setImpersonateBusy] = useState<string | null>(null)
@@ -28,16 +28,18 @@ export default function AdminClientsView({
 
   const stats = useMemo(() => {
     const total = businesses.length
+    const trial = businesses.filter(b => b.account_status === 'trial').length
     const active = businesses.filter(b => b.account_status === 'active').length
     const pending = businesses.filter(b => b.account_status === 'pending').length
+    const expired = businesses.filter(b => b.account_status === 'expired').length
     const suspended = businesses.filter(b => b.account_status === 'suspended').length
     const cancelled = businesses.filter(b => b.account_status === 'cancelled').length
-    return { total, active, pending, suspended, cancelled }
+    return { total, trial, active, pending, expired, suspended, cancelled }
   }, [businesses])
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase()
-    return businesses.filter(b => {
+    const list = businesses.filter(b => {
       if (statusFilter !== 'all' && b.account_status !== statusFilter) return false
       if (!s) return true
       return (
@@ -45,6 +47,12 @@ export default function AdminClientsView({
         (b.industry ?? '').toLowerCase().includes(s) ||
         (b.phone_number ?? '').toLowerCase().includes(s)
       )
+    })
+    // Sort trials to the top by default so admin attention lands there first.
+    return [...list].sort((a, b) => {
+      const aTrial = a.account_status === 'trial' ? 0 : 1
+      const bTrial = b.account_status === 'trial' ? 0 : 1
+      return aTrial - bTrial
     })
   }, [businesses, statusFilter, search])
 
@@ -152,8 +160,10 @@ export default function AdminClientsView({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         {[
           { label: 'Total', value: stats.total, color: '#4A9FE8' },
+          { label: 'Trial', value: stats.trial, color: '#E8622A' },
           { label: 'Active', value: stats.active, color: '#22C55E' },
           { label: 'Pending', value: stats.pending, color: '#F59E0B' },
+          { label: 'Expired', value: stats.expired, color: '#EF4444' },
           { label: 'Suspended', value: stats.suspended, color: '#EF4444' },
           { label: 'Cancelled', value: stats.cancelled, color: '#6B7280' },
         ].map(s => (
@@ -204,8 +214,10 @@ export default function AdminClientsView({
           }}
         >
           <option value="all">All status</option>
+          <option value="trial">Trial</option>
           <option value="active">Active</option>
           <option value="pending">Pending</option>
+          <option value="expired">Expired</option>
           <option value="suspended">Suspended</option>
           <option value="cancelled">Cancelled</option>
         </select>
@@ -231,7 +243,22 @@ export default function AdminClientsView({
             )}
             {filtered.map((b, i) => (
               <tr key={b.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? '#0A1E38' : '#071829' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'white' }}>{b.name}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'white' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>{b.name}</span>
+                    {b.account_status === 'trial' && (() => {
+                      const d = trialDaysRemaining(b.trial_end_date)
+                      return (
+                        <span style={trialPill('#E8622A')}>
+                          TRIAL{d !== null ? ` · ${d} day${d === 1 ? '' : 's'} left` : ''}
+                        </span>
+                      )
+                    })()}
+                    {b.account_status === 'expired' && (
+                      <span style={trialPill('#EF4444')}>TRIAL EXPIRED</span>
+                    )}
+                  </div>
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{b.phone_number || '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, background: 'rgba(232,98,42,0.12)', color: '#E8622A', fontWeight: 700 }}>
@@ -322,5 +349,15 @@ function iconBtn(color: string): React.CSSProperties {
     color, cursor: 'pointer', fontSize: 14, fontWeight: 700,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: 'Outfit, sans-serif',
+  }
+}
+
+function trialPill(color: string): React.CSSProperties {
+  return {
+    fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
+    padding: '2px 7px', borderRadius: 99,
+    background: `${color}22`, color,
+    textTransform: 'uppercase' as const,
+    whiteSpace: 'nowrap' as const,
   }
 }

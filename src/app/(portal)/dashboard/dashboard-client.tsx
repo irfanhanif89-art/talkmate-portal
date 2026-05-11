@@ -10,6 +10,7 @@ import ContextualUpsellBanner from '@/components/portal/contextual-upsell'
 import NpsModal from '@/components/portal/nps-modal'
 import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
+import TrialProgressCard from '@/components/portal/trial-progress-card'
 
 interface Call {
   id: string
@@ -198,6 +199,10 @@ export function DashboardClient({
           Welcome back{firstName ? `, ${firstName}` : ''}
         </h1>
       </div>
+
+      {/* Session 6 — trial progress card. Self-fetches; renders nothing
+          when the account isn't on trial. */}
+      <TrialProgressCard callsThisMonth={stats.totalMonth} />
 
       {/* Retroactive T&C banner (Session 1 brief Part 1) */}
       <RetroactiveTCBanner pendingCount={pendingLegalAcceptances} />

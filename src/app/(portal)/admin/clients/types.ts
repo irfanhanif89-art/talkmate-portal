@@ -9,8 +9,17 @@ export interface AdminBusiness {
   abn: string | null
   industry: string | null
   plan: string | null
-  account_status: 'active' | 'pending' | 'suspended' | 'cancelled' | null
+  account_status: 'trial' | 'active' | 'pending' | 'expired' | 'suspended' | 'cancelled' | null
   onboarded_by: 'self' | 'admin' | 'partner' | null
+  // Session 6 — trial mode lifecycle
+  trial_start_date: string | null
+  trial_end_date: string | null
+  trial_converted_at: string | null
+  // Session 6 — admin "all info captured, brief Donna" flag (distinct
+  // from the existing `onboarding_completed` boolean, which tracks the
+  // client's self-onboarding wizard).
+  onboarding_complete: boolean | null
+  onboarding_complete_at: string | null
   agent_status: string | null
   agent_phone_number: string | null
   welcome_email_sent: boolean | null
@@ -63,8 +72,10 @@ export const PLAN_OPTIONS: Array<{ value: 'starter' | 'growth' | 'pro'; label: s
 ]
 
 export function statusColor(s: AdminBusiness['account_status']): string {
+  if (s === 'trial') return '#E8622A'
   if (s === 'active') return '#22C55E'
   if (s === 'pending') return '#F59E0B'
+  if (s === 'expired') return '#EF4444'
   if (s === 'suspended') return '#EF4444'
   if (s === 'cancelled') return '#6B7280'
   return '#7BAED4'
@@ -73,6 +84,14 @@ export function statusColor(s: AdminBusiness['account_status']): string {
 export function statusLabel(s: AdminBusiness['account_status']): string {
   if (!s) return 'Unknown'
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// Days remaining on a trial, or null if not on trial / no end date.
+// Returns 0 (not negative) for trials whose end date has already passed.
+export function trialDaysRemaining(end: string | null): number | null {
+  if (!end) return null
+  const ms = new Date(end).getTime() - Date.now()
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)))
 }
 
 export function planLabel(p: string | null): string {

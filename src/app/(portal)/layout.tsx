@@ -6,6 +6,7 @@ import { type BusinessType } from '@/lib/business-types'
 import { getPlan } from '@/lib/plan'
 import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
+import TrialBanner, { TrialExpiredOverlay } from '@/components/portal/trial-banner'
 
 const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 
@@ -90,7 +91,9 @@ export default async function PortalLayout({ children }: { children: React.React
         <Suspense fallback={null}>
           <ImpersonationBanner businessName={business.name} />
         </Suspense>
+        <TrialBanner />
         {children}
+        <TrialExpiredOverlay />
       </PortalShell>
     </BusinessTypeProvider>
   )

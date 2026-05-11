@@ -28,7 +28,9 @@ export default async function AdminClientsPage() {
       tos_accepted_at, tos_accepted_version, temp_password,
       created_at, signup_at,
       notifications_config,
-      services, trade_type
+      services, trade_type,
+      trial_start_date, trial_end_date, trial_converted_at,
+      onboarding_complete, onboarding_complete_at
     `)
     .order('created_at', { ascending: false })
 

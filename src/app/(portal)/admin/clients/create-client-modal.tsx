@@ -103,6 +103,7 @@ export default function CreateClientModal({
 
   // ── Section 2: Plan ──────────────────────────────────────────────────────
   const [plan, setPlan] = useState<'starter' | 'growth' | 'pro'>('growth')
+  const [startAsTrial, setStartAsTrial] = useState(false)
 
   // ── Section 3: Services summary ──────────────────────────────────────────
   const [servicesSummary, setServicesSummary] = useState('')
@@ -253,8 +254,30 @@ export default function CreateClientModal({
         }
         return
       }
-      onCreated(data.business)
-      setSuccess({ business: data.business, email, temp_password: data.business.temp_password ?? '' })
+      let created: AdminBusiness = data.business
+      // Session 6 — if the admin chose "Start as trial", flip the new
+      // record to trial mode straight after creation. We do this in a
+      // second call so the existing /create route stays untouched.
+      if (startAsTrial) {
+        try {
+          const trialRes = await fetch(`/api/admin/clients/${created.id}/start-trial`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan }),
+          })
+          const trialData = await trialRes.json()
+          if (trialData.ok && trialData.business) {
+            created = {
+              ...created,
+              account_status: trialData.business.account_status,
+              trial_start_date: trialData.business.trial_start_date,
+              trial_end_date: trialData.business.trial_end_date,
+            }
+          }
+        } catch { /* non-fatal — admin can start the trial from the edit modal */ }
+      }
+      onCreated(created)
+      setSuccess({ business: created, email, temp_password: created.temp_password ?? '' })
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -396,6 +419,31 @@ export default function CreateClientModal({
 
       {/* ── SECTION 2: Plan ─────────────────────────────────────────────── */}
       <SectionTitle>2 · Plan</SectionTitle>
+
+      {/* Session 6 — start as 7-day free trial */}
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 14px', marginBottom: 12, borderRadius: 10,
+        background: startAsTrial ? 'rgba(232,98,42,0.10)' : '#071829',
+        border: `1px solid ${startAsTrial ? 'rgba(232,98,42,0.45)' : 'rgba(255,255,255,0.07)'}`,
+        cursor: 'pointer', fontFamily: 'Outfit, sans-serif',
+      }}>
+        <input
+          type="checkbox"
+          checked={startAsTrial}
+          onChange={e => setStartAsTrial(e.target.checked)}
+          style={{ width: 16, height: 16, accentColor: '#E8622A' }}
+        />
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'white', margin: 0 }}>Start as 7-day free trial</p>
+          <p style={{ fontSize: 11, color: '#7BAED4', margin: '2px 0 0 0' }}>
+            {startAsTrial
+              ? 'Plan is still selected below — no payment is taken until they convert.'
+              : 'Toggle on to skip payment and start with a free trial.'}
+          </p>
+        </div>
+      </label>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
         {PLAN_OPTIONS.map(opt => {
           const selected = plan === opt.value
