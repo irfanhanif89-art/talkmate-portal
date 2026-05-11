@@ -1,8 +1,323 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 9 — Core receptionist features (2026-05-12)
+
+Builds the full receptionist feature set across all 13 industries: team
+directory, VIP caller recognition, after-hours routing, missed-transfer
+fallback, emergency detection, bookings queue, callbacks queue, knowledge
+base FAQ, SMS follow-up template, repeat-caller flagging, and a
+Vapi-callable functions endpoint that ties them together at call time.
+
+Builds on Session 6 (`account_status`, `trial_*` columns) and Session 8
+(self-serve signup). No earlier session's data is touched.
+
+### Deviations from the brief (read before merging)
+
+1. **Brief writes `call_logs`; our canonical table is `calls`.** All
+   column additions target `calls`. The brief listed `outcome` as a new
+   column to add, but `calls.outcome` has existed since migration 001 —
+   we only add the new outcome-metadata columns
+   (`transfer_to`, `transfer_success`, `is_repeat_caller`,
+   `is_vip_caller`, `booking_id`, `callback_id`).
+2. **Existing `account_status` value enum is enforced application-side**
+   on `calls.outcome`. The brief listed specific outcome values; we
+   don't add a CHECK constraint because legacy rows may carry older
+   strings and we don't want a backfill blocker. The application emits
+   the canonical set.
+3. **`bookings.call_id` not `bookings.call_log_id`.** The brief used
+   `call_log_id`; we use `call_id` because our table is `calls`. Same
+   for `callbacks.call_id`.
+4. **Vapi functions auth.** The brief asked for an
+   `VAPI_WEBHOOK_SECRET` header check; the existing
+   `/api/webhooks/vapi` route uses HMAC signature instead. Functions
+   endpoint at `/api/vapi/functions` uses a static-secret header
+   pattern (`x-vapi-secret: <secret>` or `Authorization: Bearer <secret>`)
+   because Vapi's function-call config supports custom headers but not
+   request-body signing. If `VAPI_WEBHOOK_SECRET` is unset the
+   endpoint allows calls (dev). Production operators must set it.
+5. **Plan-gating implementation.** Migration 023 auto-flips
+   `call_transfer_enabled = true` for existing Growth/Pro businesses.
+   The Starter-plan downgrade path (if we ever build it) must clear
+   that flag.
+6. **Settings route.** Brief asked for `/settings/routing` as a
+   sub-route under Settings. Existing `/settings` is a single
+   tab-driven page (not sub-routed) — we added `/settings/routing` as
+   its own page rather than refactor the whole settings surface. Both
+   live in the nav.
+7. **Admin endpoint paths.** Brief uses `/api/admin/businesses/[id]/…`.
+   Earlier admin routes live at `/api/admin/clients/[id]/…`. Session 9
+   uses the brief's path; the older convention stays untouched. Worth
+   harmonizing in a follow-up but not breaking.
+
+### Migration — `supabase/migrations/023_receptionist_features.sql`
+
+Run in Supabase SQL editor after migration 022. Idempotent.
+
+**New tables:**
+
+| Table | Purpose | FK to businesses |
+|---|---|---|
+| `team_members` | Names + phones + roles for live transfer routing | `client_id` |
+| `vip_callers` | Phones that get priority handling on inbound calls | `client_id` |
+| `bookings` | Appointments / jobs / quotes captured by the agent | `client_id` |
+| `callbacks` | Caller asked to be called back at a specific time | `client_id` |
+
+All four use `client_id` (matching the migration-008 CRM convention)
+and RLS policy `client_id = get_current_client_id()` for full-table
+client scoping.
+
+A **partial unique index** on `team_members(client_id) WHERE
+is_escalation_contact = true` enforces "at most one escalation contact
+per business" at the database level so the API doesn't have to do a
+read-modify-write to maintain the invariant.
+
+**businesses additions:** `escalation_config` (JSONB, see shape below),
+`knowledge_base` (text), `call_transfer_enabled` (boolean, auto-set to
+true for existing Growth/Pro rows by the migration).
+
+**calls additions:** `transfer_to`, `transfer_success`,
+`is_repeat_caller`, `is_vip_caller`, `booking_id` (FK to bookings),
+`callback_id` (FK to callbacks).
+
+**`escalation_config` JSONB shape:**
+
+```json
+{
+  "after_hours_enabled": true,
+  "after_hours_action": "take_message" | "transfer_to_escalation" | "voicemail",
+  "missed_transfer_action": "take_message" | "try_next_member" | "callback",
+  "wait_time_minutes": 30,
+  "emergency_keywords": ["emergency", "flooding", ...],
+  "emergency_action": "transfer_escalation" | "call_000" | "take_message",
+  "sms_followup_enabled": true,
+  "sms_followup_template": "Hi {name}, ...",
+  "repeat_caller_threshold": 3,
+  "repeat_caller_notify": true
+}
+```
+
+### `/api/vapi/functions` — the agent's brain
+
+One POST endpoint, six functions selected via `function_name` in the
+body. Auth: `x-vapi-secret: $VAPI_WEBHOOK_SECRET` header (or
+`Authorization: Bearer $VAPI_WEBHOOK_SECRET`). Latency budget: 3 s.
+All DB calls go through the service-role admin client.
+
+| function | params | returns |
+|---|---|---|
+| `check_caller` | `{ phone }` | `{ is_vip, vip_*, is_existing, existing_name, call_count, is_repeat }` |
+| `get_team` | `{ query? }` | `{ transfer_enabled, team[], escalation_contact }` (+ optional `agent_instruction` when transfer is disabled) |
+| `get_wait_time` / `get_availability` | `{}` | `{ wait_minutes, message }` |
+| `log_outcome` | `{ call_id, outcome, transfer_to?, transfer_success?, summary? }` | `{ logged }` |
+| `create_booking` | `{ caller_name, caller_phone, booking_type, service_requested, preferred_date?, preferred_time?, notes?, call_id? }` | `{ booking_id, confirmation_message }` |
+| `schedule_callback` | `{ caller_name, caller_phone, preferred_time?, reason?, call_id? }` | `{ callback_id, confirmation_message }` |
+
+**Plan gating** lives inside `get_team`: when `businesses.plan === 'starter'`
+or `call_transfer_enabled === false`, the response includes
+`transfer_enabled: false` and an `agent_instruction` telling the agent
+to take a message instead of attempting a transfer.
+
+**Booking/callback hooks fire optional Make.com webhooks** —
+`MAKE_BOOKING_WEBHOOK` and `MAKE_CALLBACK_WEBHOOK` — fire-and-forget so
+the function-call response stays under the 3 s latency budget. Both are
+optional; missing URLs no-op silently.
+
+### Vapi assistant system prompt additions (Donna applies manually)
+
+Append to every existing assistant's system prompt:
+
+```
+--- CALL HANDLING RULES ---
+
+CALLER IDENTIFICATION:
+At the start of every call, use the check_caller function with the
+caller's phone number. If they are a VIP caller, follow the VIP action
+immediately. If they are an existing contact, greet them by name:
+"Hi [name], thanks for calling [business]."
+
+EMERGENCY DETECTION:
+If the caller uses any emergency keywords, use the get_team function to
+get the escalation contact and attempt an immediate transfer. Do not
+take a message for genuine emergencies.
+
+TEAM ROUTING:
+When a caller asks for a specific person by name or department, use
+get_team. Match their request to the closest team member and announce
+the transfer: "Let me put you through to [name] in [department] now."
+
+TRANSFER ANNOUNCEMENT:
+Always tell the caller before transferring: "I'm going to connect you
+with [name] now. Please hold for just a moment."
+
+MISSED TRANSFER:
+If a transfer is not answered, follow the missed_transfer_action in
+your settings. Default: "I wasn't able to reach [name] right now. Can
+I take a message and have them call you back?"
+
+BOOKINGS:
+When a caller wants to make a booking or appointment, use the
+create_booking function. Always confirm: name, phone number, what they
+need, and preferred date/time. Read back the booking details before
+ending the call.
+
+CALLBACKS:
+If a caller cannot speak now but wants a callback, use the
+schedule_callback function. Ask for their preferred time.
+
+CALL OUTCOME:
+At the end of every call, use the log_outcome function to record what
+happened.
+
+WAIT TIME:
+If asked about wait times, use the get_wait_time function for the
+current estimate.
+
+AFTER-HOURS:
+If the call comes in outside business hours, follow the
+after_hours_action in your settings.
+```
+
+Each assistant needs `VAPI_WEBHOOK_SECRET` configured in the function
+header settings; Donna generates a secure random string for it.
+
+### API routes added (17 total)
+
+Portal (RLS-scoped via the user session):
+```
+GET    /api/portal/team
+POST   /api/portal/team
+PATCH  /api/portal/team/[id]
+DELETE /api/portal/team/[id]
+GET    /api/portal/vip-callers
+POST   /api/portal/vip-callers
+PATCH  /api/portal/vip-callers/[id]
+DELETE /api/portal/vip-callers/[id]
+GET    /api/portal/bookings        # ?status=pending|confirmed|...
+PATCH  /api/portal/bookings/[id]
+POST   /api/portal/bookings/[id]/confirm    # fires MAKE_BOOKING_WEBHOOK
+GET    /api/portal/callbacks       # ?status=pending|completed
+PATCH  /api/portal/callbacks/[id]
+GET    /api/portal/settings/escalation
+PATCH  /api/portal/settings/escalation
+POST   /api/vapi/functions         # the six-function dispatcher
+```
+
+Admin (service-role + requireAdmin guard, scoped by path):
+```
+GET    /api/admin/businesses/[id]/team
+POST   /api/admin/businesses/[id]/team
+PATCH  /api/admin/businesses/[id]/team/[memberId]
+DELETE /api/admin/businesses/[id]/team/[memberId]
+GET    /api/admin/businesses/[id]/vip-callers
+POST   /api/admin/businesses/[id]/vip-callers
+GET    /api/admin/businesses/[id]/bookings    # returns bookings + callbacks
+PATCH  /api/admin/businesses/[id]/bookings/[bookingId]
+GET    /api/admin/businesses/[id]/escalation
+PATCH  /api/admin/businesses/[id]/escalation
+```
+
+### UI added
+
+**Client portal (5 pages):**
+- `/team` — table + add/edit modal, escalation badge, active toggle.
+- `/vip-callers` — phone, action, optional team-member target.
+- `/bookings` — Pending / Confirmed / All tabs, confirm-with-SMS modal, notes modal.
+- `/callbacks` — Pending / Completed tabs.
+- `/settings/routing` — six config sections (after-hours, missed-transfer, emergency, wait-time, SMS follow-up, repeat-caller alerts) + knowledge-base textarea. Industry-aware emergency-keyword defaults and medical-aware emergency-action options.
+
+**Sidebar nav:** new "Receptionist" section with the four queue pages.
+"Call Routing" added under "Your Agent".
+
+**Dashboard (`dashboard-client.tsx`):** new `<ReceptionistStats>`
+component above the existing stats — two click-through stat cards
+(pending bookings, pending callbacks) and a "Recent outcomes" panel
+showing the last 5 calls with outcome badges (Message taken,
+Transferred, Booking created, …). VIP / Repeat badges surface on
+matching calls.
+
+**Admin edit-client modal:** three new tabs (Team, Call Routing,
+Bookings) wired to the matching admin endpoints. The modal grew from
+4 → 7 tabs total.
+
+### Environment variables
+
+Add as placeholders on Vercel Production:
+
+```
+VAPI_WEBHOOK_SECRET=    # static bearer secret for /api/vapi/functions auth
+MAKE_BOOKING_WEBHOOK=   # Donna creates: booking confirmation SMS via Twilio
+MAKE_CALLBACK_WEBHOOK=  # Donna creates: callback reminder
+```
+
+The functions endpoint **allows unauthenticated calls in dev when
+`VAPI_WEBHOOK_SECRET` is unset**. Production operators MUST set it.
+
+### Pre-merge checklist
+
+1. **Run migration 023** in the Supabase SQL editor (after 021 + 022
+   from Sessions 6 and 8).
+2. **Confirm Growth/Pro businesses got `call_transfer_enabled = true`**:
+   ```sql
+   SELECT name, plan, call_transfer_enabled FROM businesses
+     WHERE plan IN ('growth', 'pro', 'professional');
+   ```
+3. **Set env vars on Vercel Production**:
+   - `VAPI_WEBHOOK_SECRET` — generate a secure random string
+     (Donna will paste the same value into each Vapi assistant's
+     function-call header config).
+   - `MAKE_BOOKING_WEBHOOK` and `MAKE_CALLBACK_WEBHOOK` — leave blank
+     until Donna's scenarios are built.
+4. **Donna: append Vapi prompt additions** to every existing assistant
+   (Hume Towing, Burleigh British Chippey, STR Group, Merlin's Pizza,
+   GM Towing, plus any Session 8 trial signups). Configure the function
+   list to call `/api/vapi/functions` with the six function names above.
+5. **Smoke test the queue UIs** in a freshly-impersonated client portal:
+   add a team member, add a VIP, mark a booking confirmed (verify the
+   webhook fires if configured), mark a callback complete.
+
+### Files changed
+
+```
+supabase/migrations/023_receptionist_features.sql                                (new)
+src/app/api/vapi/functions/route.ts                                              (new)
+src/app/api/portal/team/route.ts                                                 (new)
+src/app/api/portal/team/[id]/route.ts                                            (new)
+src/app/api/portal/vip-callers/route.ts                                          (new)
+src/app/api/portal/vip-callers/[id]/route.ts                                     (new)
+src/app/api/portal/bookings/route.ts                                             (new)
+src/app/api/portal/bookings/[id]/route.ts                                        (new)
+src/app/api/portal/bookings/[id]/confirm/route.ts                                (new)
+src/app/api/portal/callbacks/route.ts                                            (new)
+src/app/api/portal/callbacks/[id]/route.ts                                       (new)
+src/app/api/portal/settings/escalation/route.ts                                  (new)
+src/app/api/admin/businesses/[id]/team/route.ts                                  (new)
+src/app/api/admin/businesses/[id]/team/[memberId]/route.ts                       (new)
+src/app/api/admin/businesses/[id]/vip-callers/route.ts                           (new)
+src/app/api/admin/businesses/[id]/bookings/route.ts                              (new)
+src/app/api/admin/businesses/[id]/bookings/[bookingId]/route.ts                  (new)
+src/app/api/admin/businesses/[id]/escalation/route.ts                            (new)
+src/app/(portal)/team/page.tsx + team-view.tsx                                   (new)
+src/app/(portal)/vip-callers/page.tsx + vip-view.tsx                            (new)
+src/app/(portal)/bookings/page.tsx + bookings-view.tsx                          (new)
+src/app/(portal)/callbacks/page.tsx + callbacks-view.tsx                         (new)
+src/app/(portal)/settings/routing/page.tsx + routing-view.tsx                    (new)
+src/app/(portal)/admin/clients/admin-feature-tabs.tsx                            (new)
+src/lib/portal-auth.ts                                                           (new)
+src/components/portal/receptionist-stats.tsx                                     (new)
+src/components/portal/sidebar.tsx                                                (+5 nav entries)
+src/app/(portal)/admin/clients/edit-client-modal.tsx                             (+3 tabs)
+src/app/(portal)/dashboard/dashboard-client.tsx                                  (mount ReceptionistStats)
+DEPLOYMENT.md                                                                    (this section)
+```
+
+`npm run build` — clean, 17 new routes registered, 5 new pages
+prerendered.
 
 ---
 

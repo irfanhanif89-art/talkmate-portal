@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
+  UserCheck, Crown, BookOpen, PhoneCall,
 } from 'lucide-react'
 
 interface Props {
@@ -77,7 +78,17 @@ export default function PortalSidebar(props: Props) {
         { href: '/contacts/pipeline', label: 'Pipeline', icon: GitBranch, show: !!props.hasPipeline },
         { href: '/catalog', label: 'Services & Menu', icon: FileText, show: true },
         { href: '/settings', label: 'Agent Settings', icon: Settings, show: true },
+        { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall, show: true },
         { href: '/appointments', label: 'Jobs', icon: Calendar, show: true },
+      ],
+    },
+    {
+      label: 'Receptionist',
+      items: [
+        { href: '/team', label: 'Team', icon: UserCheck, show: true },
+        { href: '/vip-callers', label: 'VIP Callers', icon: Crown, show: true },
+        { href: '/bookings', label: 'Bookings', icon: BookOpen, show: true },
+        { href: '/callbacks', label: 'Callbacks', icon: PhoneCall, show: true },
       ],
     },
     {
