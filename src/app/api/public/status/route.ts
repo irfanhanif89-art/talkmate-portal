@@ -1,10 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export async function GET() {
+const ALLOWED_ORIGINS = [
+  'https://talkmate.com.au',
+  'https://www.talkmate.com.au',
+]
+
+export async function GET(request: NextRequest) {
+  const origin = request.headers.get('origin') ?? ''
+  const corsOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+
   const checks: Record<string, { status: 'operational' | 'degraded' | 'outage'; latencyMs?: number }> = {}
 
   // 1. Supabase / database
@@ -34,7 +42,7 @@ export async function GET() {
     checks.voice_agent = { status: 'operational' }
   }
 
-  // 3. Stripe â€” just confirm env var is set (no live call to avoid latency)
+  // 3. Stripe — just confirm env var is set (no live call to avoid latency)
   checks.billing = {
     status: process.env.STRIPE_SECRET_KEY ? 'operational' : 'degraded',
   }
@@ -54,7 +62,8 @@ export async function GET() {
     {
       headers: {
         'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': 'https://talkmate.com.au',
+        'Access-Control-Allow-Origin': corsOrigin,
+        'Vary': 'Origin',
       },
     }
   )
