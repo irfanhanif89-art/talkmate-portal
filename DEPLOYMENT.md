@@ -1,171 +1,8 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
-
----
-
-## SESSION 8 — Self-serve signup (2026-05-11)
-
-Adds a public-facing self-serve signup flow at
-**app.talkmate.com.au/signup** so website visitors can choose a plan,
-fill in their details, and either start a 7-day free trial or pay now
-via Stripe — all without Irfan's involvement.
-
-Builds on Session 6 (trial-mode column infrastructure) and the matching
-Session 8 website CTA changes in talkmate-website (see that repo's
-DEPLOYMENT.md).
-
-### Deviations from the brief (read before merging)
-
-1. **`pending_payment` requires a migration.** The brief said no
-   migration was needed for this column, but Session 6 left the
-   `account_status` CHECK constraint restricted to a six-value
-   allow-list. Writing `'pending_payment'` would fail the constraint
-   and every "Pay now" signup would 500. Migration 022 widens the
-   CHECK to include `'pending_payment'`. Idempotent.
-2. **Existing `/signup` stub replaced.** The repo had a `src/app/signup/page.tsx`
-   that did `redirect('/register')`. The Session 8 signup flow is a full
-   page in its own right, so the stub is gone. The old `/register`
-   page (in the `(auth)` group) is untouched — it's still the
-   minimal-form fallback we wired to the verify-email flow.
-3. **Industry taxonomy.** The brief's 13-item industry list is now the
-   canonical user-facing list on signup. Each value maps to an existing
-   `business_type` value (`hospitality`, `trades`, `medical`, …) for
-   downstream compatibility with the dashboard / catalog / call-handling
-   modules — mapping is in
-   `src/app/api/auth/signup/route.ts` (`INDUSTRY_TO_BUSINESS_TYPE`).
-4. **Email-availability check.** `/api/auth/check-email` scans the first
-   200 auth users with `auth.admin.listUsers`. Good enough for our
-   signup volume — past ~tens of thousands of accounts we should
-   replace with a proper RPC or a Supabase auth query helper.
-5. **Webhook is best-effort.** `MAKE_NEW_SIGNUP_WEBHOOK` is optional —
-   if the env var is blank, signup completes silently without firing
-   anything. Donna's Telegram nudge becomes a no-op until she sets the
-   URL on Vercel.
-
-### Migration — `supabase/migrations/022_pending_payment_status.sql`
-
-Run in the Supabase SQL editor after migration 021 (Session 6).
-Idempotent.
-
-```sql
-alter table businesses drop constraint if exists businesses_account_status_check;
-alter table businesses add constraint businesses_account_status_check
-  check (account_status in ('trial', 'active', 'pending', 'pending_payment',
-                             'expired', 'suspended', 'cancelled'));
-```
-
-### API routes added
-
-| Route | Method | Auth | Purpose |
-|---|---|---|---|
-| `/api/auth/signup` | POST | none (public) | Creates auth user + business row. Body: `{ email, password, full_name, business_name, phone, industry, plan, signup_type }`. Returns `{ success, redirect_url }`. |
-| `/api/auth/check-email` | GET | none (public) | Real-time email-availability check for the signup form. Query: `?email=`. Returns `{ available: boolean }`. |
-
-The signup route fires `MAKE_NEW_SIGNUP_WEBHOOK` after a successful
-insert (best-effort — failures are logged but don't block the response).
-
-**Routing**: trial signups respond with `redirect_url: '/dashboard'`;
-pay-now signups respond with the appropriate Stripe payment link
-(`STRIPE_STARTER_LINK` / `_GROWTH_LINK` / `_PRO_LINK`) with
-`?prefilled_email=` appended so Stripe's hosted checkout pre-fills the
-customer's email.
-
-### Make.com webhook payload (`MAKE_NEW_SIGNUP_WEBHOOK`)
-
-```json
-{
-  "trigger": "new_signup",
-  "timestamp": "2026-05-11T10:00:00Z",
-  "signup_type": "trial",
-  "business": {
-    "id": "uuid",
-    "business_name": "Gold Coast Locksmiths",
-    "owner_name": "Dave Smith",
-    "email": "dave@gclocksmiths.com.au",
-    "phone": "0412345678",
-    "industry": "trades",
-    "plan": "starter",
-    "account_status": "trial",
-    "trial_end_date": "2026-05-18T10:00:00Z"
-  }
-}
-```
-
-`trial_end_date` is `null` for `signup_type: 'pay_now'`.
-
-### Page — `src/app/signup/page.tsx` + `signup-client.tsx`
-
-Public, lives at `/signup` (root, outside the `(portal)` auth-gated
-route group). Two columns on desktop, stacked on mobile.
-
-- **Left**: three plan cards. Default selection Growth (most-popular).
-  `/signup?plan=starter|growth|pro` pre-selects from the URL.
-- **Right**: signup form (Full name → Business name → Email → Phone →
-  Password → Industry) with the Trial / Pay-now choice and submit
-  button. Email field has a 500ms-debounced live availability check
-  against `/api/auth/check-email`; renders "Already registered" with a
-  log-in link when taken.
-
-Trial submissions sign the user in (`signInWithPassword` from the
-browser Supabase client) before redirecting so the dashboard lands
-authenticated. Pay-now submissions navigate to the Stripe payment link.
-
-Middleware (`src/middleware.ts`) was **not changed** — `/signup` is
-neither in `protectedPaths` nor in `guestOnlyPaths`, so anyone can hit
-it. A signed-in user who navigates there can still create a second
-account under a different email (different auth user, different
-business). If we want to lock that down later, add `/signup` to
-`guestOnlyPaths` so authenticated visitors get redirected to
-`/dashboard`.
-
-### Environment variables
-
-Already set from earlier sessions: `STRIPE_STARTER_LINK`,
-`STRIPE_GROWTH_LINK`, `STRIPE_PRO_LINK`, `SUPABASE_SERVICE_ROLE_KEY`,
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-
-**Add to Vercel Production (Session 8)**:
-
-```
-MAKE_NEW_SIGNUP_WEBHOOK=   # Donna fills in after building the Make.com scenario
-```
-
-Blank is fine — signup still works, the webhook silently no-ops.
-
-### Files changed
-
-```
-supabase/migrations/022_pending_payment_status.sql   (new)
-src/app/api/auth/signup/route.ts                     (new)
-src/app/api/auth/check-email/route.ts                (new)
-src/app/signup/page.tsx                              (replaced redirect-stub with real page)
-src/app/signup/signup-client.tsx                    (new)
-DEPLOYMENT.md                                        (this section)
-```
-
-### Pre-merge checklist
-
-1. Run **migration 022** in the Supabase SQL editor (after migration 021
-   from Session 6 has been applied).
-2. Add `MAKE_NEW_SIGNUP_WEBHOOK` env var to Vercel Production (leave
-   blank if Donna hasn't built the scenario yet).
-3. Smoke test: visit `https://app.talkmate.com.au/signup` in an
-   incognito window, sign up as a trial user with a test email, confirm:
-   - businesses row created with `account_status='trial'`,
-     `trial_start_date`/`trial_end_date` set, correct plan + industry
-   - users row created with role='owner'
-   - onboarding_responses row created
-   - Auto-login lands on `/dashboard` with the trial banner showing
-     "7 days remaining"
-4. Then test pay-now: sign up choosing Pay now, confirm:
-   - businesses row has `account_status='pending_payment'`
-   - Browser redirected to the Stripe payment link with
-     `?prefilled_email=` in the URL
-5. Existing client logins via `/login` continue to work — no regression
-   on Hume Towing, Burleigh British Chippey, STR Group, Merlin's Pizza.
 
 ---
 
@@ -295,16 +132,10 @@ Donna's scenario needs them, pull them from that JSON blob instead.
   "timestamp": "2026-05-11T23:00:00Z",
   "trials": [
     { "id": "uuid", "business_name": "Gold Coast Locksmiths", "industry": "trades",
-      "plan": "starter", "trial_end_date": "2026-05-12T10:00:00Z",
-      "owner_user_id": "uuid", "owner_email": "dave@gclocksmiths.com.au" }
+      "plan": "starter", "trial_end_date": "2026-05-12T10:00:00Z", "owner_user_id": "uuid" }
   ]
 }
 ```
-
-`owner_email` is fetched from the `users` table (which mirrors
-`auth.users.email`). For any owner whose `users` row is missing or has
-a null email, `owner_email` will be `null` in the payload — Donna's
-scenario should treat that as a "no email on file, alert me" branch.
 
 **Trial expired** (cron):
 
@@ -1422,6 +1253,7 @@ $ npm run build
 ```
 
 62 routes built, zero errors. Ready to deploy.
+
 
 ## Env Vars Update — 2026-05-11
 Make.com webhook URLs added to Vercel environment variables:
