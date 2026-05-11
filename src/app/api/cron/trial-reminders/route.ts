@@ -28,6 +28,25 @@ export async function GET(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const list = trials ?? []
+
+  // Look up owner emails in one shot via the `users` table (which stores
+  // a copy of auth.users.email when the account was created). Service
+  // role bypasses RLS, so the `.in()` query covers every owner in the
+  // batch with a single round-trip. Anyone missing (very old record, or
+  // a row never written) gets a null owner_email — Donna's Make.com
+  // scenario can decide how to handle that.
+  const ownerIds = list.map(b => b.owner_user_id).filter((id): id is string => !!id)
+  const emailByOwner = new Map<string, string>()
+  if (ownerIds.length > 0) {
+    const { data: ownerRows } = await supabase
+      .from('users')
+      .select('id, email')
+      .in('id', ownerIds)
+    for (const row of ownerRows ?? []) {
+      if (row.id && row.email) emailByOwner.set(row.id as string, row.email as string)
+    }
+  }
+
   let webhookStatus: 'sent' | 'skipped_no_url' | 'skipped_empty' | 'failed' = 'skipped_no_url'
   let webhookError: string | null = null
 
@@ -48,6 +67,7 @@ export async function GET(req: Request) {
             plan: b.plan,
             trial_end_date: b.trial_end_date,
             owner_user_id: b.owner_user_id,
+            owner_email: b.owner_user_id ? (emailByOwner.get(b.owner_user_id) ?? null) : null,
           })),
         }),
       })
