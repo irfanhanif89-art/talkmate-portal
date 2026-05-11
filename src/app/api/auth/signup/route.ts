@@ -259,24 +259,9 @@ export async function POST(request: Request) {
       const dd = String(trialEnd.getUTCDate()).padStart(2, '0')
       const mon = trialEnd.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' })
       const yyyy = trialEnd.getUTCFullYear()
-      smsBody = `NEW SIGNUP (trial)
-Name: ${fullName}
-Business: ${businessName}
-Industry: ${industry}
-Plan: ${plan}
-Phone: ${phone}
-Email: ${email}
-Trial ends: ${dd} ${mon} ${yyyy}
-ACTION: Set up Vapi agent & call to welcome.`
+      smsBody = `New client signed up: ${businessName} (${industry}, ${plan} plan). ${fullName}, ${phone}. Trial ends ${dd} ${mon} ${yyyy}. Set up their Vapi agent.`
     } else {
-      smsBody = `NEW SIGNUP (pay now)
-Name: ${fullName}
-Business: ${businessName}
-Industry: ${industry}
-Plan: ${plan}
-Phone: ${phone}
-Email: ${email}
-ACTION: Confirm payment received, set up agent.`
+      smsBody = `New client signed up: ${businessName} (${industry}, ${plan} plan). ${fullName}, ${phone}. Pay now path - confirm payment and set up their agent.`
     }
     await sendSms(smsBody)
   } catch (e) {
