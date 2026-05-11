@@ -1253,3 +1253,10 @@ $ npm run build
 ```
 
 62 routes built, zero errors. Ready to deploy.
+
+
+## Env Vars Update — 2026-05-11
+Make.com webhook URLs added to Vercel environment variables:
+- MAKE_AGENT_BRIEF_WEBHOOK: https://hook.eu1.make.com/a3khbtcgsd8ev2c9ndeyxipbfakycvdp
+- MAKE_TRIAL_REMINDER_WEBHOOK: https://hook.eu1.make.com/1utyht7xj5hto12tyov3jppkl09sovvv
+- MAKE_TRIAL_EXPIRED_WEBHOOK: https://hook.eu1.make.com/bnf0ko1juoyq6duqbfgz63j5yqw26uk4
