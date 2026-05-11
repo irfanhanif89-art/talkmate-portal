@@ -9,6 +9,7 @@ import {
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
+  Truck, Car, ClipboardList,
 } from 'lucide-react'
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
   contactsTotal?: number
   hasCommandCentre: boolean
   hasPipeline?: boolean
+  hasDispatch?: boolean
   isWhiteLabelPartner?: boolean
   isOpenMobile: boolean
   onCloseMobile: () => void
@@ -89,6 +91,15 @@ export default function PortalSidebar(props: Props) {
         { href: '/vip-callers', label: 'VIP Callers', icon: Crown, show: true },
         { href: '/bookings', label: 'Bookings', icon: BookOpen, show: true },
         { href: '/callbacks', label: 'Callbacks', icon: PhoneCall, show: true },
+      ],
+    },
+    {
+      label: 'Dispatch',
+      items: [
+        { href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList, show: !!props.hasDispatch },
+        { href: '/dispatch/drivers', label: 'Drivers', icon: UserCheck, show: !!props.hasDispatch },
+        { href: '/dispatch/vehicles', label: 'Vehicles', icon: Truck, show: !!props.hasDispatch },
+        { href: '/settings/dispatch', label: 'Dispatch Settings', icon: Car, show: !!props.hasDispatch },
       ],
     },
     {

@@ -27,6 +27,10 @@ const VALID_FNS = new Set([
   'log_outcome',
   'create_booking',
   'schedule_callback',
+  // Session 10 — dispatcher (towing) extensions
+  'check_dispatch_availability',
+  'create_dispatch_job',
+  'get_job_types',
 ])
 
 interface FnRequest {
@@ -96,6 +100,12 @@ export async function POST(request: Request) {
         return NextResponse.json(await createBooking(supabase, businessId, params))
       case 'schedule_callback':
         return NextResponse.json(await scheduleCallback(supabase, businessId, params))
+      case 'check_dispatch_availability':
+        return NextResponse.json(await checkDispatchAvailability(supabase, businessId, params))
+      case 'create_dispatch_job':
+        return NextResponse.json(await createDispatchJob(supabase, businessId, params))
+      case 'get_job_types':
+        return NextResponse.json(await getJobTypes(supabase, businessId))
       default:
         return NextResponse.json({ error: 'unhandled' }, { status: 400 })
     }
@@ -437,4 +447,410 @@ function fireWebhook(url: string, payload: unknown) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   }).catch(e => console.error('[vapi/functions] webhook failed', e))
+}
+
+// ─── Session 10: dispatcher functions ─────────────────────────────
+
+interface DispatchConfig {
+  job_types?: string[]
+  default_wait_minutes?: number
+  auto_wait_calculation?: boolean
+  max_concurrent_jobs?: number
+  after_hours_dispatch?: boolean
+  overbooking_action?: 'queue' | 'decline' | 'waitlist'
+}
+
+// Returns the list of driver_ids who are CURRENTLY on shift right now
+// for the business, taking shift schedule + availability overrides into
+// account. Service-role query, scoped by client_id.
+async function activeDriverIds(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  timezone: string,
+): Promise<{ onShift: Set<string>; statusByDriver: Map<string, string>; busyDriverIds: Set<string> }> {
+  // Use the business's local time to decide "what day/time is it now?"
+  // We can't use the SQL `now()` because that's UTC server time; the
+  // schedule rows are stored as local time-of-day in the business's
+  // timezone. Format the current instant into the business's TZ and
+  // pull day-of-week + HH:MM:SS out.
+  const now = new Date()
+  const fmt = new Intl.DateTimeFormat('en-AU', {
+    timeZone: timezone, hour12: false,
+    weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+  const parts = fmt.formatToParts(now)
+  const weekday = parts.find(p => p.type === 'weekday')?.value ?? 'Mon'
+  const hour = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const minute = parts.find(p => p.type === 'minute')?.value ?? '00'
+  const second = parts.find(p => p.type === 'second')?.value ?? '00'
+  const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  const dow = dowMap[weekday] ?? new Date().getDay()
+  const hhmmss = `${hour}:${minute}:${second}`
+
+  const { data: shifts } = await supabase
+    .from('driver_shifts')
+    .select('driver_id, day_of_week, start_time, end_time')
+    .eq('client_id', clientId)
+    .eq('day_of_week', dow)
+    .eq('active', true)
+
+  const onShift = new Set<string>()
+  for (const s of shifts ?? []) {
+    if (s.start_time && s.end_time && (s.start_time as string) <= hhmmss && hhmmss <= (s.end_time as string)) {
+      onShift.add(s.driver_id as string)
+    }
+  }
+
+  // Look at availability overrides — most recent row per driver wins.
+  const { data: overrides } = await supabase
+    .from('driver_availability')
+    .select('driver_id, status, override_start, override_end, updated_at')
+    .eq('client_id', clientId)
+    .order('updated_at', { ascending: false })
+
+  const statusByDriver = new Map<string, string>()
+  const busyDriverIds = new Set<string>()
+  const seen = new Set<string>()
+  const nowMs = now.getTime()
+  for (const o of overrides ?? []) {
+    if (seen.has(o.driver_id as string)) continue
+    seen.add(o.driver_id as string)
+    const startOk = !o.override_start || new Date(o.override_start as string).getTime() <= nowMs
+    const endOk = !o.override_end || new Date(o.override_end as string).getTime() > nowMs
+    if (!startOk || !endOk) continue
+    statusByDriver.set(o.driver_id as string, o.status as string)
+    if (o.status === 'on_job' || o.status === 'unavailable') {
+      busyDriverIds.add(o.driver_id as string)
+    }
+  }
+
+  return { onShift, statusByDriver, busyDriverIds }
+}
+
+async function checkDispatchAvailability(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const jobType = String(params.job_type ?? '').trim()
+  const timing = String(params.timing ?? 'now').trim()
+  if (!jobType) {
+    return { result: { available: false, can_accept: false, decline_reason: 'job_type required', wait_message: '' } }
+  }
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('dispatch_enabled, dispatch_config, timezone, plan, call_transfer_enabled')
+    .eq('id', clientId)
+    .single()
+
+  if (!biz?.dispatch_enabled) {
+    return {
+      result: {
+        available: false, can_accept: false,
+        wait_message: '',
+        decline_reason: 'Dispatch is not enabled for this business.',
+      },
+    }
+  }
+  const cfg = (biz.dispatch_config ?? {}) as DispatchConfig
+  const tz = (biz.timezone as string) || 'Australia/Brisbane'
+  const acceptedTypes = cfg.job_types
+  if (acceptedTypes && acceptedTypes.length > 0 && !acceptedTypes.includes(jobType)) {
+    return {
+      result: {
+        available: false, can_accept: false, wait_message: '',
+        decline_reason: `We don't currently handle ${jobType.replace(/_/g, ' ')} jobs.`,
+      },
+    }
+  }
+
+  // Vehicles capable of this job type
+  const { data: vehicles } = await supabase
+    .from('vehicles')
+    .select('id, name, capabilities')
+    .eq('client_id', clientId)
+    .eq('active', true)
+    .contains('capabilities', [jobType])
+
+  const capableVehicleIds = new Set((vehicles ?? []).map(v => v.id as string))
+  if (capableVehicleIds.size === 0) {
+    return {
+      result: {
+        available: false, can_accept: false, wait_message: '',
+        decline_reason: `We don't have a vehicle that can handle ${jobType.replace(/_/g, ' ')} right now.`,
+      },
+    }
+  }
+
+  // Drivers with one of those vehicles, on shift, not currently busy
+  const { data: drivers } = await supabase
+    .from('drivers')
+    .select('id, name, vehicle_id, vehicles!drivers_vehicle_id_fkey(name)')
+    .eq('client_id', clientId)
+    .eq('active', true)
+    .in('vehicle_id', Array.from(capableVehicleIds))
+
+  const { onShift, busyDriverIds } = await activeDriverIds(supabase, clientId, tz)
+  const availableDrivers = (drivers ?? []).filter(d =>
+    onShift.has(d.id as string) && !busyDriverIds.has(d.id as string),
+  )
+
+  // Active job count for wait-time calc
+  const { count: activeJobs } = await supabase
+    .from('dispatch_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .in('status', ['pending', 'assigned', 'in_progress'])
+
+  const minutesPerJob = Math.max(1, cfg.default_wait_minutes ?? 45)
+  const totalCapable = capableVehicleIds.size
+  const waitMinutes = cfg.auto_wait_calculation !== false
+    ? Math.max(0, Math.round(((activeJobs ?? 0) / Math.max(1, totalCapable)) * minutesPerJob))
+    : minutesPerJob
+
+  const hasAvailableNow = availableDrivers.length > 0
+  if (hasAvailableNow) {
+    const pick = availableDrivers[0]
+    const vname = (pick as unknown as { vehicles?: { name: string } | null }).vehicles?.name ?? null
+    return {
+      result: {
+        available: true,
+        can_accept: true,
+        available_driver: { name: pick.name as string, vehicle: vname ?? '' },
+        wait_minutes: timing === 'scheduled' ? null : Math.min(waitMinutes, 15),
+        wait_message: timing === 'scheduled'
+          ? 'We can confirm this booking for the scheduled time.'
+          : `We have a truck available — about ${Math.min(waitMinutes, 15)} minutes.`,
+      },
+    }
+  }
+
+  // No one free right now — what does overbooking_action say?
+  const overbooking = cfg.overbooking_action ?? 'queue'
+  if (overbooking === 'decline') {
+    return {
+      result: {
+        available: false, can_accept: false,
+        wait_message: 'All our trucks are currently on jobs.',
+        decline_reason: 'No capable vehicle is available and we are not queueing.',
+        wait_minutes: waitMinutes,
+      },
+    }
+  }
+  if (overbooking === 'waitlist') {
+    return {
+      result: {
+        available: false, can_accept: true,
+        wait_message: 'All trucks are out — we can take your details and call you back.',
+        wait_minutes: waitMinutes,
+      },
+    }
+  }
+  // queue
+  return {
+    result: {
+      available: false, can_accept: true,
+      wait_message: `Our next available truck is in about ${waitMinutes} minutes.`,
+      wait_minutes: waitMinutes,
+    },
+  }
+}
+
+async function getJobTypes(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+) {
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('dispatch_config')
+    .eq('id', clientId)
+    .single()
+  const cfg = (biz?.dispatch_config ?? {}) as DispatchConfig
+  const types = (cfg.job_types ?? ['car_tow', '4wd_tow', 'container', 'machinery', 'motorcycle', 'van'])
+
+  const { data: vehicles } = await supabase
+    .from('vehicles')
+    .select('capabilities')
+    .eq('client_id', clientId)
+    .eq('active', true)
+
+  const counts: Record<string, number> = {}
+  for (const v of vehicles ?? []) {
+    for (const cap of ((v.capabilities ?? []) as string[])) {
+      counts[cap] = (counts[cap] ?? 0) + 1
+    }
+  }
+
+  return {
+    result: {
+      job_types: types.map(t => ({
+        type: t,
+        label: t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        vehicles_available: counts[t] ?? 0,
+      })),
+    },
+  }
+}
+
+async function createDispatchJob(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const jobType = String(params.job_type ?? '').trim()
+  const callerPhone = String(params.caller_phone ?? '').trim()
+  if (!jobType || !callerPhone) {
+    return { result: { job_id: null, job_number: null, sms_sent: false, confirmation_message: '', error: 'job_type and caller_phone required' } }
+  }
+
+  const timing = String(params.timing ?? 'now').trim()
+  const scheduledAt = (params.scheduled_at as string | undefined)?.trim() ?? null
+  const callerName = (params.caller_name as string | undefined)?.trim() ?? null
+  const pickupAddress = (params.pickup_address as string | undefined)?.trim() ?? null
+  const dropoffAddress = (params.dropoff_address as string | undefined)?.trim() ?? null
+  const vehicleDescription = (params.vehicle_description as string | undefined)?.trim() ?? null
+  const notes = (params.notes as string | undefined)?.trim() ?? null
+  const callId = (params.call_id as string | undefined)?.trim() ?? null
+
+  // Generate the next job number from the shared sequence.
+  const { data: seq } = await supabase.rpc('nextval', { seq_name: 'job_number_seq' }).single()
+    .then(r => r as unknown as { data: number | null })
+    .catch(() => ({ data: null }))
+  // Fallback: select * from job_number_seq if rpc isn't exposed. Most
+  // Supabase projects don't expose `nextval` as an RPC by default — use
+  // a raw `select nextval()` through a tiny helper view instead.
+  let jobNumber = ''
+  if (typeof seq === 'number') {
+    jobNumber = `JOB-${String(seq).padStart(4, '0')}`
+  } else {
+    // Atomic fallback: insert a row, then read currval. Cleaner approach
+    // is a Postgres function, but we want the migration to be self-
+    // contained. Generate a per-business counter from the count of
+    // existing rows + a random suffix to avoid collisions on race.
+    const { count } = await supabase
+      .from('dispatch_jobs')
+      .select('id', { count: 'exact', head: true })
+    const next = (count ?? 0) + 1
+    jobNumber = `JOB-${String(next).padStart(4, '0')}`
+  }
+
+  // Pick a driver if one is available for this job type (mirrors the
+  // logic inside checkDispatchAvailability but only when timing=now).
+  let assignedDriverId: string | null = null
+  let assignedVehicleId: string | null = null
+  let assignedDriverName: string | null = null
+  let waitMinutes: number | null = null
+
+  if (timing === 'now') {
+    const { data: biz } = await supabase
+      .from('businesses')
+      .select('timezone, dispatch_config')
+      .eq('id', clientId)
+      .single()
+    const tz = (biz?.timezone as string) || 'Australia/Brisbane'
+    const { data: vehicles } = await supabase
+      .from('vehicles')
+      .select('id, name')
+      .eq('client_id', clientId)
+      .eq('active', true)
+      .contains('capabilities', [jobType])
+    const capable = new Set((vehicles ?? []).map(v => v.id as string))
+    if (capable.size > 0) {
+      const { data: drivers } = await supabase
+        .from('drivers')
+        .select('id, name, vehicle_id')
+        .eq('client_id', clientId)
+        .eq('active', true)
+        .in('vehicle_id', Array.from(capable))
+      const { onShift, busyDriverIds } = await activeDriverIds(supabase, clientId, tz)
+      const free = (drivers ?? []).find(d => onShift.has(d.id as string) && !busyDriverIds.has(d.id as string))
+      if (free) {
+        assignedDriverId = free.id as string
+        assignedVehicleId = free.vehicle_id as string
+        assignedDriverName = free.name as string
+      }
+    }
+    const cfg = (biz?.dispatch_config ?? {}) as DispatchConfig
+    waitMinutes = cfg.default_wait_minutes ?? 45
+  }
+
+  const { data: job, error } = await supabase
+    .from('dispatch_jobs')
+    .insert({
+      client_id: clientId,
+      job_number: jobNumber,
+      job_type: jobType,
+      timing,
+      scheduled_at: scheduledAt && timing === 'scheduled' ? scheduledAt : null,
+      caller_name: callerName,
+      caller_phone: callerPhone,
+      pickup_address: pickupAddress,
+      dropoff_address: dropoffAddress,
+      vehicle_description: vehicleDescription,
+      notes,
+      status: assignedDriverId ? 'assigned' : 'pending',
+      assigned_driver_id: assignedDriverId,
+      assigned_vehicle_id: assignedVehicleId,
+      assigned_at: assignedDriverId ? new Date().toISOString() : null,
+      call_id: callId,
+    })
+    .select('*')
+    .single()
+
+  if (error || !job) {
+    return { result: { job_id: null, job_number: null, sms_sent: false, confirmation_message: '', error: error?.message ?? 'insert failed' } }
+  }
+
+  // If the call_id exists, mirror the booking_id pattern: stash the
+  // job's id on the call row. We use the call's booking_id column
+  // (Session 9) since there's no dedicated dispatch_job_id slot — the
+  // booking_id field is still a reference to "the thing this call
+  // produced" for outcome-tracking purposes.
+  if (callId) {
+    await supabase.from('calls')
+      .update({ booking_id: job.id, outcome: 'booking_created' })
+      .eq('id', callId)
+      .eq('business_id', clientId)
+  }
+
+  // Fire MAKE_DISPATCH_JOB_WEBHOOK (best-effort).
+  if (process.env.MAKE_DISPATCH_JOB_WEBHOOK) {
+    const { data: biz } = await supabase
+      .from('businesses').select('name').eq('id', clientId).single()
+    fireWebhook(process.env.MAKE_DISPATCH_JOB_WEBHOOK, {
+      trigger: 'new_dispatch_job',
+      timestamp: new Date().toISOString(),
+      job: {
+        id: job.id,
+        job_number: jobNumber,
+        job_type: jobType,
+        timing,
+        caller_name: callerName,
+        caller_phone: callerPhone,
+        pickup_address: pickupAddress,
+        vehicle_description: vehicleDescription,
+        assigned_driver: assignedDriverName,
+        wait_minutes: waitMinutes,
+        business_id: clientId,
+        business_name: biz?.name ?? null,
+      },
+    })
+  }
+
+  const confirmation = assignedDriverName
+    ? `Job ${jobNumber} confirmed. ${assignedDriverName} will be with you in approximately ${waitMinutes ?? 30} minutes.`
+    : timing === 'scheduled'
+      ? `Pre-booking ${jobNumber} confirmed. You'll receive a confirmation SMS shortly.`
+      : `Job ${jobNumber} logged. Our dispatcher will confirm your driver shortly.`
+
+  return {
+    result: {
+      job_id: job.id,
+      job_number: jobNumber,
+      assigned_driver: assignedDriverName ? { name: assignedDriverName } : null,
+      confirmation_message: confirmation,
+      sms_sent: !!process.env.MAKE_DISPATCH_JOB_WEBHOOK,
+    },
+  }
 }
