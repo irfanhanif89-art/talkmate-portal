@@ -207,7 +207,7 @@ export function DashboardClient({
 
       {/* Session 9 — pending bookings + callbacks + recent outcomes.
           Self-fetches counts; receives recent calls from the server. */}
-      <ReceptionistStats recentCalls={recentCalls as unknown as Array<{
+      <ReceptionistStats recentCalls={liveCalls as unknown as Array<{
         id: string
         caller_number: string | null
         outcome: string | null
