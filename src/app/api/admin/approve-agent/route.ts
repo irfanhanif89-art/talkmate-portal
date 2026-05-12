@@ -1,15 +1,19 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_hH6pbyrr_BgLjFBZyiHwaErEyibPgtVpm'
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
-const TELEGRAM_CHAT_ID = '7809273812'
+const RESEND_API_KEY = process.env.RESEND_API_KEY
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '7809273812'
 
 export async function POST(req: NextRequest) {
   // Must be admin - check auth header or admin session
   const authHeader = req.headers.get('x-admin-key')
-  if (authHeader !== (process.env.ADMIN_SECRET_KEY || 'talkmate-admin-2026')) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!process.env.ADMIN_SECRET_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (authHeader !== process.env.ADMIN_SECRET_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  if (!RESEND_API_KEY || !TELEGRAM_BOT_TOKEN) {
+    console.error('[approve-agent] Missing RESEND_API_KEY or TELEGRAM_BOT_TOKEN env vars')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
   const { businessId } = await req.json()

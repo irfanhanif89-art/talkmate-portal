@@ -428,29 +428,67 @@ export default function SettingsPage() {
 
       {/* Integrations */}
       {tab === 'integrations' && (
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Integrations</h3>
-          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Connect your booking system and other tools to your AI agent.</p>
-          <div style={{ maxWidth: 560 }}>
-            {[
-              { label: 'Booking Page URL', key: 'booking_url', placeholder: 'https://calendly.com/yourbusiness' },
-            ].map(({ label, key, placeholder }) => (
-              <div key={key} style={{ marginBottom: 16 }}>
-                <label style={lbl}>{label}</label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} placeholder={placeholder} style={{ ...inp, flex: 1 }} />
-                  <button onClick={saveBusiness} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', padding: '0 16px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', flexShrink: 0 }}>Save</button>
+        <div>
+          {/* WhatsApp Card */}
+          <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Connect WhatsApp Business</h3>
+            <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Receive call summaries and notifications via WhatsApp.</p>
+            <div style={{ marginBottom: 20 }}>
+              {([
+                'Go to business.facebook.com and set up a WhatsApp Business account',
+                'Navigate to WhatsApp → Configuration → Webhook',
+                <span key="wh-url">Set Webhook URL to: <code style={{ background: 'rgba(255,255,255,0.08)', color: '#4A9FE8', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>https://app.talkmate.com.au/api/webhooks/whatsapp</code></span>,
+                <span key="wh-token">Set Verify Token to: <code style={{ background: 'rgba(255,255,255,0.08)', color: '#4A9FE8', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>talkmate-whatsapp-2026</code></span>,
+                'Subscribe to the messages field',
+                'Enter your WhatsApp Business phone number below and save',
+              ] as React.ReactNode[]).map((step, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <span style={{ color: '#E8622A', fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
+                  <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>{step}</span>
                 </div>
-              </div>
-            ))}
-            <div style={{ marginTop: 8 }}>
-              <label style={lbl}>Your Talkmate API Key</label>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <input value={biz.api_key ? 'tm_live_' + biz.api_key.substring(0,8) + '••••••••' : 'tm_live_••••••••••••'} readOnly style={{ ...inp, flex: 1, fontFamily: 'monospace', fontSize: 12, opacity: 0.7 }} />
-                <button onClick={() => navigator.clipboard.writeText(biz.api_key || '')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', padding: '0 16px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', cursor: 'pointer', flexShrink: 0 }}>Copy</button>
-              </div>
-              <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 6 }}>Use this key if you need to connect Talkmate to third-party tools via our API.</p>
+              ))}
             </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>WhatsApp Business Number</label>
+              <input value={notifs.whatsappNum} onChange={e => setNotifs(n => ({ ...n, whatsappNum: e.target.value }))} placeholder="+61412345678" style={inp} />
+            </div>
+            <button onClick={async () => {
+              if (!bizId) return
+              const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
+              await supabase.from('businesses').update({ notifications_config: { ...cfg, whatsapp_number: notifs.whatsappNum } }).eq('id', bizId)
+              setSaved('WhatsApp saved ✅')
+              setTimeout(() => setSaved(''), 3000)
+            }} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save</button>
+          </div>
+
+          {/* Telegram Card */}
+          <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Connect Telegram Notifications</h3>
+            <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Get instant call alerts sent directly to your Telegram.</p>
+            <div style={{ marginBottom: 20 }}>
+              {[
+                'Open Telegram and search for @TalkMateNotifyBot',
+                'Send /start to the bot',
+                'The bot will reply with your unique Chat ID',
+                'Paste your Chat ID below and save',
+              ].map((step, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <span style={{ color: '#E8622A', fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
+                  <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>{step}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>Your Telegram Chat ID</label>
+              <input value={notifs.telegramUser} onChange={e => setNotifs(n => ({ ...n, telegramUser: e.target.value }))} placeholder="e.g. 123456789" style={inp} />
+            </div>
+            <button onClick={async () => {
+              if (!bizId) return
+              const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
+              await supabase.from('businesses').update({ notifications_config: { ...cfg, telegram_chat_id: notifs.telegramUser } }).eq('id', bizId)
+              setSaved('Telegram saved ✅')
+              setTimeout(() => setSaved(''), 3000)
+            }} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save</button>
           </div>
         </div>
       )}
