@@ -234,7 +234,7 @@ export default function PortalSidebar(props: Props) {
               }} />
             </div>
           )}
-          {planConfig.key !== 'pro' && planConfig.key !== 'professional' && (
+          {planConfig.key === 'starter' && (
             <button
               onClick={() => go('/billing')}
               style={{
@@ -242,7 +242,18 @@ export default function PortalSidebar(props: Props) {
                 padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
               }}
             >
-              Upgrade →
+              Upgrade to Growth →
+            </button>
+          )}
+          {planConfig.key === 'growth' && (
+            <button
+              onClick={() => go('/billing')}
+              style={{
+                marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
+                padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
+              }}
+            >
+              Upgrade to Pro →
             </button>
           )}
         </div>
