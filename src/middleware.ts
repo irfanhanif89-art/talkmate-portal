@@ -9,13 +9,16 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 // Only 'expired' (lapsed trial) and 'cancelled' should bounce a user
 // away from the dashboard. Every other status — 'active', 'trial',
 // 'pending_payment', 'pending', 'suspended', or anything unrecognised
-// — must let the user through. The dashboard itself surfaces banners
-// (TrialBanner, PendingPaymentBanner) and the expired-trial overlay
-// for the specific account states that need user action.
+// — must let the user through.
 //
-// This deliberately replaces the older subscription-row check that
-// was bouncing trial and pending_payment clients to /subscribe even
-// when their account was fully provisioned.
+// IMPORTANT: a single owner can legitimately have multiple business
+// rows (e.g. an admin created a duplicate, cancelled one, kept the
+// other active). We only block when EVERY row the user owns is in a
+// blocked state. If any row is non-blocked the user gets through.
+// Previously this picked data[0] arbitrarily, which caused an
+// infinite redirect loop for GM Towing (cancelled duplicate sorted
+// first → middleware bounced them to /subscribe → /subscribe page
+// failed to render → eventual "this page couldn't load").
 async function shouldBlockPortalAccess(userId: string): Promise<boolean> {
   try {
     const res = await fetch(
@@ -24,8 +27,12 @@ async function shouldBlockPortalAccess(userId: string): Promise<boolean> {
     )
     const data: { account_status: string | null }[] = await res.json()
     if (!Array.isArray(data) || data.length === 0) return false
-    const status = (data[0].account_status ?? '').toLowerCase()
-    return status === 'expired' || status === 'cancelled'
+    // Block only when EVERY row is blocked. Any non-blocked row means
+    // the user has at least one live account.
+    return data.every(row => {
+      const s = (row.account_status ?? '').toLowerCase()
+      return s === 'expired' || s === 'cancelled'
+    })
   } catch {
     // Don't lock users out on a transient lookup failure.
     return false
