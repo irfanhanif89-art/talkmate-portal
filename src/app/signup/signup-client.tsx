@@ -86,6 +86,7 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [bannerError, setBannerError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null } | null>(null)
 
   // Debounced email-availability check
   useEffect(() => {
@@ -125,9 +126,9 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
     return Object.keys(errs).length === 0
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function submitSignup(opts?: { forcePhoneDuplicate?: boolean }) {
     setBannerError(null)
+    setPhoneDupe(null)
     if (!validate()) return
     if (emailStatus === 'taken') {
       setFieldErrors(f => ({ ...f, email: 'This email is already registered. Try logging in instead.' }))
@@ -148,10 +149,16 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
           industry,
           plan,
           signup_type: signupType,
+          force_phone_duplicate: !!opts?.forcePhoneDuplicate,
         }),
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
+        if (data.duplicate_field === 'phone' && data.can_force) {
+          setPhoneDupe({ existing_business_name: data.existing_business_name ?? null })
+          setSubmitting(false)
+          return
+        }
         setBannerError(data.error ?? 'We could not create your account. Please try again.')
         setSubmitting(false)
         return
@@ -173,6 +180,11 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
       setBannerError((e as Error).message || 'Something went wrong. Please try again.')
       setSubmitting(false)
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submitSignup()
   }
 
   return (
@@ -360,6 +372,42 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
                   disabled={submitting}
                 />
               </div>
+
+              {phoneDupe && (
+                <div style={{
+                  marginTop: 16, padding: '14px 16px', borderRadius: 11,
+                  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>
+                    An account with this phone already exists
+                  </div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 1.5, marginBottom: 10 }}>
+                    {phoneDupe.existing_business_name
+                      ? <>Existing business: <strong style={{ color: 'white' }}>{phoneDupe.existing_business_name}</strong>. </>
+                      : null}
+                    Search for the existing account, or if this is a second business for the same owner, you can proceed anyway.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                    <a href="/login" style={{
+                      padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                      background: '#1F1300', color: '#FBBF24', textDecoration: 'none',
+                      fontFamily: 'Outfit, sans-serif',
+                    }}>Log in to existing account</a>
+                    <button
+                      type="button"
+                      onClick={() => submitSignup({ forcePhoneDuplicate: true })}
+                      disabled={submitting}
+                      style={{
+                        padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        background: '#F59E0B', border: 'none', color: '#1F1300',
+                        cursor: submitting ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif',
+                      }}
+                    >
+                      {submitting ? 'Creating…' : 'Create anyway'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

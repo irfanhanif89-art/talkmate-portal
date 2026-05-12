@@ -53,6 +53,9 @@ interface SignupRequest {
   industry?: string
   plan?: string
   signup_type?: string
+  // Set true on the second-submit after the user has acknowledged a
+  // phone duplicate warning. Email duplicates are still hard-blocked.
+  force_phone_duplicate?: boolean
 }
 
 function planStripeLink(plan: string, email: string): string | null {
@@ -116,24 +119,54 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: 'Choose either Start free trial or Pay now.' }, { status: 400 })
   }
 
+  const forcePhoneDuplicate = body.force_phone_duplicate === true
+
   // ---- duplicate-email pre-check (best-effort) ----------------------
   // The Supabase signUp call will surface duplicates too, but checking
-  // first lets us return a clean 409 with the friendly message.
+  // first lets us return a clean 409 with the friendly message. Email
+  // duplicates are always a hard block (cannot proceed) because
+  // Supabase Auth refuses to create two users with the same email.
   const admin = createAdminClient()
-  // listUsers doesn't expose a filter, so we scan up to 1000 rows. For
-  // any realistic signup volume this is fine — the duplicate check is a
-  // soft pre-flight, not a hard guarantee.
   try {
     const { data: existing } = await admin.auth.admin.listUsers({ perPage: 200, page: 1 })
     const hit = existing?.users?.find(u => u.email?.toLowerCase() === email)
     if (hit) {
       return NextResponse.json(
-        { success: false, error: 'That email is already registered. Try logging in instead.' },
+        {
+          success: false,
+          error: 'An account with this email already exists. Try logging in instead.',
+          duplicate_field: 'email',
+        },
         { status: 409 },
       )
     }
   } catch {
     // Fall through — Supabase will still reject a duplicate on signUp().
+  }
+
+  // ---- duplicate-phone soft guard -----------------------------------
+  // Phone numbers can legitimately repeat (same owner, second business).
+  // First submit shows a warning; client re-submits with
+  // force_phone_duplicate=true to proceed.
+  if (!forcePhoneDuplicate) {
+    try {
+      const { data: phoneMatch } = await admin.from('businesses')
+        .select('id, name').eq('phone_number', phone).limit(1).maybeSingle()
+      if (phoneMatch) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'An account with this phone already exists. Search for the existing account instead of creating a new one.',
+            duplicate_field: 'phone',
+            existing_business_name: phoneMatch.name,
+            can_force: true,
+          },
+          { status: 409 },
+        )
+      }
+    } catch {
+      // Non-fatal — proceed.
+    }
   }
 
   // ---- create auth user via the anon (public) signUp endpoint -------

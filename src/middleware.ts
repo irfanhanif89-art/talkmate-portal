@@ -4,24 +4,31 @@ import { NextResponse, type NextRequest } from 'next/server'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-async function checkHasActiveSub(userId: string): Promise<boolean> {
+// Portal-access gate based on businesses.account_status.
+//
+// Only 'expired' (lapsed trial) and 'cancelled' should bounce a user
+// away from the dashboard. Every other status — 'active', 'trial',
+// 'pending_payment', 'pending', 'suspended', or anything unrecognised
+// — must let the user through. The dashboard itself surfaces banners
+// (TrialBanner, PendingPaymentBanner) and the expired-trial overlay
+// for the specific account states that need user action.
+//
+// This deliberately replaces the older subscription-row check that
+// was bouncing trial and pending_payment clients to /subscribe even
+// when their account was fully provisioned.
+async function shouldBlockPortalAccess(userId: string): Promise<boolean> {
   try {
-    const bizRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=id`,
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=account_status`,
       { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
     )
-    const bizData: { id: string }[] = await bizRes.json()
-    if (!Array.isArray(bizData) || bizData.length === 0) return false
-
-    const ids = bizData.map(b => b.id).join(',')
-    const subRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/subscriptions?business_id=in.(${ids})&status=in.(active,trialing)&select=status&limit=1`,
-      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
-    )
-    const subData: { status: string }[] = await subRes.json()
-    return Array.isArray(subData) && subData.length > 0
+    const data: { account_status: string | null }[] = await res.json()
+    if (!Array.isArray(data) || data.length === 0) return false
+    const status = (data[0].account_status ?? '').toLowerCase()
+    return status === 'expired' || status === 'cancelled'
   } catch {
-    return true
+    // Don't lock users out on a transient lookup failure.
+    return false
   }
 }
 
@@ -141,8 +148,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isProtected && !path.startsWith('/onboarding') && !isAdminApprove) {
-    const hasSub = await checkHasActiveSub(user.id)
-    if (!hasSub) {
+    const blocked = await shouldBlockPortalAccess(user.id)
+    if (blocked) {
       if (path.startsWith('/subscribe')) return supabaseResponse
       return redirect('/subscribe')
     }

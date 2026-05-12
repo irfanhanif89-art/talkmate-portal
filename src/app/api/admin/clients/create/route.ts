@@ -67,6 +67,11 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  // Bypass flag for the phone-duplicate check below. Email duplicates
+  // are still hard-blocked (Supabase Auth won't accept two users with
+  // the same email anyway).
+  const forcePhoneDuplicate = body.force_phone_duplicate === true
+
   // Duplicate-email guard. Look up the existing auth user, then surface
   // their business id so the admin UI can deep-link rather than create a
   // confusing second business.
@@ -77,11 +82,30 @@ export async function POST(req: Request) {
       .select('id, name').eq('owner_user_id', existingUser.id).maybeSingle()
     return NextResponse.json({
       ok: false,
-      error: 'An account with this email already exists',
+      error: 'An account with this email already exists. Search for the existing account instead of creating a new one.',
+      duplicate_field: 'email',
       existing_user_id: existingUser.id,
       existing_business_id: existingBiz?.id ?? null,
       existing_business_name: existingBiz?.name ?? null,
     }, { status: 409 })
+  }
+
+  // Duplicate-phone soft guard. Phone numbers can legitimately repeat
+  // when one owner runs multiple businesses, so we warn first and let
+  // the admin re-submit with force_phone_duplicate=true to proceed.
+  if (!forcePhoneDuplicate && phone) {
+    const { data: phoneMatch } = await admin.from('businesses')
+      .select('id, name').eq('phone_number', phone).limit(1).maybeSingle()
+    if (phoneMatch) {
+      return NextResponse.json({
+        ok: false,
+        error: 'An account with this phone already exists. Search for the existing account instead of creating a new one.',
+        duplicate_field: 'phone',
+        existing_business_id: phoneMatch.id,
+        existing_business_name: phoneMatch.name,
+        can_force: true,
+      }, { status: 409 })
+    }
   }
 
   const temp_password = generateTempPassword(10)

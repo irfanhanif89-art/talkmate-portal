@@ -89,6 +89,10 @@ export default function CreateClientModal({
   const [success, setSuccess] = useState<CreatedResult | null>(null)
   const [paymentLinkBusy, setPaymentLinkBusy] = useState(false)
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null)
+  // Phone-duplicate warning state — when the server returns a soft
+  // 409 with duplicate_field='phone', stash the existing record so the
+  // UI can show a "Create anyway" prompt.
+  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null; existing_business_id: string | null } | null>(null)
 
   // ── Section 1: Business details ──────────────────────────────────────────
   const [businessName, setBusinessName] = useState('')
@@ -202,12 +206,13 @@ export default function CreateClientModal({
   }
 
   // ── Submit ───────────────────────────────────────────────────────────────
-  async function submit() {
+  async function submit(opts?: { forcePhoneDuplicate?: boolean }) {
     if (!businessName || !ownerName || !email || !phone || !answerPhrase || !servicesSummary || !afterHours) {
       setError('Please fill in all required fields (marked with *).')
       return
     }
     setSubmitting(true); setError(null)
+    setPhoneDupe(null)
     try {
       const res = await fetch('/api/admin/clients/create', {
         method: 'POST',
@@ -243,12 +248,22 @@ export default function CreateClientModal({
           notif_whatsapp_number: notifWhatsappNum || undefined,
           notif_urgent_call: notifUrgentCall,
           notif_urgent_number: notifUrgentNum || undefined,
+          force_phone_duplicate: !!opts?.forcePhoneDuplicate,
         }),
       })
       const data = await res.json()
       if (!data.ok) {
+        if (data.duplicate_field === 'phone' && data.can_force) {
+          // Soft warning — show "Create anyway" prompt rather than a
+          // hard error.
+          setPhoneDupe({
+            existing_business_name: data.existing_business_name ?? null,
+            existing_business_id: data.existing_business_id ?? null,
+          })
+          return
+        }
         if (data.existing_business_id) {
-          setError(`${data.error}. Existing business: ${data.existing_business_name ?? data.existing_business_id}`)
+          setError(`${data.error} Existing business: ${data.existing_business_name ?? data.existing_business_id}`)
         } else {
           setError(data.error || 'Failed to create')
         }
@@ -721,9 +736,37 @@ export default function CreateClientModal({
 
       {error && <ErrorBanner msg={error} />}
 
+      {phoneDupe && (
+        <div style={{
+          padding: '14px 16px', marginBottom: 14,
+          borderRadius: 10,
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>
+            An account with this phone already exists
+          </div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 10 }}>
+            {phoneDupe.existing_business_name
+              ? <>Existing business: <strong style={{ color: 'white' }}>{phoneDupe.existing_business_name}</strong>. </>
+              : null}
+            Search for the existing account instead of creating a new one. If this is a legitimate second business for the same owner, you can proceed anyway.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setPhoneDupe(null)} style={ghostBtn()}>Cancel</button>
+            <button
+              onClick={() => submit({ forcePhoneDuplicate: true })}
+              disabled={submitting}
+              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#F59E0B', border: 'none', color: '#1F1300', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+            >
+              {submitting ? 'Creating…' : 'Create anyway'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 18 }}>
         <button onClick={onClose} style={ghostBtn()}>Cancel</button>
-        <button onClick={submit} disabled={submitting} style={primaryBtn(submitting)}>
+        <button onClick={() => submit()} disabled={submitting} style={primaryBtn(submitting)}>
           {submitting ? 'Creating…' : 'Create account →'}
         </button>
       </div>
