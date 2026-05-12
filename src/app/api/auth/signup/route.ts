@@ -151,7 +151,7 @@ export async function POST(request: Request) {
   if (!forcePhoneDuplicate) {
     try {
       const { data: phoneMatch } = await admin.from('businesses')
-        .select('id, name').eq('phone_number', phone).limit(1).maybeSingle()
+        .select('id, name, account_status').eq('phone_number', phone).limit(1).maybeSingle()
       if (phoneMatch) {
         return NextResponse.json(
           {
@@ -159,6 +159,7 @@ export async function POST(request: Request) {
             error: 'An account with this phone already exists. Search for the existing account instead of creating a new one.',
             duplicate_field: 'phone',
             existing_business_name: phoneMatch.name,
+            existing_business_status: phoneMatch.account_status ?? null,
             can_force: true,
           },
           { status: 409 },

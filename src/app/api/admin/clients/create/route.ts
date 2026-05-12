@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   // the admin re-submit with force_phone_duplicate=true to proceed.
   if (!forcePhoneDuplicate && phone) {
     const { data: phoneMatch } = await admin.from('businesses')
-      .select('id, name').eq('phone_number', phone).limit(1).maybeSingle()
+      .select('id, name, account_status').eq('phone_number', phone).limit(1).maybeSingle()
     if (phoneMatch) {
       return NextResponse.json({
         ok: false,
@@ -103,6 +103,7 @@ export async function POST(req: Request) {
         duplicate_field: 'phone',
         existing_business_id: phoneMatch.id,
         existing_business_name: phoneMatch.name,
+        existing_business_status: phoneMatch.account_status ?? null,
         can_force: true,
       }, { status: 409 })
     }

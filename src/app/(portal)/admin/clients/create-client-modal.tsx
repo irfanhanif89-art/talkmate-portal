@@ -93,7 +93,11 @@ export default function CreateClientModal({
   // Phone-duplicate warning state — when the server returns a soft
   // 409 with duplicate_field='phone', stash the existing record so the
   // UI can show a "Create anyway" prompt.
-  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null; existing_business_id: string | null } | null>(null)
+  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null; existing_business_id: string | null; existing_business_status: string | null } | null>(null)
+  // Admin must type CONFIRM before the destructive "Create anyway"
+  // button activates — duplicate accounts on the same phone caused a
+  // production login-loop incident, so we want a deliberate gesture.
+  const [phoneDupeConfirmText, setPhoneDupeConfirmText] = useState('')
 
   // ── Section 1: Business details ──────────────────────────────────────────
   const [businessName, setBusinessName] = useState('')
@@ -214,6 +218,7 @@ export default function CreateClientModal({
     }
     setSubmitting(true); setError(null)
     setPhoneDupe(null)
+    setPhoneDupeConfirmText('')
     try {
       const res = await fetch('/api/admin/clients/create', {
         method: 'POST',
@@ -260,7 +265,9 @@ export default function CreateClientModal({
           setPhoneDupe({
             existing_business_name: data.existing_business_name ?? null,
             existing_business_id: data.existing_business_id ?? null,
+            existing_business_status: data.existing_business_status ?? null,
           })
+          setPhoneDupeConfirmText('')
           return
         }
         if (data.existing_business_id) {
@@ -737,33 +744,63 @@ export default function CreateClientModal({
 
       {error && <ErrorBanner msg={error} />}
 
-      {phoneDupe && (
-        <div style={{
-          padding: '14px 16px', marginBottom: 14,
-          borderRadius: 10,
-          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)',
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>
-            An account with this phone already exists
+      {phoneDupe && (() => {
+        const confirmReady = phoneDupeConfirmText.trim().toUpperCase() === 'CONFIRM'
+        const existingName = phoneDupe.existing_business_name ?? 'an existing business'
+        const existingStatus = phoneDupe.existing_business_status ?? 'unknown'
+        return (
+          <div style={{
+            padding: '16px 18px', marginBottom: 14,
+            borderRadius: 10,
+            background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.55)',
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#EF4444', marginBottom: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              ⚠ WARNING: Duplicate phone number
+            </div>
+            <div style={{ fontSize: 13, color: 'white', lineHeight: 1.55, marginBottom: 12 }}>
+              A business account already exists with this phone number:{' '}
+              <strong>{existingName}</strong>{' '}
+              (status: <strong>{existingStatus}</strong>).{' '}
+              Creating another account for the same phone number can cause login issues.{' '}
+              Only proceed if this is a different business owner.
+            </div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#FCA5A5', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Type CONFIRM to enable the override
+            </label>
+            <input
+              value={phoneDupeConfirmText}
+              onChange={e => setPhoneDupeConfirmText(e.target.value)}
+              placeholder="CONFIRM"
+              style={{
+                ...inpStyle,
+                marginBottom: 12,
+                borderColor: confirmReady ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.15)',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => { setPhoneDupe(null); setPhoneDupeConfirmText('') }}
+                style={ghostBtn()}
+              >Cancel</button>
+              <button
+                onClick={() => submit({ forcePhoneDuplicate: true })}
+                disabled={submitting || !confirmReady}
+                style={{
+                  padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 800,
+                  background: confirmReady ? '#EF4444' : 'rgba(239,68,68,0.35)',
+                  border: 'none',
+                  color: 'white',
+                  cursor: submitting ? 'wait' : confirmReady ? 'pointer' : 'not-allowed',
+                  fontFamily: 'Outfit, sans-serif',
+                  opacity: confirmReady ? 1 : 0.7,
+                }}
+              >
+                {submitting ? 'Creating…' : 'Create anyway'}
+              </button>
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 10 }}>
-            {phoneDupe.existing_business_name
-              ? <>Existing business: <strong style={{ color: 'white' }}>{phoneDupe.existing_business_name}</strong>. </>
-              : null}
-            Search for the existing account instead of creating a new one. If this is a legitimate second business for the same owner, you can proceed anyway.
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setPhoneDupe(null)} style={ghostBtn()}>Cancel</button>
-            <button
-              onClick={() => submit({ forcePhoneDuplicate: true })}
-              disabled={submitting}
-              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, background: '#F59E0B', border: 'none', color: '#1F1300', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
-            >
-              {submitting ? 'Creating…' : 'Create anyway'}
-            </button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 18 }}>
         <button onClick={onClose} style={ghostBtn()}>Cancel</button>

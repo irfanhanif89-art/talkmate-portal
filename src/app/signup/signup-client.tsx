@@ -86,7 +86,12 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [bannerError, setBannerError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null } | null>(null)
+  const [phoneDupe, setPhoneDupe] = useState<{ existing_business_name: string | null; existing_business_status: string | null } | null>(null)
+  // The signup page can be opened by anyone on the web, so the
+  // confirm-to-override gate matches the admin modal: protects against
+  // a panicked second-account attempt that would silently break the
+  // first one's login.
+  const [phoneDupeConfirmText, setPhoneDupeConfirmText] = useState('')
 
   // Debounced email-availability check
   useEffect(() => {
@@ -129,6 +134,7 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
   async function submitSignup(opts?: { forcePhoneDuplicate?: boolean }) {
     setBannerError(null)
     setPhoneDupe(null)
+    setPhoneDupeConfirmText('')
     if (!validate()) return
     if (emailStatus === 'taken') {
       setFieldErrors(f => ({ ...f, email: 'This email is already registered. Try logging in instead.' }))
@@ -155,7 +161,11 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
       const data = await res.json()
       if (!res.ok || !data.success) {
         if (data.duplicate_field === 'phone' && data.can_force) {
-          setPhoneDupe({ existing_business_name: data.existing_business_name ?? null })
+          setPhoneDupe({
+            existing_business_name: data.existing_business_name ?? null,
+            existing_business_status: data.existing_business_status ?? null,
+          })
+          setPhoneDupeConfirmText('')
           setSubmitting(false)
           return
         }
@@ -373,41 +383,73 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
                 />
               </div>
 
-              {phoneDupe && (
-                <div style={{
-                  marginTop: 16, padding: '14px 16px', borderRadius: 11,
-                  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.4)',
-                }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>
-                    An account with this phone already exists
-                  </div>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 1.5, marginBottom: 10 }}>
-                    {phoneDupe.existing_business_name
-                      ? <>Existing business: <strong style={{ color: 'white' }}>{phoneDupe.existing_business_name}</strong>. </>
-                      : null}
-                    Search for the existing account, or if this is a second business for the same owner, you can proceed anyway.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-                    <a href="/login" style={{
-                      padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                      background: '#1F1300', color: '#FBBF24', textDecoration: 'none',
-                      fontFamily: 'Outfit, sans-serif',
-                    }}>Log in to existing account</a>
-                    <button
-                      type="button"
-                      onClick={() => submitSignup({ forcePhoneDuplicate: true })}
-                      disabled={submitting}
+              {phoneDupe && (() => {
+                const confirmReady = phoneDupeConfirmText.trim().toUpperCase() === 'CONFIRM'
+                const existingName = phoneDupe.existing_business_name ?? 'an existing business'
+                const existingStatus = phoneDupe.existing_business_status ?? 'unknown'
+                return (
+                  <div style={{
+                    marginTop: 16, padding: '16px 18px', borderRadius: 11,
+                    background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.55)',
+                  }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 800, color: '#EF4444', marginBottom: 8,
+                      letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+                    }}>
+                      ⚠ WARNING: Duplicate phone number
+                    </div>
+                    <div style={{ fontSize: 13, color: 'white', lineHeight: 1.55, marginBottom: 12 }}>
+                      A business account already exists with this phone number:{' '}
+                      <strong>{existingName}</strong>{' '}
+                      (status: <strong>{existingStatus}</strong>).{' '}
+                      Creating another account for the same phone number can cause login issues.{' '}
+                      Only proceed if this is a different business owner.
+                    </div>
+                    <label style={{
+                      display: 'block', fontSize: 11, fontWeight: 700, color: '#FCA5A5',
+                      marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em',
+                    }}>
+                      Type CONFIRM to enable the override
+                    </label>
+                    <input
+                      type="text"
+                      value={phoneDupeConfirmText}
+                      onChange={e => setPhoneDupeConfirmText(e.target.value)}
+                      placeholder="CONFIRM"
+                      autoComplete="off"
                       style={{
-                        padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                        background: '#F59E0B', border: 'none', color: '#1F1300',
-                        cursor: submitting ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif',
+                        ...inputStyle(false),
+                        marginBottom: 12,
+                        borderColor: confirmReady ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.15)',
                       }}
-                    >
-                      {submitting ? 'Creating…' : 'Create anyway'}
-                    </button>
+                    />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                      <a href="/login" style={{
+                        padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        background: '#071829', color: '#4A9FE8', textDecoration: 'none',
+                        border: '1px solid rgba(74,159,232,0.4)',
+                        fontFamily: 'Outfit, sans-serif',
+                      }}>Log in to existing account</a>
+                      <button
+                        type="button"
+                        onClick={() => submitSignup({ forcePhoneDuplicate: true })}
+                        disabled={submitting || !confirmReady}
+                        style={{
+                          padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 800,
+                          background: confirmReady ? '#EF4444' : 'rgba(239,68,68,0.35)',
+                          border: 'none',
+                          color: 'white',
+                          cursor: submitting ? 'wait' : confirmReady ? 'pointer' : 'not-allowed',
+                          fontFamily: 'Outfit, sans-serif',
+                          opacity: confirmReady ? 1 : 0.7,
+                        }}
+                      >
+                        {submitting ? 'Creating…' : 'Create anyway'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               <button
                 type="submit"
