@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useOnboardingStore } from '@/store/onboarding-store'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
+import { getPlan } from '@/lib/plan'
 import { INDUSTRY_LIBRARY, type ServiceItem, type FAQItem } from '@/lib/industryLibrary'
 import { ONBOARDING_VIDEOS } from '@/lib/onboardingVideos'
 import { Plus, Trash2, Check, ChevronLeft, ChevronRight, Play, X, MessageCircle } from 'lucide-react'
@@ -129,6 +130,12 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [bizId, setBizId] = useState('')
   const [bizType, setBizType] = useState<BusinessType>('other')
+  // Used by the payment step: correct monthly price for the client's
+  // selected plan, plus the admin-created+active short-circuit that
+  // skips payment entirely.
+  const [bizPlan, setBizPlan] = useState<string>('starter')
+  const [bizOnboardedBy, setBizOnboardedBy] = useState<string | null>(null)
+  const [bizAccountStatus, setBizAccountStatus] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadDone, setUploadDone] = useState(false)
   const [agreed, setAgreed] = useState(false)
@@ -175,6 +182,13 @@ export default function OnboardingPage() {
         if (data?.ok) {
           setBizId(data.business_id)
           setBizType((data.business_type ?? 'other') as BusinessType)
+          if (typeof data.plan === 'string') setBizPlan(data.plan)
+          if (typeof data.onboarded_by === 'string' || data.onboarded_by === null) {
+            setBizOnboardedBy(data.onboarded_by ?? null)
+          }
+          if (typeof data.account_status === 'string' || data.account_status === null) {
+            setBizAccountStatus(data.account_status ?? null)
+          }
           serverResponses = (data.responses ?? null) as Record<string, unknown> | null
           if (typeof data.current_step === 'number' && data.current_step > currentStep) {
             setStep(data.current_step)
@@ -296,11 +310,38 @@ export default function OnboardingPage() {
     }
   }
 
+  // True when the client was created by an admin AND their account is
+  // already active — i.e. payment was handled externally before they
+  // ever logged in. They should never see the payment step.
+  const skipPaymentStep =
+    (bizOnboardedBy ?? '').toLowerCase() === 'admin' &&
+    (bizAccountStatus ?? '').toLowerCase() === 'active'
+
   async function next() {
-    setLoading(true); await save(); setStep(currentStep + 1); setLoading(false)
+    setLoading(true); await save()
+    // Skip the payment step (step 9) for admin-created active clients.
+    // Going from 8 → 10 directly avoids a confusing screen the client
+    // can't action.
+    const target = currentStep + 1
+    setStep(target === 9 && skipPaymentStep ? 10 : target)
+    setLoading(false)
     window.scrollTo(0, 0)
   }
-  function back() { setStep(currentStep - 1); window.scrollTo(0, 0) }
+  function back() {
+    // Mirror the skip on the way back so they can't get stuck on step 9.
+    const target = currentStep - 1
+    setStep(target === 9 && skipPaymentStep ? 8 : target)
+    window.scrollTo(0, 0)
+  }
+
+  // Belt-and-braces — if a hydrated current_step or stale localStorage
+  // lands the user on step 9 and they qualify for the skip, bounce them
+  // onward without making them click.
+  useEffect(() => {
+    if (currentStep === 9 && skipPaymentStep) {
+      setStep(10)
+    }
+  }, [currentStep, skipPaymentStep, setStep])
 
   async function goLive() {
     setLoading(true); await save()
@@ -913,25 +954,31 @@ export default function OnboardingPage() {
           )}
 
           {/* STEP 9: Payment */}
-          {currentStep === 9 && (
+          {currentStep === 9 && (() => {
+            // Show the actual plan's monthly price — no setup fees on
+            // any plan, ever. The line item and the total are both
+            // driven from the plan config so Growth / Pro clients see
+            // their real numbers instead of a hardcoded Starter $299.
+            const planCfg = getPlan(bizPlan)
+            const monthlyPrice = planCfg.monthlyPrice
+            const totalToday = monthlyPrice
+            return (
             <div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>💳 Set Up Payment</h2>
               <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>First payment activates your AI agent and provisions your phone number.</p>
 
               <div style={{ background: 'linear-gradient(135deg,rgba(232,98,42,0.1),rgba(10,30,56,1))', border: '1px solid rgba(232,98,42,0.25)', borderRadius: 14, padding: 20, marginBottom: 24 }}>
                 <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Today&apos;s charge</div>
-                {[['One-time implementation fee', '$299.00'], ['Starter Plan — Month 1', '$299.00']].map(([l, v]) => (
-                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
-                    <span style={{ color: '#7BAED4' }}>{l}</span>
-                    <span style={{ fontWeight: 600, color: 'white' }}>{v}</span>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
+                  <span style={{ color: '#7BAED4' }}>{planCfg.label} Plan — Month 1</span>
+                  <span style={{ fontWeight: 600, color: 'white' }}>${monthlyPrice}.00</span>
+                </div>
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800 }}>
                   <span style={{ color: 'white' }}>Total due today</span>
-                  <span style={{ color: '#E8622A' }}>$598.00 AUD</span>
+                  <span style={{ color: '#E8622A' }}>${totalToday}.00 AUD</span>
                 </div>
-                <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>Then $299/month. Cancel anytime with 30 days notice.</div>
+                <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>Then ${monthlyPrice}/month. No setup fee. Cancel anytime with 30 days notice.</div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -962,10 +1009,11 @@ export default function OnboardingPage() {
               <button onClick={() => { setPayProcessing(true); setTimeout(() => { setPayProcessing(false); setStep(10) }, 2000) }}
                 disabled={payProcessing}
                 style={{ width: '100%', marginTop: 20, padding: 16, background: '#E8622A', color: 'white', border: 'none', borderRadius: 12, fontFamily: 'Outfit,sans-serif', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-                {payProcessing ? '⚡ Processing payment...' : 'Pay $598 & Activate My AI Agent →'}
+                {payProcessing ? '⚡ Processing payment...' : `Pay $${totalToday} & Activate My AI Agent →`}
               </button>
             </div>
-          )}
+            )
+          })()}
 
           {/* STEP 10: AI Number */}
           {currentStep === 10 && (
@@ -1024,7 +1072,7 @@ export default function OnboardingPage() {
                   ['Business', (responses.businessName as string) || '—'],
                   ['AI Number', '+61 489 274 531'],
                   ['Voice', voices.find(v => v.id === voice)?.name || 'Sarah'],
-                  ['Plan', 'Starter · $299/month'],
+                  ['Plan', `${getPlan(bizPlan).label} · $${getPlan(bizPlan).monthlyPrice}/month`],
                   ['Status', '🟢 Live & Active'],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: k !== 'Status' ? '1px solid rgba(255,255,255,0.06)' : 'none', fontSize: 14 }}>

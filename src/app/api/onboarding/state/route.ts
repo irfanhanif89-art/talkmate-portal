@@ -165,7 +165,7 @@ function buildMergedResponses(business: BusinessRow, savedResponses: Record<stri
 }
 
 const BUSINESS_SELECT =
-  'id, name, phone_number, address, website, abn, industry, timezone, business_type, opening_hours, notifications_config'
+  'id, name, phone_number, address, website, abn, industry, timezone, business_type, opening_hours, notifications_config, plan, onboarded_by, account_status'
 
 export async function GET() {
   const supabase = await createClient()
@@ -190,10 +190,22 @@ export async function GET() {
   const saved = (onboardingRow?.responses ?? {}) as Record<string, unknown>
   const merged = buildMergedResponses(business as BusinessRow, saved)
 
+  // Plan / onboarded_by / account_status surfaced so the wizard can:
+  //   - show the right monthly price on the payment step
+  //   - skip the payment step entirely for admin-created active clients
+  //     (their payment was handled externally before they ever logged in)
+  const bizExtras = business as unknown as {
+    plan?: string | null
+    onboarded_by?: string | null
+    account_status?: string | null
+  }
   return NextResponse.json({
     ok: true,
     business_id: business.id,
     business_type: business.business_type ?? 'other',
+    plan: bizExtras.plan ?? 'starter',
+    onboarded_by: bizExtras.onboarded_by ?? null,
+    account_status: bizExtras.account_status ?? null,
     current_step: onboardingRow?.current_step ?? 1,
     completed_at: onboardingRow?.completed_at ?? null,
     responses: merged,
