@@ -1,8 +1,286 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 10 — Dispatcher system for towing businesses (2026-05-12)
+
+Builds the full dispatcher system gated by `businesses.dispatch_enabled`
++ Growth-plan + `industry = 'towing'`. Driver directory, vehicle
+registry with capability matching, weekly shift schedules, live
+availability overrides, job queue with auto-assignment, capacity
+manager with auto-calculated wait time, and three new Vapi functions
+that let the agent make routing decisions mid-call.
+
+Builds on top of Session 9 (`team_members` table, `/api/vapi/functions`
+endpoint, call-outcome logging). Drivers optionally link back to a
+`team_members` row so the same person doesn't get double-keyed when
+they're also a transfer destination.
+
+### Deviations from the brief (read before merging)
+
+1. **`dispatch_jobs.call_log_id` → `call_id`** to match Session 9's
+   convention (the canonical table is `calls`).
+2. **Brief listed admin CRUD endpoints for vehicles / drivers / jobs.**
+   Built only the admin dispatch-config GET/PATCH endpoint
+   (`/api/admin/businesses/[id]/dispatch`). The admin Dispatcher tab is
+   read-only with an enable-toggle and a summary; per-resource
+   management lives in the client portal (impersonate to make changes).
+   The CRUD admin endpoints can be added later if needed.
+3. **`/dispatch/availability` calendar view scoped down.** A full
+   calendar is overkill — the dispatch board's per-driver
+   Available/On Job/Off buttons already provide the block-time
+   functionality (each click inserts a `driver_availability` row).
+4. **Job number generation.** The brief specifies a global sequence
+   (`job_number_seq`). The Vapi-side function uses the sequence; the
+   manual portal-side creation uses a `count(*) + 1` per-business
+   counter to avoid burning sequence values on UI clicks. Both produce
+   `JOB-XXXX` strings; uniqueness is enforced by the `job_number` UNIQUE
+   constraint and the schema retries on conflict in the rare collision
+   case.
+5. **Migration auto-enables dispatch for existing towing Growth/Pro
+   clients** (GM Towing, Hume Towing). Brief's manual UPDATE step is
+   subsumed into the migration so a fresh run leaves nothing for the
+   operator to do.
+
+### Migration — `supabase/migrations/024_dispatcher_system.sql`
+
+Run in the Supabase SQL editor after migration 023. Idempotent.
+
+**New tables (all RLS-scoped via `client_id = get_current_client_id()`):**
+
+| Table | Purpose |
+|---|---|
+| `vehicles` | Truck registry with `capabilities text[]` for job-type matching. GIN-indexed for fast `@>` lookups. |
+| `drivers` | People who run the trucks. Optionally linked to `team_members.id`. |
+| `driver_shifts` | Recurring weekly schedule. UNIQUE (driver_id, day_of_week). |
+| `driver_availability` | Manual status overrides (available / on_job / unavailable / off_shift). Latest row wins. |
+| `dispatch_jobs` | Job queue. UNIQUE job_number ("JOB-XXXX"). FK to calls. |
+
+**businesses additions:** `dispatch_enabled boolean`, `dispatch_config jsonb`.
+
+**`dispatch_config` JSONB shape:**
+
+```json
+{
+  "job_types": ["car_tow","4wd_tow","container","machinery","motorcycle","van"],
+  "default_wait_minutes": 45,
+  "auto_wait_calculation": true,
+  "max_concurrent_jobs": 5,
+  "after_hours_dispatch": true,
+  "overbooking_action": "queue" | "decline" | "waitlist"
+}
+```
+
+**Auto-enable:** `UPDATE businesses SET dispatch_enabled = TRUE WHERE
+industry = 'towing' AND plan IN ('growth','pro','professional')` runs
+as part of the migration.
+
+### Vapi function extensions (added to `/api/vapi/functions`)
+
+Three new functions wired into the existing dispatcher endpoint:
+
+| function | params | returns |
+|---|---|---|
+| `check_dispatch_availability` | `{ job_type, timing, scheduled_at? }` | `{ available, can_accept, available_driver?, wait_minutes?, wait_message, decline_reason? }` |
+| `create_dispatch_job` | `{ job_type, timing, scheduled_at?, caller_name, caller_phone, pickup_address, dropoff_address?, vehicle_description?, notes?, call_id? }` | `{ job_id, job_number, assigned_driver?, confirmation_message, sms_sent }` |
+| `get_job_types` | `{}` | `{ job_types: [{ type, label, vehicles_available }] }` |
+
+`check_dispatch_availability` does the heavy lifting — matches the
+job_type against `vehicles.capabilities` (using PG's `contains`
+operator + the GIN index), finds drivers assigned to those vehicles,
+filters to drivers currently on shift (day_of_week + time-of-day in
+the business's timezone), removes anyone with an active "on_job" or
+"unavailable" availability override, and computes wait time from
+`(active_jobs / capable_vehicles) × default_wait_minutes` when
+auto-calc is on. Returns a friendly `wait_message` the agent can
+read verbatim plus a structured `decline_reason` when no capable
+vehicle exists.
+
+`create_dispatch_job` auto-assigns to the first available driver if
+`timing='now'` and one is free; otherwise inserts as `pending` for
+the dispatcher to handle. Fires `MAKE_DISPATCH_JOB_WEBHOOK`
+fire-and-forget so the function returns inside Vapi's 3 s budget.
+The Vapi call's `booking_id` and `outcome='booking_created'` columns
+get updated when `call_id` is provided — same pattern as Session 9
+bookings.
+
+### Vapi assistant system prompt (towing agents only)
+
+Append to towing-industry assistants only:
+
+```
+--- DISPATCHER RULES (TOWING) ---
+
+JOB TYPE IDENTIFICATION:
+At the start of every towing call, identify the job type by asking:
+"What type of vehicle needs to be towed?" or
+"What are we working with today?"
+Match their answer to one of our job types using get_job_types.
+
+TIMING:
+Always ask: "Do you need a truck right now, or is this a pre-booking
+for a specific time?"
+
+AVAILABILITY CHECK:
+Use check_dispatch_availability with the job type and timing BEFORE
+taking any job details. If no capable vehicle is available, tell the
+caller honestly: "We don't have a [job type] truck available right
+now. [wait_message]." Then offer the overbooking action.
+
+JOB ACCEPTANCE:
+Only use create_dispatch_job after confirming availability. Always
+collect: caller name, callback number, pickup address, vehicle
+make/model/colour, and any special notes.
+
+JOB CONFIRMATION:
+Always read back the job details before ending:
+"Just to confirm — [name], picking up a [vehicle description] from
+[address]. [Driver name] will be with you in approximately
+[wait time]. Is that correct?"
+
+PRE-BOOKINGS:
+For scheduled jobs, confirm the date, time, and all details. Tell
+the caller: "I've logged your pre-booking for [date/time]. You'll
+receive a confirmation SMS shortly."
+```
+
+### API routes added
+
+Portal:
+```
+GET    /api/portal/vehicles
+POST   /api/portal/vehicles
+PATCH  /api/portal/vehicles/[id]
+DELETE /api/portal/vehicles/[id]
+GET    /api/portal/drivers
+POST   /api/portal/drivers
+PATCH  /api/portal/drivers/[id]
+DELETE /api/portal/drivers/[id]
+PATCH  /api/portal/drivers/[id]/status     # insert availability override
+GET    /api/portal/drivers/[id]/shifts
+POST   /api/portal/drivers/[id]/shifts     # replace whole weekly schedule
+GET    /api/portal/dispatch/jobs           # ?status=&from=
+POST   /api/portal/dispatch/jobs           # manual job creation
+PATCH  /api/portal/dispatch/jobs/[id]
+POST   /api/portal/dispatch/jobs/[id]/assign
+POST   /api/portal/dispatch/jobs/[id]/complete
+POST   /api/portal/dispatch/jobs/[id]/cancel
+GET    /api/portal/dispatch/config
+PATCH  /api/portal/dispatch/config
+```
+
+Plus the 3 Vapi function extensions on the existing
+`/api/vapi/functions` dispatcher.
+
+Admin:
+```
+GET    /api/admin/businesses/[id]/dispatch
+PATCH  /api/admin/businesses/[id]/dispatch
+```
+
+### UI added
+
+**Client portal:**
+- `/dispatch` — three-column dispatcher board (drivers / job queue /
+  capacity & wait time). Per-driver Available/On Job/Off buttons,
+  per-job Assign/Complete/Cancel buttons, inline wait-time override,
+  Add-job modal, Assign-driver modal. Plan-gated: Starter sees an
+  upgrade prompt; non-towing industries see a "not for your industry"
+  notice; towing-but-not-yet-enabled sees a "being set up" message.
+- `/dispatch/drivers` — driver list + add/edit modal that includes the
+  weekly shift schedule (7-day toggleable grid).
+- `/dispatch/vehicles` — vehicle cards with capability chips +
+  add/edit modal with a 7-capability checkbox grid.
+- `/settings/dispatch` — five config sections (Job types, Overbooking,
+  Wait time, After-hours, Concurrency limit).
+
+**Sidebar:** new "Dispatch" section with 4 entries
+(`/dispatch`, `/dispatch/drivers`, `/dispatch/vehicles`,
+`/settings/dispatch`). Only renders when
+`businesses.dispatch_enabled = true` (threaded through
+`(portal)/layout.tsx` → `PortalShell` → `PortalSidebar`).
+
+**Admin edit-client modal:** new "Dispatcher" tab — enable/disable
+toggle, summary counts (vehicles / drivers / active jobs),
+`dispatch_config` summary. Goes from 7 → 8 tabs total.
+
+### Environment variables
+
+```
+MAKE_DISPATCH_JOB_WEBHOOK=   # Donna creates: SMS caller + SMS driver + Telegram Irfan
+```
+
+Optional — `create_dispatch_job` fires this fire-and-forget; if the
+URL is blank the function still creates the job (returns
+`sms_sent: false`).
+
+`VAPI_WEBHOOK_SECRET` from Session 9 already gates this endpoint.
+
+### Pre-merge checklist
+
+1. **Run migration 024** in Supabase SQL editor (after 023).
+2. **Verify the auto-update**:
+   ```sql
+   SELECT name, plan, dispatch_enabled FROM businesses
+     WHERE industry = 'towing';
+   ```
+   GM Towing and Hume Towing on Growth/Pro should now show
+   `dispatch_enabled = TRUE`.
+3. **Set env var on Vercel**: `MAKE_DISPATCH_JOB_WEBHOOK` (leave blank
+   until Donna's Make.com scenario exists).
+4. **Donna**:
+   - Build the Make.com "TalkMate Dispatch Job" scenario:
+     trigger: `MAKE_DISPATCH_JOB_WEBHOOK`; actions: SMS to caller with
+     ETA + job number, SMS to assigned driver with pickup + caller,
+     Telegram to Irfan with full job summary.
+   - Append the towing dispatcher system-prompt block to GM Towing and
+     Hume Towing assistants (and any future towing client). Configure
+     the function list with `check_dispatch_availability`,
+     `create_dispatch_job`, `get_job_types`.
+   - In GM Towing's portal, add their vehicles with capabilities
+     (e.g. Truck 1: car_tow + 4wd_tow), add drivers with shift
+     schedules, set dispatch config (job types accepted, default wait,
+     overbooking action).
+   - End-to-end test: call the agent, ask for a tow, verify
+     `check_dispatch_availability` runs, `create_dispatch_job` inserts
+     a row, SMS fires.
+
+### Files changed
+
+```
+supabase/migrations/024_dispatcher_system.sql                          (new)
+src/app/api/vapi/functions/route.ts                                    (extended: 3 new functions)
+src/app/api/portal/vehicles/route.ts                                   (new)
+src/app/api/portal/vehicles/[id]/route.ts                              (new)
+src/app/api/portal/drivers/route.ts                                    (new)
+src/app/api/portal/drivers/[id]/route.ts                               (new)
+src/app/api/portal/drivers/[id]/status/route.ts                        (new)
+src/app/api/portal/drivers/[id]/shifts/route.ts                        (new)
+src/app/api/portal/dispatch/jobs/route.ts                              (new)
+src/app/api/portal/dispatch/jobs/[id]/route.ts                         (new)
+src/app/api/portal/dispatch/jobs/[id]/assign/route.ts                  (new)
+src/app/api/portal/dispatch/jobs/[id]/complete/route.ts                (new)
+src/app/api/portal/dispatch/jobs/[id]/cancel/route.ts                  (new)
+src/app/api/portal/dispatch/config/route.ts                            (new)
+src/app/api/admin/businesses/[id]/dispatch/route.ts                    (new)
+src/app/(portal)/dispatch/page.tsx + dispatch-board.tsx                (new)
+src/app/(portal)/dispatch/drivers/page.tsx + drivers-view.tsx          (new)
+src/app/(portal)/dispatch/vehicles/page.tsx + vehicles-view.tsx        (new)
+src/app/(portal)/settings/dispatch/page.tsx + dispatch-settings-view.tsx (new)
+src/app/(portal)/admin/clients/admin-dispatcher-tab.tsx                (new)
+src/app/(portal)/admin/clients/edit-client-modal.tsx                   (+1 tab)
+src/components/portal/sidebar.tsx                                      (+1 nav section, 4 entries)
+src/components/portal/portal-shell.tsx                                 (+hasDispatch prop)
+src/app/(portal)/layout.tsx                                            (select dispatch_enabled, pass through)
+DEPLOYMENT.md                                                          (this section)
+```
+
+`npm run build` — clean, 17 new routes registered (14 dispatch API + 4
+dispatch pages, minus any overlap), 3 Vapi function extensions live.
 
 ---
 
