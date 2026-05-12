@@ -19,7 +19,7 @@ export default function AdminClientsView({
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'trial' | 'pending' | 'active' | 'expired' | 'suspended' | 'cancelled'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'trial' | 'pending' | 'active' | 'expired' | 'suspended' | 'cancelled'>('active')
   const [search, setSearch] = useState('')
   const [paymentLinkBusy, setPaymentLinkBusy] = useState<string | null>(null)
   const [impersonateBusy, setImpersonateBusy] = useState<string | null>(null)
