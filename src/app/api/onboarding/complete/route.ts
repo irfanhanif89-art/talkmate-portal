@@ -116,9 +116,19 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     }
   }
 
-  // Notify Irfan on Telegram — agent ready to preview
-  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
-  const TELEGRAM_CHAT_ID = '7809273812'
+  // Notify Irfan on Telegram — agent ready to preview.
+  // TELEGRAM_BOT_TOKEN is required — no fallback. A live bot token used
+  // to be hardcoded here and got committed to the repo; throwing here
+  // makes /api/onboarding/complete 500 (rather than silently dropping
+  // the notification) so the operator sees the missing env immediately.
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+  if (!TELEGRAM_BOT_TOKEN) {
+    return NextResponse.json(
+      { error: 'TELEGRAM_BOT_TOKEN is not configured' },
+      { status: 500 },
+    )
+  }
+  const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID ?? '7809273812'
   const approveUrl = `${process.env.NEXT_PUBLIC_APP_URL}/admin/approve?businessId=${business.id}`
   const telegramMsg = `🎙️ *New agent ready for review*\n\n*Client:* ${business.name}\n*Type:* ${business.business_type}\n*Email:* ${user.email}\n\n*Preview number:* ${PREVIEW_NUMBER}\nCall it now to hear the agent.\n\n[✅ Approve & Go Live](${approveUrl})`
   try {

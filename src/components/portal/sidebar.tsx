@@ -94,12 +94,16 @@ export default function PortalSidebar(props: Props) {
       ],
     },
     {
+      // Dispatcher is a Pro-tier feature. `hasDispatch` is computed in
+      // (portal)/layout.tsx as `dispatch_enabled && plan ∈ {pro, professional}`,
+      // but we belt-and-brace the plan check here so a stale prop or future
+      // edit can't accidentally expose the nav on Growth.
       label: 'Dispatch',
       items: [
-        { href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList, show: !!props.hasDispatch },
-        { href: '/dispatch/drivers', label: 'Drivers', icon: UserCheck, show: !!props.hasDispatch },
-        { href: '/dispatch/vehicles', label: 'Vehicles', icon: Truck, show: !!props.hasDispatch },
-        { href: '/settings/dispatch', label: 'Dispatch Settings', icon: Car, show: !!props.hasDispatch },
+        { href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList, show: !!props.hasDispatch && (props.plan === 'pro' || props.plan === 'professional') },
+        { href: '/dispatch/drivers', label: 'Drivers', icon: UserCheck, show: !!props.hasDispatch && (props.plan === 'pro' || props.plan === 'professional') },
+        { href: '/dispatch/vehicles', label: 'Vehicles', icon: Truck, show: !!props.hasDispatch && (props.plan === 'pro' || props.plan === 'professional') },
+        { href: '/settings/dispatch', label: 'Dispatch Settings', icon: Car, show: !!props.hasDispatch && (props.plan === 'pro' || props.plan === 'professional') },
       ],
     },
     {

@@ -4,11 +4,19 @@ import Stripe from 'stripe'
 
 async function sendWelcomeEmail(email: string, businessName: string, plan: string) {
   const planLabel = plan === 'professional' ? 'Professional' : plan === 'growth' ? 'Growth' : 'Starter'
+  // RESEND_API_KEY is required — no fallback. A hardcoded live key
+  // used to live here and got committed to the repo. Throwing here
+  // lets the webhook handler 500, which makes Stripe retry once the
+  // env var is set rather than silently dropping the welcome email.
+  const resendKey = process.env.RESEND_API_KEY
+  if (!resendKey) {
+    throw new Error('RESEND_API_KEY is not configured')
+  }
   try {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY || 're_hH6pbyrr_BgLjFBZyiHwaErEyibPgtVpm'}`,
+        'Authorization': `Bearer ${resendKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -52,7 +60,13 @@ async function sendWelcomeEmail(email: string, businessName: string, plan: strin
 }
 
 export async function POST(request: NextRequest) {
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_placeholder', { apiVersion: '2026-03-25.dahlia' })
+  // STRIPE_SECRET_KEY is required. The previous `|| 'sk_placeholder'`
+  // fallback constructed a Stripe client with junk credentials and
+  // surfaced confusing 401s instead of a clear config error.
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return NextResponse.json({ error: 'STRIPE_SECRET_KEY not configured' }, { status: 500 })
+  }
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
   const body = await request.text()
   const sig = request.headers.get('stripe-signature') || ''
 

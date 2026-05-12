@@ -3,7 +3,14 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
 export async function POST() {
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_placeholder', { apiVersion: '2026-03-25.dahlia' })
+  // STRIPE_SECRET_KEY is required. The previous `|| 'sk_placeholder'`
+  // fallback let the module construct a Stripe client with a junk
+  // secret, which then 401'd against Stripe with a confusing error.
+  // Fail loudly instead so the operator sees the missing env.
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return NextResponse.json({ error: 'STRIPE_SECRET_KEY not configured' }, { status: 500 })
+  }
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-03-25.dahlia' })
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

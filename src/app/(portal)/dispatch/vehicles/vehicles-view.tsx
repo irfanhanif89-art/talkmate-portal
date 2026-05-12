@@ -51,10 +51,13 @@ export default function VehiclesView({
     if (res.ok) { setVehicles(v => v.filter(x => x.id !== id)); showToast('Removed') }
   }
 
-  if (industry !== 'towing' || plan === 'starter' || !dispatchEnabled) {
+  // Dispatcher is Pro-only. Below Pro we render the same upgrade hint
+  // /dispatch shows, with a single deep-link back to the board.
+  const isPro = plan === 'pro' || plan === 'professional'
+  if (industry !== 'towing' || !isPro || !dispatchEnabled) {
     return (
       <div style={{ padding: 24, borderRadius: 12, background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', color: '#7BAED4', fontSize: 14 }}>
-        Vehicle registry is part of the towing-dispatch feature. <a href="/dispatch" style={{ color: '#4A9FE8' }}>Open dispatch →</a>
+        Vehicle registry is part of the towing-dispatch feature (Pro plan). <a href="/dispatch" style={{ color: '#4A9FE8' }}>Open dispatch →</a>
       </div>
     )
   }

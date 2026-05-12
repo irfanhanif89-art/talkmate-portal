@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 const ALLOWED = new Set([
   'status', 'caller_name', 'caller_phone', 'job_type', 'timing',
@@ -9,7 +9,7 @@ const ALLOWED = new Set([
 ])
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase } = auth
   const { id } = await params

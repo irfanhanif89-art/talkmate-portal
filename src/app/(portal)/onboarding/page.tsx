@@ -1010,10 +1010,25 @@ export default function OnboardingPage() {
                 🔒 <span>Secured by <strong style={{ color: 'white' }}>Stripe</strong>. Your card details are never stored by Talkmate.</span>
               </div>
 
-              <button onClick={() => { setPayProcessing(true); setTimeout(() => { setPayProcessing(false); setStep(10) }, 2000) }}
+              <button
+                onClick={() => {
+                  // Route to the real Stripe payment link for this
+                  // plan. The card inputs above are pre-Stripe
+                  // chrome — Stripe's hosted checkout collects the
+                  // real card details. Falls back to /billing if
+                  // the env var for this plan is unconfigured so
+                  // the user can complete payment by another route.
+                  setPayProcessing(true)
+                  const link =
+                    bizPlan === 'starter' ? process.env.NEXT_PUBLIC_STRIPE_STARTER_LINK
+                    : bizPlan === 'growth' ? process.env.NEXT_PUBLIC_STRIPE_GROWTH_LINK
+                    : (bizPlan === 'pro' || bizPlan === 'professional') ? process.env.NEXT_PUBLIC_STRIPE_PRO_LINK
+                    : null
+                  window.location.href = link && link.trim() !== '' ? link : '/billing'
+                }}
                 disabled={payProcessing}
                 style={{ width: '100%', marginTop: 20, padding: 16, background: '#E8622A', color: 'white', border: 'none', borderRadius: 12, fontFamily: 'Outfit,sans-serif', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-                {payProcessing ? '⚡ Processing payment...' : `Pay $${totalToday} & Activate My AI Agent →`}
+                {payProcessing ? '⚡ Redirecting to Stripe…' : `Pay $${totalToday} & Activate My AI Agent →`}
               </button>
             </div>
             )

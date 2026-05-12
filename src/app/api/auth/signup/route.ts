@@ -232,8 +232,16 @@ export async function POST(request: Request) {
 
   if (bizError || !biz) {
     console.error('[signup] business insert failed', bizError)
+    // Roll back the orphaned auth user — otherwise the email is stuck
+    // (Supabase Auth refuses to create a second user with the same
+    // address) and the user can't retry signup.
+    try {
+      await admin.auth.admin.deleteUser(authData.user.id)
+    } catch (e) {
+      console.error('[signup] failed to delete orphaned auth user', authData.user.id, e)
+    }
     return NextResponse.json(
-      { success: false, error: 'Account created, but business record failed. Contact support.' },
+      { success: false, error: 'Could not finish creating your account. Please try again.' },
       { status: 500 },
     )
   }

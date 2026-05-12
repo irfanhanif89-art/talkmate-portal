@@ -32,10 +32,35 @@ const testimonials = [
   { text: "Set it up on a Friday, had 12 bookings by Monday. Pays for itself.", name: 'Mike R.', biz: 'Rapid Auto, Melbourne' },
 ]
 
+// Reject anything that isn't a same-origin path. Without this an
+// attacker could craft /login?next=https://evil.com/phish and the
+// post-login `window.location.href = nextUrl` would walk the user
+// off-domain. Same-origin = path starting with a single `/`
+// (not `//`, which is a protocol-relative absolute URL).
+function safeNext(raw: string | null): string {
+  if (!raw) return '/dashboard'
+  // Reject `//evil.com/...`, `https://...`, and anything that doesn't
+  // start with `/`. `\\evil.com` also decodes to `//` in some browsers.
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) {
+    return '/dashboard'
+  }
+  // Final belt-and-braces: try to resolve against the current origin.
+  // If the resolved URL's origin differs from the page's, reject.
+  try {
+    if (typeof window !== 'undefined') {
+      const resolved = new URL(raw, window.location.origin)
+      if (resolved.origin !== window.location.origin) return '/dashboard'
+    }
+  } catch {
+    return '/dashboard'
+  }
+  return raw
+}
+
 function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const nextUrl = searchParams.get('next') ?? '/dashboard'
+  const nextUrl = safeNext(searchParams.get('next'))
   const supabase = createClient()
   const [tab, setTab] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')

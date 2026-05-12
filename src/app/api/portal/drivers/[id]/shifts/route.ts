@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 // GET — list this driver's shifts (one row per active weekday).
 // POST — replace the whole shift schedule for this driver. Body:
@@ -8,7 +8,7 @@ import { requireClient } from '@/lib/portal-auth'
 //        than upserting individual rows.
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase } = auth
   const { id } = await params
@@ -24,7 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
   const { id } = await params

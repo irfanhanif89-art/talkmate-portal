@@ -146,7 +146,12 @@ export default async function PortalLayout({ children }: { children: React.React
         isPartner={isPartner}
         hasCommandCentre={planConfig.hasCommandCentre}
         hasPipeline={['real_estate', 'trades', 'professional_services'].includes((business.industry as string | null) ?? '')}
-        hasDispatch={Boolean((business as { dispatch_enabled?: boolean }).dispatch_enabled)}
+        hasDispatch={
+          // Dispatcher is Pro-only — the `dispatch_enabled` flag is necessary
+          // but not sufficient.
+          Boolean((business as { dispatch_enabled?: boolean }).dispatch_enabled)
+          && ((business.plan ?? 'starter') === 'pro' || (business.plan ?? 'starter') === 'professional')
+        }
         isWhiteLabelPartner={Boolean((business as { is_partner?: boolean }).is_partner)}
         unseenChangelog={unseenChangelog}
       >

@@ -54,16 +54,20 @@ interface EscalationConfig {
 
 export async function POST(request: Request) {
   // ---- auth -------------------------------------------------------
+  // VAPI_WEBHOOK_SECRET is required — fail-closed. The endpoint used to
+  // permit unauthenticated calls when the env var was missing, which is
+  // a production-time footgun: a misconfigured deploy would expose the
+  // entire Vapi functions surface to anyone who knows the URL.
   const expected = process.env.VAPI_WEBHOOK_SECRET
-  if (expected) {
-    const got = request.headers.get('x-vapi-secret') ?? request.headers.get('authorization') ?? ''
-    const normalized = got.startsWith('Bearer ') ? got.slice(7) : got
-    if (normalized !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!expected) {
+    console.error('[vapi/functions] VAPI_WEBHOOK_SECRET is not configured — refusing request')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 401 })
   }
-  // If VAPI_WEBHOOK_SECRET is unset we permit calls (dev). Production
-  // operators MUST set it.
+  const got = request.headers.get('x-vapi-secret') ?? request.headers.get('authorization') ?? ''
+  const normalized = got.startsWith('Bearer ') ? got.slice(7) : got
+  if (normalized !== expected) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   let body: FnRequest
   try {
@@ -188,9 +192,12 @@ async function getTeam(
     .eq('id', clientId)
     .single()
 
+  // Live transfer requires Growth+. Use an explicit allow-list rather
+  // than `plan !== 'starter'` so legacy / blank / typo plan values
+  // can't silently unlock transfer.
   const transferEnabled =
     !!biz?.call_transfer_enabled &&
-    biz?.plan !== 'starter'
+    ['growth', 'pro', 'professional'].includes((biz?.plan as string | undefined) ?? '')
 
   const { data: rows } = await supabase
     .from('team_members')
@@ -527,11 +534,43 @@ async function activeDriverIds(
   return { onShift, statusByDriver, busyDriverIds }
 }
 
+// Gate every dispatcher Vapi function on (plan ∈ Pro tier) AND
+// dispatch_enabled. Returns null on success, or a Vapi-shaped error
+// object the caller can return directly.
+//
+// Vapi consumes the JSON we return verbatim, so the agent sees the
+// `error` field and can decline gracefully ("Sorry, dispatch isn't
+// available for this business").
+async function assertDispatcherAccess(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+): Promise<{ result: { error: string; message: string } } | null> {
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('plan, dispatch_enabled')
+    .eq('id', clientId)
+    .single()
+  const plan = (biz?.plan as string | undefined) ?? 'starter'
+  const isPro = plan === 'pro' || plan === 'professional'
+  if (!isPro || !biz?.dispatch_enabled) {
+    return {
+      result: {
+        error: 'dispatcher_not_enabled',
+        message: 'Dispatcher is available on the Pro plan only.',
+      },
+    }
+  }
+  return null
+}
+
 async function checkDispatchAvailability(
   supabase: ReturnType<typeof createAdminClient>,
   clientId: string,
   params: Record<string, unknown>,
 ) {
+  const gate = await assertDispatcherAccess(supabase, clientId)
+  if (gate) return gate
+
   const jobType = String(params.job_type ?? '').trim()
   const timing = String(params.timing ?? 'now').trim()
   if (!jobType) {
@@ -661,6 +700,9 @@ async function getJobTypes(
   supabase: ReturnType<typeof createAdminClient>,
   clientId: string,
 ) {
+  const gate = await assertDispatcherAccess(supabase, clientId)
+  if (gate) return gate
+
   const { data: biz } = await supabase
     .from('businesses')
     .select('dispatch_config')
@@ -698,6 +740,9 @@ async function createDispatchJob(
   clientId: string,
   params: Record<string, unknown>,
 ) {
+  const gate = await assertDispatcherAccess(supabase, clientId)
+  if (gate) return gate
+
   const jobType = String(params.job_type ?? '').trim()
   const callerPhone = String(params.caller_phone ?? '').trim()
   if (!jobType || !callerPhone) {

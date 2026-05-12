@@ -29,3 +29,42 @@ export async function requireClient(): Promise<
   }
   return { ok: true, supabase, clientId: biz.id as string, userId: user.id }
 }
+
+// Dispatch is a Pro-only feature gated by both:
+//   - businesses.plan in ('pro', 'professional')
+//   - businesses.dispatch_enabled = true
+//
+// Every /api/portal/dispatch/*, /api/portal/vehicles, /api/portal/drivers
+// handler should call this instead of requireClient() so neither check
+// can be forgotten on a new sub-route.
+export async function requireDispatchAccess(): Promise<
+  | { error: NextResponse }
+  | { ok: true; supabase: Awaited<ReturnType<typeof createClient>>; clientId: string; userId: string }
+> {
+  const base = await requireClient()
+  if ('error' in base) return base
+  const { supabase, clientId } = base
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('plan, dispatch_enabled')
+    .eq('id', clientId)
+    .maybeSingle()
+
+  const plan = (biz?.plan as string | undefined) ?? 'starter'
+  const isPro = plan === 'pro' || plan === 'professional'
+  const enabled = !!biz?.dispatch_enabled
+
+  if (!isPro || !enabled) {
+    return {
+      error: NextResponse.json(
+        {
+          error: 'dispatcher_not_enabled',
+          message: 'Dispatcher is available on the Pro plan only.',
+        },
+        { status: 403 },
+      ),
+    }
+  }
+  return base
+}

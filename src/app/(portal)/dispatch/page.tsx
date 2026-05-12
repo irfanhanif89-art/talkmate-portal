@@ -20,7 +20,10 @@ export default async function DispatchPage() {
 
   const plan = (business.plan as string) ?? 'starter'
   const industry = (business.industry as string) ?? ''
-  const isPaidTier = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  // Dispatcher is a Pro-tier feature. Anything below Pro hits the
+  // upgrade notice in DispatchBoard regardless of whether dispatch_enabled
+  // is set on the row.
+  const isPaidTier = plan === 'pro' || plan === 'professional'
   const isDispatchIndustry = industry === 'towing'
 
   return (

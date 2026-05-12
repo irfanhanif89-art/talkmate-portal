@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 const VALID_KEYS = new Set([
   'job_types', 'default_wait_minutes', 'auto_wait_calculation',
@@ -7,7 +7,7 @@ const VALID_KEYS = new Set([
 ])
 
 export async function GET() {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 
@@ -27,7 +27,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 

@@ -4,7 +4,12 @@ import { useState } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js'
 
-const stripePromise = loadStripe('pk_live_51NbbW7CzrOLgF5MUozZxFYByT5Pd71yoSnv4aVcPb9c0uRRyvD36q5jvijBNk3tJ9iEXnp1PVCveDhE1fjKGJba00zFkyvFpQ')
+// Publishable key reads from env so rotation never needs a code change.
+// `loadStripe(null)` is allowed by the SDK and degrades gracefully —
+// the embedded checkout component shows an error if the key is missing
+// rather than crashing the bundle at import time.
+const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
+const stripePromise = STRIPE_PK ? loadStripe(STRIPE_PK) : Promise.resolve(null)
 
 const Logo = () => (
   <svg width="140" height="42" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">

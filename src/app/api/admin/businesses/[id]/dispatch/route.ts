@@ -55,11 +55,23 @@ export async function PATCH(
 
   const admin = createAdminClient()
   const { data: existing } = await admin
-    .from('businesses').select('dispatch_config').eq('id', id).single()
+    .from('businesses').select('dispatch_config, plan').eq('id', id).single()
   const current = (existing?.dispatch_config ?? {}) as Record<string, unknown>
+  const currentPlan = (existing?.plan as string | undefined) ?? 'starter'
 
   const update: Record<string, unknown> = {}
-  if (typeof body.dispatch_enabled === 'boolean') update.dispatch_enabled = body.dispatch_enabled
+  if (typeof body.dispatch_enabled === 'boolean') {
+    // Dispatcher is Pro-only. Admins can disable on any plan, but can
+    // only enable on Pro / Professional. Mirrors the runtime gate so an
+    // accidental toggle here can't unlock the feature on Growth.
+    if (body.dispatch_enabled === true && currentPlan !== 'pro' && currentPlan !== 'professional') {
+      return NextResponse.json(
+        { ok: false, error: 'Dispatcher is available on Pro plan only.' },
+        { status: 403 },
+      )
+    }
+    update.dispatch_enabled = body.dispatch_enabled
+  }
   if (body.dispatch_config && typeof body.dispatch_config === 'object') {
     const incoming = body.dispatch_config as Record<string, unknown>
     const merged: Record<string, unknown> = { ...current }

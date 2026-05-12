@@ -41,8 +41,16 @@ async function shouldBlockPortalAccess(userId: string): Promise<boolean> {
 
 async function needsAdminTosGate(userId: string): Promise<boolean> {
   try {
+    // Filter out cancelled/expired rows and prefer the newest remaining
+    // row. Picking bizData[0] from an unordered query that included
+    // a stale cancelled duplicate (with onboarded_by='admin' and
+    // tos_accepted_at = null) used to wrongly force the user through
+    // /accept-terms even when their live row had already accepted.
     const bizRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=id,onboarded_by,tos_accepted_at`,
+      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}` +
+      `&select=id,onboarded_by,tos_accepted_at` +
+      `&account_status=not.in.(cancelled,expired)` +
+      `&order=created_at.desc`,
       { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
     )
     const bizData: { id: string; onboarded_by: string | null; tos_accepted_at: string | null }[] = await bizRes.json()

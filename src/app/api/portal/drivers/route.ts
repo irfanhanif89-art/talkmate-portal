@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 // GET — list drivers with the latest availability override per driver.
 // POST — create a new driver.
 
 export async function GET() {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
@@ -36,7 +36,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>

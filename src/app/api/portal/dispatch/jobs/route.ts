@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 const VALID_STATUS = new Set(['pending', 'assigned', 'in_progress', 'complete', 'cancelled', 'declined'])
 
 export async function GET(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 // Insert a new availability override for the driver. The most recent
 // row (by updated_at) wins when other systems read availability.
@@ -7,7 +7,7 @@ import { requireClient } from '@/lib/portal-auth'
 const VALID_STATUS = new Set(['available', 'on_job', 'unavailable', 'off_shift'])
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
   const { id } = await params

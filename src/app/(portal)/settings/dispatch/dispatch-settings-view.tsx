@@ -68,10 +68,12 @@ export default function DispatchSettingsView({
     } finally { setSaving(false) }
   }
 
-  if (industry !== 'towing' || plan === 'starter' || !dispatchEnabled) {
+  // Dispatcher is Pro-only.
+  const isPro = plan === 'pro' || plan === 'professional'
+  if (industry !== 'towing' || !isPro || !dispatchEnabled) {
     return (
       <div style={{ padding: 24, borderRadius: 12, background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', color: '#7BAED4', fontSize: 14 }}>
-        Dispatch settings appear once your account has dispatch enabled. <a href="/settings" style={{ color: '#4A9FE8' }}>Back to settings</a>
+        Dispatch settings appear once your account has dispatch enabled on the Pro plan. <a href="/settings" style={{ color: '#4A9FE8' }}>Back to settings</a>
       </div>
     )
   }

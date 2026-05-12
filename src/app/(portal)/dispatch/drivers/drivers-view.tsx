@@ -48,10 +48,12 @@ export default function DriversView({
     if (res.ok) { setDrivers(list => list.filter(x => x.id !== id)); showToast('Removed') }
   }
 
-  if (industry !== 'towing' || (plan === 'starter') || !dispatchEnabled) {
+  // Dispatcher is Pro-only.
+  const isPro = plan === 'pro' || plan === 'professional'
+  if (industry !== 'towing' || !isPro || !dispatchEnabled) {
     return (
       <div style={{ padding: 24, borderRadius: 12, background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', color: '#7BAED4', fontSize: 14 }}>
-        Driver management is available for towing businesses on the Growth plan. <a href="/dispatch" style={{ color: '#4A9FE8' }}>Open dispatch board →</a>
+        Driver management is available for towing businesses on the Pro plan. <a href="/dispatch" style={{ color: '#4A9FE8' }}>Open dispatch board →</a>
       </div>
     )
   }

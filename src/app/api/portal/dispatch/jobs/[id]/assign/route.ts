@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { requireClient } from '@/lib/portal-auth'
+import { requireDispatchAccess } from '@/lib/portal-auth'
 
 // Assign a driver (and their vehicle) to an existing job. Also flips
 // the driver's availability row to on_job so subsequent dispatch
 // checks won't double-book them.
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireClient()
+  const auth = await requireDispatchAccess()
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
   const { id } = await params
