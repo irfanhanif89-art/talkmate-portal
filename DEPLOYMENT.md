@@ -1,8 +1,73 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## HOTFIX — Duplicate-owner DB guard + stronger phone-dup warnings (2026-05-12)
+
+Prevents the same `auth.users` row ending up with two `businesses`
+records — the underlying cause of the login-loop incident where a
+"cancelled" client could still be hit by an active session pointing at
+the old row.
+
+### Migration — `supabase/migrations/025_businesses_owner_unique.sql`
+
+Apply in the Supabase SQL editor **after** running the pre-flight
+duplicate check below. Idempotent.
+
+**Pre-flight (REQUIRED before applying):**
+
+```sql
+SELECT owner_user_id, COUNT(*)
+FROM businesses
+WHERE owner_user_id IS NOT NULL
+GROUP BY owner_user_id
+HAVING COUNT(*) > 1;
+```
+
+If any rows come back, **stop** and report them to Irfan — merge or
+null out the stale rows manually before continuing. The migration's
+`ADD CONSTRAINT … UNIQUE` will fail loudly on duplicates, which is the
+desired safe-stop behaviour.
+
+**Schema changes:**
+
+1. `businesses.owner_user_id` — `NOT NULL` is dropped.
+2. New CHECK constraint `owner_user_id_required_when_active`:
+   `account_status IN ('cancelled', 'expired') OR owner_user_id IS NOT NULL`.
+   Active rows still must have an owner; cancelled/expired can be
+   nulled so a stale link can never strand a user.
+3. New UNIQUE constraint `businesses_owner_user_id_unique` on
+   `owner_user_id`. Postgres treats multiple NULLs as distinct, so any
+   number of cancelled/expired rows can sit at NULL without colliding.
+
+**Operational follow-up:** on cancellation, set `owner_user_id = NULL`
+on the businesses row so the same auth user can sign up again later
+without the unique constraint blocking them.
+
+### UI changes — duplicate phone warning (admin modal + signup)
+
+`/api/admin/clients/create` and `/api/auth/signup` now return
+`existing_business_status` alongside `existing_business_name` on the
+soft phone-duplicate 409 response. Both the admin **Create client**
+modal (`src/app/(portal)/admin/clients/create-client-modal.tsx`) and
+the public signup page (`src/app/signup/signup-client.tsx`) now show
+a **red** warning banner (was amber) when a duplicate is detected:
+
+- Header reads `⚠ WARNING: Duplicate phone number`.
+- Body lists the existing business name **and status** and the
+  consequence (login issues).
+- **Create anyway** is disabled until the user types the literal
+  word `CONFIRM` into a text field. Button is red when armed,
+  greyed-out otherwise.
+
+Trade-off: this adds friction for the rare legitimate case where one
+owner runs two businesses on the same phone. That friction is
+intentional — the typing gate stops a panicked second signup from
+silently breaking a working login.
 
 ---
 
