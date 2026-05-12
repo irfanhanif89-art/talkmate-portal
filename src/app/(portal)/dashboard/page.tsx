@@ -15,7 +15,7 @@ export default async function DashboardPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours, industry, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
+    .select('id, name, phone_number, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours, industry, notifications_config, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
     .eq('owner_user_id', user.id)
     .single()
 
@@ -95,16 +95,53 @@ export default async function DashboardPage() {
     .from('calls').select('*').eq('business_id', business.id)
     .order('created_at', { ascending: false }).limit(5)
 
-  // Onboarding progress — derived from existing onboarding_responses + businesses fields.
+  // Onboarding progress — derived from canonical businesses fields,
+  // notifications_config (where admin-created data lands), and the
+  // wizard's saved responses. A step is "done" if the underlying data
+  // exists anywhere — admin-entered data must mark its step complete
+  // even if the client never opened the wizard.
   const { data: onboardingRow } = await supabase
     .from('onboarding_responses').select('responses, completed_at').eq('business_id', business.id).maybeSingle()
   const responses = (onboardingRow?.responses ?? {}) as Record<string, unknown>
+  const cfg = (business.notifications_config ?? {}) as Record<string, unknown>
+  const hasCfgHours = !!cfg.opening_hours && typeof cfg.opening_hours === 'object'
+    && Object.keys(cfg.opening_hours as object).length > 0
+  const hasTopHours = !!business.opening_hours && typeof business.opening_hours === 'object'
+    && Object.keys(business.opening_hours as object).length > 0
+  const hasCfgServices = Array.isArray(cfg.services) && (cfg.services as unknown[]).length > 0
+  const hasCfgEscalation = (typeof cfg.after_hours_instruction === 'string' && (cfg.after_hours_instruction as string).trim() !== '')
+    || (typeof cfg.escalation_rules === 'string' && (cfg.escalation_rules as string).trim() !== '')
   const onboardingSteps = [
-    { key: 'business', label: 'Business details', done: !!business.address || !!responses.businessName, href: '/onboarding' },
-    { key: 'hours', label: 'Operating hours', done: !!business.opening_hours && Object.keys(business.opening_hours as object).length > 0, href: '/onboarding' },
-    { key: 'menu', label: 'Services & menu', done: !!responses.catalog || !!responses.catalogItems, href: '/catalog' },
-    { key: 'handling', label: 'Call handling', done: !!business.escalation_number || !!responses.escalationRules, href: '/onboarding' },
-    { key: 'connect', label: 'Connect your number', done: !!business.talkmate_number, href: '/onboarding' },
+    {
+      key: 'business',
+      label: 'Business details',
+      done: !!business.name || !!business.phone_number || !!business.address || !!responses.businessName,
+      href: '/onboarding',
+    },
+    {
+      key: 'hours',
+      label: 'Operating hours',
+      done: hasTopHours || hasCfgHours || (!!responses.openingHours && Object.keys((responses.openingHours as object) ?? {}).length > 0),
+      href: '/onboarding',
+    },
+    {
+      key: 'menu',
+      label: 'Services & menu',
+      done: hasCfgServices || !!responses.catalog || !!responses.catalogItems,
+      href: '/catalog',
+    },
+    {
+      key: 'handling',
+      label: 'Call handling',
+      done: !!business.escalation_number || !!responses.escalationRules || hasCfgEscalation,
+      href: '/onboarding',
+    },
+    {
+      key: 'connect',
+      label: 'Connect your number',
+      done: !!business.talkmate_number,
+      href: '/onboarding',
+    },
   ]
 
   // Welcome message: prefer the auth user's first name, then fall back to the

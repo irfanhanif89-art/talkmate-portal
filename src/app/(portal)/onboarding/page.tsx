@@ -163,26 +163,67 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id, business_type').eq('owner_user_id', user.id).single()
-      if (biz) {
-        setBizId(biz.id)
-        setBizType(biz.business_type as BusinessType)
-        // Hours and notification defaults are industry-agnostic. Catalog and
-        // FAQ defaults are seeded by the industry pre-fill effect below so we
-        // don't double-seed and clobber pre-fills.
-        if (!responses.openingHours) setResponse('openingHours', defaultHours)
-        if (!responses.notifications) setResponse('notifications', defaultNotifs)
-        if (!responses.catalog && !INDUSTRY_LIBRARY[(responses.industry as string) || '']) {
-          setResponse('catalog', defaultCatalog)
+      // /api/onboarding/state merges the wizard's saved responses with the
+      // canonical fields the admin can write to (businesses columns +
+      // notifications_config). Without this hydration, an admin-created
+      // client opens the wizard to blank fields even though the data exists
+      // in the database — see api/onboarding/state/route.ts header.
+      let serverResponses: Record<string, unknown> | null = null
+      try {
+        const res = await fetch('/api/onboarding/state', { cache: 'no-store' })
+        const data = await res.json()
+        if (data?.ok) {
+          setBizId(data.business_id)
+          setBizType((data.business_type ?? 'other') as BusinessType)
+          serverResponses = (data.responses ?? null) as Record<string, unknown> | null
+          if (typeof data.current_step === 'number' && data.current_step > currentStep) {
+            setStep(data.current_step)
+          }
         }
-        if (!responses.faqs && !INDUSTRY_LIBRARY[(responses.industry as string) || '']) {
-          setResponse('faqs', defaultFaqs)
+      } catch (e) {
+        console.error('[onboarding] state hydrate failed', e)
+      }
+
+      // Fallback path — keep the wizard usable if the new endpoint fails.
+      if (!serverResponses) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const { data: biz } = await supabase.from('businesses').select('id, business_type').eq('owner_user_id', user.id).single()
+        if (biz) {
+          setBizId(biz.id)
+          setBizType(biz.business_type as BusinessType)
         }
+      }
+
+      // Apply server-merged fields onto the Zustand store. We only set keys
+      // that aren't already populated locally — preserves any work the user
+      // has typed in the current step but not yet saved via Next.
+      if (serverResponses) {
+        for (const [k, v] of Object.entries(serverResponses)) {
+          const local = responses[k]
+          const localEmpty =
+            local === undefined || local === null || local === '' ||
+            (Array.isArray(local) && local.length === 0) ||
+            (typeof local === 'object' && !Array.isArray(local) && Object.keys(local as object).length === 0)
+          if (localEmpty) setResponse(k, v)
+        }
+      }
+
+      // Final defaults for fields that have no canonical source AND no
+      // industry pre-fill yet.
+      const responsesNow = useOnboardingStore.getState().responses
+      if (!responsesNow.openingHours) setResponse('openingHours', defaultHours)
+      if (!responsesNow.notifications) setResponse('notifications', defaultNotifs)
+      const indNow = (responsesNow.industry as string) || ''
+      if (!responsesNow.catalog && !INDUSTRY_LIBRARY[indNow]) {
+        setResponse('catalog', defaultCatalog)
+      }
+      if (!responsesNow.faqs && !INDUSTRY_LIBRARY[indNow]) {
+        setResponse('faqs', defaultFaqs)
       }
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Industry-aware pre-fill: when the user picks (or changes) an industry on
@@ -234,7 +275,25 @@ export default function OnboardingPage() {
 
   async function save() {
     if (!bizId) return
-    await supabase.from('onboarding_responses').upsert({ business_id: bizId, current_step: currentStep, responses }, { onConflict: 'business_id' })
+    // POST to /api/onboarding/state so the wizard's responses get mirrored
+    // back to the canonical businesses columns + notifications_config —
+    // otherwise admin-side views would lag the wizard.
+    try {
+      const res = await fetch('/api/onboarding/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_step: currentStep, responses }),
+      })
+      if (!res.ok) throw new Error(`save failed: ${res.status}`)
+    } catch (e) {
+      console.error('[onboarding] save failed, falling back to direct upsert', e)
+      // Last-ditch fallback so a transient API issue doesn't lose the
+      // user's progress.
+      await supabase.from('onboarding_responses').upsert(
+        { business_id: bizId, current_step: currentStep, responses },
+        { onConflict: 'business_id' },
+      )
+    }
   }
 
   async function next() {
