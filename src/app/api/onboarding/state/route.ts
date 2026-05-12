@@ -165,7 +165,7 @@ function buildMergedResponses(business: BusinessRow, savedResponses: Record<stri
 }
 
 const BUSINESS_SELECT =
-  'id, name, phone_number, address, website, abn, industry, timezone, business_type, opening_hours, notifications_config, plan, onboarded_by, account_status'
+  'id, name, phone_number, address, website, abn, industry, timezone, business_type, opening_hours, notifications_config, plan, onboarded_by, account_status, talkmate_number'
 
 export async function GET() {
   const supabase = await createClient()
@@ -199,6 +199,12 @@ export async function GET() {
     onboarded_by?: string | null
     account_status?: string | null
   }
+  const bizWithNumber = business as unknown as {
+    plan?: string | null
+    onboarded_by?: string | null
+    account_status?: string | null
+    talkmate_number?: string | null
+  }
   return NextResponse.json({
     ok: true,
     business_id: business.id,
@@ -206,6 +212,7 @@ export async function GET() {
     plan: bizExtras.plan ?? 'starter',
     onboarded_by: bizExtras.onboarded_by ?? null,
     account_status: bizExtras.account_status ?? null,
+    talkmate_number: bizWithNumber.talkmate_number ?? null,
     current_step: onboardingRow?.current_step ?? 1,
     completed_at: onboardingRow?.completed_at ?? null,
     responses: merged,

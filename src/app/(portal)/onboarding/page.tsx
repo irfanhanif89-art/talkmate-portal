@@ -136,6 +136,7 @@ export default function OnboardingPage() {
   const [bizPlan, setBizPlan] = useState<string>('starter')
   const [bizOnboardedBy, setBizOnboardedBy] = useState<string | null>(null)
   const [bizAccountStatus, setBizAccountStatus] = useState<string | null>(null)
+  const [bizTalkmateNumber, setBizTalkmateNumber] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadDone, setUploadDone] = useState(false)
   const [agreed, setAgreed] = useState(false)
@@ -188,6 +189,9 @@ export default function OnboardingPage() {
           }
           if (typeof data.account_status === 'string' || data.account_status === null) {
             setBizAccountStatus(data.account_status ?? null)
+          }
+          if (typeof data.talkmate_number === 'string' && data.talkmate_number.trim()) {
+            setBizTalkmateNumber(data.talkmate_number.trim())
           }
           serverResponses = (data.responses ?? null) as Record<string, unknown> | null
           if (typeof data.current_step === 'number' && data.current_step > currentStep) {
@@ -1028,14 +1032,14 @@ export default function OnboardingPage() {
 
               <div style={{ background: 'linear-gradient(135deg,rgba(232,98,42,0.12),rgba(74,159,232,0.08))', border: '1.5px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: 28, textAlign: 'center', marginBottom: 20 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 8 }}>Your dedicated AI mobile number</div>
-                <div style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: 2, color: 'white', marginBottom: 8 }}>+61 489 274 531</div>
+                <div style={{ fontSize: '2.2rem', fontWeight: 800, letterSpacing: 2, color: 'white', marginBottom: 8 }}>{bizTalkmateNumber ?? 'Being assigned — check back soon'}</div>
                 <div style={{ fontSize: 13, color: '#4A7FBB' }}>Australian mobile · Active now · Can send & receive SMS</div>
               </div>
 
               <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#4A9FE8', marginBottom: 14 }}>📋 How to divert your calls — 3 steps</div>
                 {[
-                  ['Divert ALL calls to your AI number', 'On your phone, dial: ', '**21*+61489274531#', ' then press Call'],
+                  ['Divert ALL calls to your AI number', 'On your phone, dial: ', bizTalkmateNumber ? `**21*${bizTalkmateNumber.replace(/\s/g,'')}#` : '(number being assigned)', ' then press Call'],
                   ['Test the divert', 'Call your business number from another phone — your AI should answer within 2 rings', '', ''],
                   ["You're done", 'Watch calls appear on your dashboard in real time', '', ''],
                 ].map(([title, desc, code, after], i) => (
@@ -1070,7 +1074,7 @@ export default function OnboardingPage() {
               <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 24, textAlign: 'left' }}>
                 {[
                   ['Business', (responses.businessName as string) || '—'],
-                  ['AI Number', '+61 489 274 531'],
+                  ['AI Number', bizTalkmateNumber ?? 'Being assigned'],
                   ['Voice', voices.find(v => v.id === voice)?.name || 'Sarah'],
                   ['Plan', `${getPlan(bizPlan).label} · $${getPlan(bizPlan).monthlyPrice}/month`],
                   ['Status', '🟢 Live & Active'],
