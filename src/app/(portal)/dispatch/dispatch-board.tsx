@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import AddressAutocomplete from '@/components/portal/address-autocomplete'
 
 interface Vehicle { id: string; name: string; type: string; capabilities: string[] }
 interface Driver {
@@ -346,6 +347,7 @@ function CreateJobModal({
   const [callerName, setCallerName] = useState('')
   const [callerPhone, setCallerPhone] = useState('')
   const [pickup, setPickup] = useState('')
+  const [dropoff, setDropoff] = useState('')
   const [vehicleDescription, setVehicleDescription] = useState('')
   const [notes, setNotes] = useState('')
   const [timing, setTiming] = useState<'now' | 'scheduled'>('now')
@@ -363,6 +365,7 @@ function CreateJobModal({
           caller_name: callerName,
           caller_phone: callerPhone,
           pickup_address: pickup,
+          dropoff_address: dropoff || null,
           vehicle_description: vehicleDescription,
           notes,
           timing,
@@ -396,7 +399,12 @@ function CreateJobModal({
       )}
       <Field label="Caller name"><input value={callerName} onChange={e => setCallerName(e.target.value)} style={inputStyle} /></Field>
       <Field label="Caller phone"><input value={callerPhone} onChange={e => setCallerPhone(e.target.value)} style={inputStyle} /></Field>
-      <Field label="Pickup address"><input value={pickup} onChange={e => setPickup(e.target.value)} style={inputStyle} /></Field>
+      <Field label="Pickup address">
+        <AddressAutocomplete value={pickup} onChange={setPickup} placeholder="Start typing pickup address…" style={inputStyle} />
+      </Field>
+      <Field label="Dropoff address (optional)">
+        <AddressAutocomplete value={dropoff} onChange={setDropoff} placeholder="Start typing dropoff address…" style={inputStyle} />
+      </Field>
       <Field label="Vehicle (make / model / colour)"><input value={vehicleDescription} onChange={e => setVehicleDescription(e.target.value)} style={inputStyle} /></Field>
       <Field label="Notes"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'vertical' as const }} /></Field>
       {err && <ErrBox>{err}</ErrBox>}

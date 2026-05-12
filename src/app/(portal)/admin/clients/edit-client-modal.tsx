@@ -10,6 +10,7 @@ import ServicesEditor, { type Service } from '@/components/portal/services-edito
 import { TrialManagementPanel, OnboardingCompleteButton } from './trial-panel'
 import { AdminTeamTab, AdminCallRoutingTab, AdminBookingsTab } from './admin-feature-tabs'
 import { AdminDispatcherTab } from './admin-dispatcher-tab'
+import AddressAutocomplete from '@/components/portal/address-autocomplete'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -406,7 +407,19 @@ function DetailsTab({
       <Grid>
         <Field label="Business name"><Input value={form.business_name} onChange={v => setForm(f => ({ ...f, business_name: v }))} /></Field>
         <Field label="Phone"><Input value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} /></Field>
-        <Field label="Address"><Input value={form.address} onChange={v => setForm(f => ({ ...f, address: v }))} /></Field>
+        <Field label="Address">
+          <AddressAutocomplete
+            value={form.address}
+            onChange={v => setForm(f => ({ ...f, address: v }))}
+            placeholder="Start typing an address…"
+            style={{
+              width: '100%', padding: '10px 14px', borderRadius: 8,
+              background: '#071829', border: '1px solid rgba(255,255,255,0.1)',
+              color: 'white', fontSize: 13, fontFamily: 'Outfit, sans-serif',
+              boxSizing: 'border-box' as const,
+            }}
+          />
+        </Field>
         <Field label="Website"><Input value={form.website} onChange={v => setForm(f => ({ ...f, website: v }))} /></Field>
         <Field label="ABN"><Input value={form.abn} onChange={v => setForm(f => ({ ...f, abn: v }))} /></Field>
         <Field label="Industry">

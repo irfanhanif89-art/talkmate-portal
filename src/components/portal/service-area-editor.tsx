@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import AddressAutocomplete from '@/components/portal/address-autocomplete'
 
 export type ServiceArea = {
   base_address?: string
@@ -41,6 +42,10 @@ const inp: React.CSSProperties = {
   boxSizing: 'border-box',
 }
 
+// Geocoder kept for the map preview, but errors no longer surface to
+// the user — Google Places Autocomplete is the source of truth for
+// "is this a real address?". Nominatim's miss rate on legitimate AU
+// addresses was triggering false-positive validation errors.
 async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=au&limit=1`
@@ -94,24 +99,24 @@ function MapEmbed({ lat, lng, radiusKm }: { lat: number; lng: number; radiusKm: 
 
 export default function ServiceAreaEditor({ value, businessAddress, onChange }: Props) {
   const [geocoding, setGeocoding] = useState(false)
-  const [geocodeError, setGeocodeError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const address = value.base_address ?? businessAddress ?? ''
   const radiusKm = value.radius_km ?? 100
 
-  // Auto-geocode when address changes
+  // Auto-geocode when address changes — only used to position the map
+  // preview. A geocoder miss no longer surfaces as a validation error
+  // (Google Places Autocomplete already validates the address as the
+  // user picks it from the dropdown).
   useEffect(() => {
     if (!address) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
-      setGeocoding(true); setGeocodeError('')
+      setGeocoding(true)
       const coords = await geocodeAddress(address)
       setGeocoding(false)
       if (coords) {
         onChange({ ...value, base_address: address, lat: coords.lat, lng: coords.lng })
-      } else {
-        setGeocodeError('Could not locate address — check spelling or try a suburb + state')
       }
     }, 800)
   }, [address]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -136,17 +141,16 @@ export default function ServiceAreaEditor({ value, businessAddress, onChange }: 
         📍 Service Area
       </div>
 
-      {/* Base address */}
+      {/* Base address — Google Places Autocomplete (AU-restricted) */}
       <div style={{ marginBottom: 16 }}>
         <label style={lbl}>Depot / Base address</label>
-        <input
+        <AddressAutocomplete
           style={inp}
           value={address}
-          onChange={e => setAddress(e.target.value)}
-          placeholder="123 Main St, Brisbane QLD 4000"
+          onChange={setAddress}
+          placeholder="Start typing an address…"
         />
         {geocoding && <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 5 }}>📍 Locating address…</p>}
-        {geocodeError && <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 5 }}>⚠️ {geocodeError}</p>}
       </div>
 
       {/* Radius picker */}

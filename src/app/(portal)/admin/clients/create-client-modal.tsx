@@ -5,6 +5,7 @@ import { AdminBusiness, PartnerOption, PLAN_OPTIONS, planLabel } from './types'
 import { INDUSTRY_LIBRARY } from '@/lib/industryLibrary'
 import ServicesEditor from '@/components/portal/services-editor'
 import { type Service } from '@/lib/service-templates'
+import AddressAutocomplete from '@/components/portal/address-autocomplete'
 // Service type re-exported for pricingServices state
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -397,7 +398,7 @@ export default function CreateClientModal({
           <Input value={abn} onChange={setAbn} />
         </Field>
         <Field label="Address">
-          <Input value={address} onChange={setAddress} />
+          <AddressAutocomplete value={address} onChange={setAddress} placeholder="Start typing an address…" style={inpStyle} />
         </Field>
         <Field label="Website">
           <Input value={website} onChange={setWebsite} type="url" />
