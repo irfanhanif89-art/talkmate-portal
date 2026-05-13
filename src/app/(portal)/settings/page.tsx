@@ -326,14 +326,17 @@ export default function SettingsPage() {
             <textarea value={escalation} onChange={e => setEscalation(e.target.value)} rows={4} style={ta} />
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <ServicePricingEditor value={servicePricing} onChange={async (v) => {
-              setServicePricing(v)
-              if (!bizId) return
-              const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
-              await supabase.from('businesses').update({ notifications_config: { ...cfg, service_pricing: v } }).eq('id', bizId)
-            }} />
-          </div>
+          {/* Only show ServicePricingEditor if it has data — hides empty template for clients */}
+          {Object.keys(servicePricing).length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <ServicePricingEditor value={servicePricing} onChange={async (v) => {
+                setServicePricing(v)
+                if (!bizId) return
+                const cfg = (biz as Record<string, unknown>).notifications_config as Record<string, unknown> ?? {}
+                await supabase.from('businesses').update({ notifications_config: { ...cfg, service_pricing: v } }).eq('id', bizId)
+              }} />
+            </div>
+          )}
 
           {loadedServices && (
             <div style={{ marginBottom: 16 }}>

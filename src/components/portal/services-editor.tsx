@@ -270,7 +270,8 @@ export default function ServicesEditor({
         {services.map(s => {
           const canEditName = mode === 'admin' || s.custom
           const canEditUnit = mode === 'admin' || s.custom
-          const canDelete = mode === 'admin' ? s.custom : s.custom
+          // Client mode: allow deleting any row (they know which services they offer)
+          const canDelete = mode === 'admin' ? s.custom : true
           return (
             <div
               key={s.id}
