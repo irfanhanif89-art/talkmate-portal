@@ -56,6 +56,7 @@ export default function SettingsPage() {
   const [services, setServices] = useState<Service[] | null>(null)
   const [tradeType, setTradeType] = useState<string | null>(null)
   const [forwardTo, setForwardTo] = useState('')
+  const [rawServices, setRawServices] = useState<Array<{name: string; price?: number; category?: string; description?: string}> | null>(null)
   const [industry, setIndustry] = useState<string | null>(null)
   const [loadedServices, setLoadedServices] = useState(false)
   const [savingServices, setSavingServices] = useState(false)
@@ -90,11 +91,14 @@ export default function SettingsPage() {
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
       setIndustry((biz.industry as string) ?? null)
       setTradeType((biz.trade_type as string | null) ?? null)
-      // Prefer notifications_config.services (detailed price list) over businesses.services (generic template)
-      const cfgServices = Array.isArray(cfg.services) ? cfg.services as Service[] : null
+      // businesses.services = generic template with prices (ServicesEditor)
       const bizServices = Array.isArray(biz.services) ? biz.services as Service[] : []
-      setServices(cfgServices ?? bizServices)
+      setServices(bizServices)
       setLoadedServices(true)
+      // notifications_config.services = detailed custom price list (separate display)
+      if (Array.isArray(cfg.services) && (cfg.services as unknown[]).length > 0) {
+        setRawServices(cfg.services as Array<{name: string; price?: number; category?: string; description?: string}>)
+      }
       // Populate escalation, FAQs, forwarding, voice, and notification settings from DB
       setEscalation((cfg.escalation_rules as string) || escalation)
       setForwardTo((cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || '')
@@ -342,6 +346,28 @@ export default function SettingsPage() {
               />
             </div>
           )}
+
+          {rawServices && rawServices.length > 0 && (() => {
+            const grouped: Record<string, typeof rawServices> = {}
+            rawServices.forEach(s => { const cat = s.category || 'Other'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(s) })
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <label style={lbl}>Configured Price List</label>
+                <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: 0 }}>Your custom pricing configured by TalkMate. Contact us to update.</p>
+                {Object.entries(grouped).map(([cat, items]) => (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{cat}</div>
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#071829', borderRadius: 8, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{item.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: item.price ? '#22C55E' : '#4A7FBB', flexShrink: 0, marginLeft: 12 }}>{item.price ? '$' + item.price : 'POA'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
           <div style={{ marginBottom: 28 }}>
             <ServiceAreaEditor
               value={serviceArea}
