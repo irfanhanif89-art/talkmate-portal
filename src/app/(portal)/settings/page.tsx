@@ -92,6 +92,24 @@ export default function SettingsPage() {
       const savedServices = Array.isArray(biz.services) ? biz.services as Service[] : []
       setServices(savedServices)
       setLoadedServices(true)
+      // Populate escalation, FAQs, forwarding, voice, and notification settings from DB
+      setEscalation((cfg.escalation_rules as string) || escalation)
+      if (Array.isArray(cfg.faqs) && (cfg.faqs as unknown[]).length > 0) {
+        setFaqs((cfg.faqs as Array<{question: string; answer: string}>).map(f => ({ q: f.question, a: f.answer })))
+      }
+      setVoice((biz.voice as string) || 'sarah')
+      setNotifs({
+        emailOnTransfer: (cfg.email_on_transfer as boolean) ?? true,
+        dailySummary: (cfg.daily_summary as boolean) ?? true,
+        weeklyReport: (cfg.weekly_report as boolean) ?? true,
+        email: (cfg.notification_email as string) || '',
+        whatsapp: !!(cfg.whatsapp_number as string),
+        whatsappNum: (cfg.whatsapp_number as string) || '',
+        telegram: !!(cfg.telegram_chat_id as string),
+        telegramUser: (cfg.telegram_chat_id as string) || '',
+        urgentCall: !!(cfg.urgent_call_number as string),
+        urgentNum: (cfg.urgent_call_number as string) || '',
+      })
     }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
@@ -130,12 +148,22 @@ export default function SettingsPage() {
 
   async function syncAI() {
     setSyncing(true)
-    // save agent_name and greeting to businesses table first
+    // save agent_name, greeting, escalation rules, and FAQs to DB first
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: b } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+      const { data: b } = await supabase.from('businesses').select('id, notifications_config').eq('owner_user_id', user.id).single()
       if (b) {
-        await supabase.from('businesses').update({ greeting, agent_name: agentName }).eq('id', b.id)
+        const existingCfg = ((b as Record<string, unknown>).notifications_config ?? {}) as Record<string, unknown>
+        const faqsToSave = faqs.map(f => ({ question: f.q, answer: f.a }))
+        await supabase.from('businesses').update({
+          greeting,
+          agent_name: agentName,
+          notifications_config: {
+            ...existingCfg,
+            escalation_rules: escalation,
+            faqs: faqsToSave,
+          }
+        }).eq('id', b.id)
       }
     }
     const r = await fetch('/api/vapi/sync', { method: 'POST' })
