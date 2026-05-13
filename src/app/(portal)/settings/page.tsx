@@ -92,14 +92,36 @@ export default function SettingsPage() {
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
       setIndustry((biz.industry as string) ?? null)
       setTradeType((biz.trade_type as string | null) ?? null)
-      // businesses.services = generic template with prices (ServicesEditor)
-      const bizServices = Array.isArray(biz.services) ? biz.services as Service[] : []
-      setServices(bizServices)
-      setLoadedServices(true)
-      // notifications_config.services = detailed custom price list (separate display)
-      if (Array.isArray(cfg.services) && (cfg.services as unknown[]).length > 0) {
-        setRawServices(cfg.services as Array<{name: string; price?: number; category?: string; description?: string}>)
+      // Load services into the editor:
+      // Priority 1 — businesses.services (already in Service[] format, saved by client)
+      // Priority 2 — notifications_config.services (admin-entered price list, convert to Service[])
+      // Priority 3 — empty array (ServicesEditor will seed from industry template)
+      const bizServices = Array.isArray(biz.services) && (biz.services as Service[]).length > 0
+        ? biz.services as Service[]
+        : null
+      const cfgServices = Array.isArray(cfg.services) && (cfg.services as unknown[]).length > 0
+        ? (cfg.services as Array<{name: string; price?: number; category?: string; description?: string}>)
+        : null
+
+      if (bizServices && bizServices.length > 0) {
+        // Client has already saved their own list — use it
+        setServices(bizServices)
+      } else if (cfgServices && cfgServices.length > 0) {
+        // Convert admin-entered price list into Service[] for the editor
+        const converted: Service[] = cfgServices.map((s, i) => ({
+          id: `cfg-${i}-${s.name.replace(/\s+/g, '-').toLowerCase()}`,
+          name: s.name,
+          price: s.price != null ? String(s.price) : '',
+          unit: 'per job',
+          enabled: true,
+          custom: false,
+        }))
+        setServices(converted)
+        setRawServices(cfgServices)
+      } else {
+        setServices([])
       }
+      setLoadedServices(true)
       // Populate escalation, FAQs, forwarding, voice, and notification settings from DB
       setEscalation((cfg.escalation_rules as string) || escalation)
       setForwardTo((cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || '')
@@ -353,27 +375,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {rawServices && rawServices.length > 0 && (() => {
-            const grouped: Record<string, typeof rawServices> = {}
-            rawServices.forEach(s => { const cat = s.category || 'Other'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(s) })
-            return (
-              <div style={{ marginBottom: 24 }}>
-                <label style={lbl}>Configured Price List</label>
-                <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: 0 }}>Your custom pricing configured by TalkMate. Contact us to update.</p>
-                {Object.entries(grouped).map(([cat, items]) => (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{cat}</div>
-                    {items.map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#071829', borderRadius: 8, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{item.name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: item.price ? '#22C55E' : '#4A7FBB', flexShrink: 0, marginLeft: 12 }}>{item.price ? '$' + item.price : 'POA'}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )
-          })()}
+          {/* Configured Price List moved into ServicesEditor above */}
           <div style={{ marginBottom: 28 }}>
             <ServiceAreaEditor
               value={serviceArea}
