@@ -55,6 +55,7 @@ export default function SettingsPage() {
   // once the business row arrives so the editor knows whether to seed defaults.
   const [services, setServices] = useState<Service[] | null>(null)
   const [tradeType, setTradeType] = useState<string | null>(null)
+  const [forwardTo, setForwardTo] = useState('')
   const [industry, setIndustry] = useState<string | null>(null)
   const [loadedServices, setLoadedServices] = useState(false)
   const [savingServices, setSavingServices] = useState(false)
@@ -89,11 +90,14 @@ export default function SettingsPage() {
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
       setIndustry((biz.industry as string) ?? null)
       setTradeType((biz.trade_type as string | null) ?? null)
-      const savedServices = Array.isArray(biz.services) ? biz.services as Service[] : []
-      setServices(savedServices)
+      // Prefer notifications_config.services (detailed price list) over businesses.services (generic template)
+      const cfgServices = Array.isArray(cfg.services) ? cfg.services as Service[] : null
+      const bizServices = Array.isArray(biz.services) ? biz.services as Service[] : []
+      setServices(cfgServices ?? bizServices)
       setLoadedServices(true)
       // Populate escalation, FAQs, forwarding, voice, and notification settings from DB
       setEscalation((cfg.escalation_rules as string) || escalation)
+      setForwardTo((cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || '')
       if (Array.isArray(cfg.faqs) && (cfg.faqs as unknown[]).length > 0) {
         setFaqs((cfg.faqs as Array<{question: string; answer: string}>).map(f => ({ q: f.question, a: f.answer })))
       }
@@ -301,6 +305,14 @@ export default function SettingsPage() {
             ))}
             <button onClick={() => setFaqs(f => [...f, { q: '', a: '' }])} style={{ width: '100%', padding: 12, background: 'transparent', border: '1px dashed rgba(74,159,232,0.3)', borderRadius: 10, color: '#4A9FE8', fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>+ Add FAQ</button>
           </div>
+
+          {forwardTo && (
+            <div style={{ marginBottom: 24 }}>
+              <label style={lbl}>Call forwarding number</label>
+              <input value={forwardTo} readOnly style={{ ...inp, opacity: 0.7, cursor: 'default' }} />
+              <p style={{ fontSize: 11, color: '#4A7FBB', marginTop: 6, marginBottom: 0 }}>Calls transferred here when escalation is triggered. Contact TalkMate to update.</p>
+            </div>
+          )}
 
           <div style={{ marginBottom: 24 }}>
             <label style={lbl}>Escalation rules</label>
