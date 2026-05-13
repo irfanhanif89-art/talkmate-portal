@@ -540,7 +540,7 @@ export default function SettingsPage() {
             <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>Get instant call alerts sent directly to your Telegram.</p>
             <div style={{ marginBottom: 20 }}>
               {[
-                'Open Telegram and search for @TalkMateNotifyBot',
+                'Open Telegram and search for @DonnaAssistant2026Bot',
                 'Send /start to the bot',
                 'The bot will reply with your unique Chat ID',
                 'Paste your Chat ID below and save',
