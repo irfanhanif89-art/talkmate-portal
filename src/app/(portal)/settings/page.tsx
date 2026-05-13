@@ -84,9 +84,10 @@ export default function SettingsPage() {
       const biz = b as Record<string, unknown>
       setBiz(biz as Record<string, string>)
       setBizId((biz.id as string) ?? null)
-      setGreeting((biz.greeting as string) || 'Thank you for calling. How can I help you today?')
-      setAgentName((biz.agent_name as string) || '')
       const cfg = (biz.notifications_config ?? {}) as Record<string, unknown>
+      // Agent name + greeting: admin saves to notifications_config; fall back to businesses columns
+      setAgentName((cfg.agent_name as string) || (biz.agent_name as string) || '')
+      setGreeting((cfg.agent_answer_phrase as string) || (biz.greeting as string) || 'Thank you for calling. How can I help you today?')
       setServicePricing((cfg.service_pricing as ServicePricing) ?? {})
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
       setIndustry((biz.industry as string) ?? null)
@@ -168,6 +169,8 @@ export default function SettingsPage() {
           agent_name: agentName,
           notifications_config: {
             ...existingCfg,
+            agent_name: agentName,
+            agent_answer_phrase: greeting,
             escalation_rules: escalation,
             faqs: faqsToSave,
           }
