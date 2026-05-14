@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import PasswordStrength from '@/components/portal/password-strength'
+import { validatePassword as validatePasswordRules } from '@/lib/password'
 
 type Plan = 'starter' | 'growth' | 'pro'
 type SignupType = 'trial' | 'pay_now'
@@ -125,7 +127,10 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Enter a valid email address.'
     if (!phone.trim()) errs.phone = 'Phone number is required.'
     if (!password) errs.password = 'Password is required.'
-    else if (password.length < 8) errs.password = 'Password must be at least 8 characters.'
+    else {
+      const pwErr = validatePasswordRules(password)
+      if (pwErr) errs.password = pwErr
+    }
     if (!industry) errs.industry = 'Choose your industry.'
     setFieldErrors(errs)
     return Object.keys(errs).length === 0
@@ -333,7 +338,7 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
               <Field
                 label="Password"
                 error={fieldErrors.password}
-                hint={password ? <PasswordMeter score={passwordStrength.score} label={passwordStrength.label} /> : 'At least 8 characters.'}
+                hint={password ? null : 'At least 8 characters with one uppercase letter, number, and special character.'}
               >
                 <input
                   type="password"
@@ -343,6 +348,7 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
                   style={inputStyle(!!fieldErrors.password)}
                   disabled={submitting}
                 />
+                <PasswordStrength password={password} />
               </Field>
 
               <Field label="Industry" error={fieldErrors.industry}>

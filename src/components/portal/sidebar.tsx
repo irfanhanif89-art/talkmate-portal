@@ -16,6 +16,7 @@ interface Props {
   businessName: string
   userEmail: string
   userRole: string
+  portalRole?: 'owner' | 'manager' | 'staff'
   plan: string
   callsThisMonth: number
   partnerEarningsThisMonth: number
@@ -36,6 +37,11 @@ export default function PortalSidebar(props: Props) {
   const router = useRouter()
   const planConfig = getPlan(props.plan)
   const [hovering, setHovering] = useState<string | null>(null)
+  // Session 11 — gate sensitive nav items by portal role. Defaults to
+  // 'owner' so admin users + legacy contexts keep full visibility.
+  const portalRole = props.portalRole ?? 'owner'
+  const isOwner = portalRole === 'owner'
+  const isManagerOrOwner = portalRole === 'owner' || portalRole === 'manager'
 
   async function logout() {
     const supabase = createClient()
@@ -80,8 +86,10 @@ export default function PortalSidebar(props: Props) {
         },
         { href: '/contacts/pipeline', label: 'Pipeline', icon: GitBranch, show: !!props.hasPipeline },
         { href: '/catalog', label: 'Services & Menu', icon: FileText, show: true },
-        { href: '/settings', label: 'Agent Settings', icon: Settings, show: true },
-        { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall, show: true },
+        // Agent Settings + Call Routing are config — staff (view-only)
+        // don't get a nav entry. They can still hit /calls etc.
+        { href: '/settings', label: 'Agent Settings', icon: Settings, show: isManagerOrOwner },
+        { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall, show: isManagerOrOwner },
         { href: '/appointments', label: 'Jobs', icon: Calendar, show: true },
       ],
     },
@@ -138,11 +146,18 @@ export default function PortalSidebar(props: Props) {
     {
       label: 'Account',
       items: [
-        { href: '/billing', label: 'Billing', icon: CreditCard, show: true },
+        // Billing is owner-only — managers and staff can't change the plan.
+        { href: '/billing', label: 'Billing', icon: CreditCard, show: isOwner },
         { href: '/profile', label: 'My Profile', icon: UserIcon, show: true },
-        { href: '/settings', label: 'Settings', icon: UserIcon, show: true },
-        { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner },
+        // Security covers MFA, password, and (owner-only) staff invites.
+        // Visible to everyone — staff can change their own password.
+        { href: '/settings/security', label: 'Security', icon: Lock, show: true },
+        // Top-level Settings link kept owner-only; Agent Settings already
+        // lives under "Your Agent" for managers.
+        { href: '/settings', label: 'Settings', icon: UserIcon, show: isOwner },
+        { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner && isOwner },
         { href: '/admin', label: 'Admin', icon: Shield, show: props.userRole === 'admin' },
+        { href: '/admin/audit-log', label: 'Audit Log', icon: FileText, show: props.userRole === 'admin' },
       ],
     },
   ]

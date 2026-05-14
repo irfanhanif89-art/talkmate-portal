@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 const VALID_PLANS = new Set(['starter', 'growth', 'pro'])
 
@@ -36,6 +37,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await admin.from('client_comms_log').insert({
     business_id: id,
     note: `Trial converted to paid on the ${plan} plan.`,
+  })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'trial_converted',
+    businessId: id,
+    businessName: data?.name ?? null,
+    after: { plan, account_status: 'active' },
+    request: req,
   })
 
   return NextResponse.json({ ok: true, business: data })

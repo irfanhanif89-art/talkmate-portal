@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 // Immediately set a trial to 'expired'. Used by the "End trial now" button.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
@@ -26,6 +27,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   await admin.from('client_comms_log').insert({
     business_id: id,
     note: 'Trial ended manually by admin.',
+  })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'trial_ended',
+    businessId: id,
+    businessName: data?.name ?? null,
+    after: { account_status: 'expired' },
+    request: req,
   })
 
   return NextResponse.json({ ok: true, business: data })

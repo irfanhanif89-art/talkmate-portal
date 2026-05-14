@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { postEmailTrigger } from '@/lib/make-webhook'
+import { logAdminAction } from '@/lib/audit'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -68,6 +69,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }).catch(() => {})
     }
   }
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'account_status_changed',
+    businessId: id,
+    businessName: business.name ?? null,
+    after: { account_status: 'cancelled', reason: reason || null },
+    request: req,
+  })
 
   return NextResponse.json({ ok: true })
 }

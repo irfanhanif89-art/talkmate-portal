@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 // Admin GET/PATCH for the per-business dispatch_enabled toggle + the
 // dispatch_config blob. Returns vehicle and driver counts so the
@@ -70,9 +71,35 @@ export async function PATCH(
     return NextResponse.json({ ok: false, error: 'Nothing to update' }, { status: 400 })
   }
 
+  const { data: priorBiz } = await admin
+    .from('businesses').select('name, dispatch_enabled').eq('id', id).maybeSingle()
+
   const { data, error } = await admin
     .from('businesses').update(update).eq('id', id)
     .select('dispatch_enabled, dispatch_config').single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  if (typeof body.dispatch_enabled === 'boolean' && priorBiz?.dispatch_enabled !== body.dispatch_enabled) {
+    await logAdminAction({
+      adminEmail: auth.user.email ?? 'unknown',
+      action: 'dispatch_toggled',
+      businessId: id,
+      businessName: priorBiz?.name ?? null,
+      before: { dispatch_enabled: !!priorBiz?.dispatch_enabled },
+      after: { dispatch_enabled: !!body.dispatch_enabled },
+      request,
+    })
+  } else if (update.dispatch_config) {
+    await logAdminAction({
+      adminEmail: auth.user.email ?? 'unknown',
+      action: 'dispatch_config_updated',
+      businessId: id,
+      businessName: priorBiz?.name ?? null,
+      before: { dispatch_config: current },
+      after: { dispatch_config: update.dispatch_config },
+      request,
+    })
+  }
+
   return NextResponse.json({ ok: true, ...data })
 }

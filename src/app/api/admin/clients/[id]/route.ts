@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { isAdminPlan, requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction, diffFields } from '@/lib/audit'
 
 const ALLOWED_ACCOUNT_STATUS = new Set(['active', 'pending', 'suspended', 'cancelled'])
 // Library-aligned keys (used by the current Create modal) PLUS legacy
@@ -113,8 +114,41 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: false, error: 'nothing to update' }, { status: 400 })
   }
 
+  // Snapshot the columns we're about to touch so we can write a precise
+  // diff to the audit log (only changed fields, before+after values).
+  // notifications_config is excluded — too large/noisy for the log.
+  const auditKeys = Object.keys(update).filter(k => k !== 'notifications_config')
+  // Supabase's TS inference can't narrow a dynamic select() string, so
+  // grab everything for the audit columns we care about and cast.
+  const { data: beforeRaw } = auditKeys.length > 0
+    ? await admin.from('businesses').select('*').eq('id', id).maybeSingle()
+    : { data: null }
+  const before = (beforeRaw ?? null) as Record<string, unknown> | null
+
   const { data, error } = await admin.from('businesses').update(update).eq('id', id).select('*').single()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  // Pick the action name based on the most meaningful change — plan and
+  // account_status get their own dedicated actions for filterability.
+  let action: 'plan_changed' | 'account_status_changed' | 'client_updated' = 'client_updated'
+  if (update.plan && before?.plan !== update.plan) action = 'plan_changed'
+  else if (update.account_status && before?.account_status !== update.account_status) action = 'account_status_changed'
+
+  const { before: beforeDiff, after: afterDiff } = diffFields(
+    before,
+    update as Record<string, unknown>,
+    auditKeys,
+  )
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action,
+    businessId: id,
+    businessName: (data as Record<string, unknown>)?.name as string ?? null,
+    before: beforeDiff,
+    after: afterDiff,
+    request: req,
+  })
 
   return NextResponse.json({ ok: true, business: data })
 }

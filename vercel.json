@@ -13,6 +13,7 @@
     { "path": "/api/cron/onboard-day7",     "schedule": "0 22 * * *"   },
     { "path": "/api/cron/health-monitor",   "schedule": "*/5 * * * *"  },
     { "path": "/api/cron/expire-trials",    "schedule": "0 22 * * *"   },
-    { "path": "/api/cron/trial-reminders",  "schedule": "0 23 * * *"   }
+    { "path": "/api/cron/trial-reminders",  "schedule": "0 23 * * *"   },
+    { "path": "/api/cron/data-retention",   "schedule": "0 0 1 * *"    }
   ]
 }

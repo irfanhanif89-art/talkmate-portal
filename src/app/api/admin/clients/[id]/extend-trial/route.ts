@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 const EXTEND_DAYS = 3
 
 // Adds EXTEND_DAYS days to the current trial_end_date. If the trial has
 // already lapsed (trial_end_date is in the past) we extend from "now"
 // instead of from the lapsed timestamp.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
@@ -47,6 +48,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   await admin.from('client_comms_log').insert({
     business_id: id,
     note: `Trial extended by ${EXTEND_DAYS} days. New end date ${newEnd.toISOString().slice(0, 10)}.`,
+  })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'trial_extended',
+    businessId: id,
+    businessName: data?.name ?? null,
+    before: { trial_end_date: current.trial_end_date },
+    after: { trial_end_date: newEnd.toISOString(), extended_days: EXTEND_DAYS },
+    request: req,
   })
 
   return NextResponse.json({ ok: true, business: data })

@@ -1,9 +1,16 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { validatePassword } from '@/lib/password'
 
 export async function POST(request: NextRequest) {
   const { email, password, fullName, businessName, businessType } = await request.json()
+
+  // Session 11 — enforce length + complexity. The client renders the
+  // same rules in <PasswordStrength /> so a passing UI bar always
+  // implies a passing server check.
+  const pwError = validatePassword(password ?? '')
+  if (pwError) return NextResponse.json({ error: pwError }, { status: 400 })
 
   // Use anon client to create the auth user
   const anonClient = createClient(
