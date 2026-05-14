@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { createTelegramBotForClient } from '@/lib/telegram-bot-creator'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -18,5 +19,28 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     note: 'Account activated by admin.',
   })
 
-  return NextResponse.json({ ok: true })
+  // Provision TalkMate Command for towing Growth+ clients. The bot record
+  // starts as 'pending' — Donna finalises the Telegram token through the
+  // admin Command tab. See src/lib/telegram-bot-creator.ts for the
+  // rationale (BotFather can't be driven via the bot API).
+  let commandBot: { provisioned: boolean; status?: string; manualSetupRequired?: boolean; error?: string } = { provisioned: false }
+  const { data: biz } = await admin
+    .from('businesses')
+    .select('industry, plan, name')
+    .eq('id', id)
+    .single()
+  if (biz && biz.industry === 'towing' && ['growth', 'pro', 'professional'].includes((biz.plan ?? '').toLowerCase())) {
+    const result = await createTelegramBotForClient({
+      clientId: id,
+      businessName: biz.name ?? 'Client',
+    })
+    commandBot = {
+      provisioned: result.status !== 'failed',
+      status: result.status,
+      manualSetupRequired: result.manualSetupRequired,
+      error: result.error,
+    }
+  }
+
+  return NextResponse.json({ ok: true, commandBot })
 }

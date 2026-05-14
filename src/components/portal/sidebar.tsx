@@ -25,6 +25,7 @@ interface Props {
   hasCommandCentre: boolean
   hasPipeline?: boolean
   hasDispatch?: boolean
+  hasCommand?: boolean
   isWhiteLabelPartner?: boolean
   isOpenMobile: boolean
   onCloseMobile: () => void
@@ -112,6 +113,12 @@ export default function PortalSidebar(props: Props) {
           locked: !props.hasCommandCentre,
           lockReason: 'Growth+',
           show: true,
+        },
+        {
+          href: '/settings/command',
+          label: 'TalkMate Command',
+          icon: MessageCircle,
+          show: !!props.hasCommand,
         },
       ],
     },

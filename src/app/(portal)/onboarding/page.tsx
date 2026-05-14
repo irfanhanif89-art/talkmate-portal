@@ -29,7 +29,10 @@ interface Notifs { emailOnTransfer: boolean; dailySummary: boolean; weeklyReport
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const AU_TZ = ['Australia/Brisbane', 'Australia/Sydney', 'Australia/Melbourne', 'Australia/Perth', 'Australia/Adelaide', 'Australia/Darwin', 'Australia/Hobart']
-const STEPS = ['Business', 'Hours', 'Services', 'Voice', 'FAQs', 'Escalation', 'Notifications', 'Agreement', 'Payment', 'Your Number', "You're Live!"]
+// Step 11 (TalkMate Command) is conditional — shown only for towing
+// Growth+ clients with a provisioned command_bots record. For everyone
+// else, next/back skips straight from step 10 → step 12.
+const STEPS = ['Business', 'Hours', 'Services', 'Voice', 'FAQs', 'Escalation', 'Notifications', 'Agreement', 'Payment', 'Your Number', 'Command', "You're Live!"]
 
 const defaultHours: Record<string, HourEntry> = {
   Monday: { open: '09:00', close: '17:00', closed: false },
@@ -137,6 +140,17 @@ export default function OnboardingPage() {
   const [bizOnboardedBy, setBizOnboardedBy] = useState<string | null>(null)
   const [bizAccountStatus, setBizAccountStatus] = useState<string | null>(null)
   const [bizTalkmateNumber, setBizTalkmateNumber] = useState<string | null>(null)
+  const [bizIndustry, setBizIndustry] = useState<string | null>(null)
+  // TalkMate Command step (11) — visible only for towing Growth+ clients
+  // with a provisioned command_bots record. Other clients skip 10 → 12.
+  const [commandBot, setCommandBot] = useState<{
+    telegram_bot_username: string | null
+    telegram_bot_name: string | null
+    telegram_enabled: boolean
+    whatsapp_number: string | null
+    whatsapp_enabled: boolean
+    status: string
+  } | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadDone, setUploadDone] = useState(false)
   const [agreed, setAgreed] = useState(false)
@@ -210,6 +224,35 @@ export default function OnboardingPage() {
         if (biz) {
           setBizId(biz.id)
           setBizType(biz.business_type as BusinessType)
+        }
+      }
+
+      // Pull industry + TalkMate Command bot record (RLS scopes to caller).
+      // Used to decide whether to show the new Command onboarding step.
+      const { data: { user: u2 } } = await supabase.auth.getUser()
+      if (u2) {
+        const { data: bizRow } = await supabase
+          .from('businesses')
+          .select('id, industry')
+          .eq('owner_user_id', u2.id)
+          .maybeSingle()
+        if (bizRow?.industry) setBizIndustry(bizRow.industry as string)
+        if (bizRow?.id) {
+          const { data: botRow } = await supabase
+            .from('command_bots')
+            .select('telegram_bot_username, telegram_bot_name, telegram_enabled, whatsapp_number, whatsapp_enabled, status')
+            .eq('client_id', bizRow.id)
+            .maybeSingle()
+          if (botRow) {
+            setCommandBot({
+              telegram_bot_username: (botRow.telegram_bot_username as string) ?? null,
+              telegram_bot_name: (botRow.telegram_bot_name as string) ?? null,
+              telegram_enabled: !!botRow.telegram_enabled,
+              whatsapp_number: (botRow.whatsapp_number as string) ?? null,
+              whatsapp_enabled: !!botRow.whatsapp_enabled,
+              status: (botRow.status as string) ?? 'pending',
+            })
+          }
         }
       }
 
@@ -321,31 +364,45 @@ export default function OnboardingPage() {
     (bizOnboardedBy ?? '').toLowerCase() === 'admin' &&
     (bizAccountStatus ?? '').toLowerCase() === 'active'
 
+  // TalkMate Command (step 11) is gated to towing Growth+ clients with a
+  // provisioned command_bots record. Anyone else jumps 10 → 12.
+  const isTowingGrowthPlus =
+    bizIndustry === 'towing' &&
+    ['growth', 'pro', 'professional'].includes((bizPlan ?? '').toLowerCase())
+  const skipCommandStep = !isTowingGrowthPlus || !commandBot
+
   async function next() {
     setLoading(true); await save()
+    let target = currentStep + 1
     // Skip the payment step (step 9) for admin-created active clients.
-    // Going from 8 → 10 directly avoids a confusing screen the client
-    // can't action.
-    const target = currentStep + 1
-    setStep(target === 9 && skipPaymentStep ? 10 : target)
+    if (target === 9 && skipPaymentStep) target = 10
+    // Skip the TalkMate Command step (11) when the client isn't eligible.
+    if (target === 11 && skipCommandStep) target = 12
+    setStep(target)
     setLoading(false)
     window.scrollTo(0, 0)
   }
   function back() {
-    // Mirror the skip on the way back so they can't get stuck on step 9.
-    const target = currentStep - 1
-    setStep(target === 9 && skipPaymentStep ? 8 : target)
+    let target = currentStep - 1
+    // Mirror the payment skip on the way back.
+    if (target === 9 && skipPaymentStep) target = 8
+    // Mirror the command skip on the way back.
+    if (target === 11 && skipCommandStep) target = 10
+    setStep(target)
     window.scrollTo(0, 0)
   }
 
   // Belt-and-braces — if a hydrated current_step or stale localStorage
-  // lands the user on step 9 and they qualify for the skip, bounce them
-  // onward without making them click.
+  // lands the user on a step they should skip, bounce them onward without
+  // making them click.
   useEffect(() => {
     if (currentStep === 9 && skipPaymentStep) {
       setStep(10)
     }
-  }, [currentStep, skipPaymentStep, setStep])
+    if (currentStep === 11 && skipCommandStep) {
+      setStep(12)
+    }
+  }, [currentStep, skipPaymentStep, skipCommandStep, setStep])
 
   async function goLive() {
     setLoading(true); await save()
@@ -1063,8 +1120,115 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* STEP 11: You're Live */}
-          {currentStep === 11 && (
+          {/* STEP 11: Connect TalkMate Command (towing Growth+ only) */}
+          {currentStep === 11 && commandBot && (
+            <div>
+              <div style={{ textAlign: 'center', paddingBottom: 20 }}>
+                <div style={{ fontSize: 52, marginBottom: 16 }}>💬</div>
+                <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 8 }}>Connect TalkMate Command</h2>
+                <p style={{ color: '#7BAED4', fontSize: 14, lineHeight: 1.6, maxWidth: 460, margin: '0 auto' }}>
+                  Manage your dispatcher from Telegram or WhatsApp — set wait times, assign jobs, and check bookings without opening the portal.
+                </p>
+              </div>
+
+              <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#4A9FE8', marginBottom: 6 }}>What is TalkMate Command?</div>
+                <p style={{ fontSize: 13, color: '#7BAED4', margin: 0 }}>
+                  Send a message in plain English. Your bot handles the rest — updates your dispatcher, confirms the change, and logs every action in your portal.
+                </p>
+              </div>
+
+              {/* Telegram */}
+              <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>📨 Telegram</div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
+                    background: commandBot.telegram_enabled ? 'rgba(34,197,94,0.15)' : 'rgba(232,98,42,0.12)',
+                    color: commandBot.telegram_enabled ? '#22C55E' : '#E8622A',
+                  }}>{commandBot.telegram_enabled ? '✓ ACTIVE' : 'PENDING'}</span>
+                </div>
+                <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 12 }}>
+                  Bot: <strong style={{ color: 'white' }}>@{commandBot.telegram_bot_username ?? 'being set up'}</strong>
+                  {commandBot.telegram_bot_name ? <span style={{ marginLeft: 6 }}>({commandBot.telegram_bot_name})</span> : null}
+                </div>
+                {commandBot.telegram_bot_username && commandBot.status === 'active' ? (
+                  <a
+                    href={`https://t.me/${commandBot.telegram_bot_username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ display: 'inline-block', padding: '10px 18px', background: '#E8622A', color: 'white', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+                  >Open in Telegram →</a>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#4A7FBB', fontStyle: 'italic' }}>
+                    Your bot is being prepared. We&apos;ll email you as soon as it&apos;s ready to use.
+                  </div>
+                )}
+                <ol style={{ fontSize: 12, color: '#4A7FBB', margin: '14px 0 0 18px', padding: 0, lineHeight: 1.7 }}>
+                  <li>Click <strong style={{ color: 'white' }}>Open in Telegram</strong> (or search <code style={{ background: '#061322', padding: '1px 5px', borderRadius: 4 }}>@{commandBot.telegram_bot_username ?? 'your bot'}</code>)</li>
+                  <li>Press <strong style={{ color: 'white' }}>Start</strong></li>
+                  <li>Send any message to activate</li>
+                </ol>
+              </div>
+
+              {/* WhatsApp */}
+              <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>💬 WhatsApp</div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
+                    background: commandBot.whatsapp_enabled ? 'rgba(34,197,94,0.15)' : 'rgba(232,98,42,0.12)',
+                    color: commandBot.whatsapp_enabled ? '#22C55E' : '#E8622A',
+                  }}>{commandBot.whatsapp_enabled ? '✓ ACTIVE' : 'PENDING'}</span>
+                </div>
+                {commandBot.whatsapp_number ? (
+                  <>
+                    <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 12 }}>
+                      Number: <strong style={{ color: 'white' }}>{commandBot.whatsapp_number}</strong>
+                    </div>
+                    <a
+                      href={`https://wa.me/${commandBot.whatsapp_number.replace(/[^\d]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'inline-block', padding: '10px 18px', background: '#22C55E', color: 'white', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
+                    >Save to WhatsApp →</a>
+                    <ol style={{ fontSize: 12, color: '#4A7FBB', margin: '14px 0 0 18px', padding: 0, lineHeight: 1.7 }}>
+                      <li>Save the number as a contact called <strong style={{ color: 'white' }}>TalkMate</strong></li>
+                      <li>Send <strong style={{ color: 'white' }}>&quot;Hi&quot;</strong> to activate</li>
+                      <li>Start sending commands</li>
+                    </ol>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12, color: '#4A7FBB', fontStyle: 'italic' }}>
+                    We&apos;re assigning your WhatsApp number now — you&apos;ll see it here once it&apos;s ready.
+                  </div>
+                )}
+              </div>
+
+              {/* Command reference */}
+              <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#4A9FE8', marginBottom: 12 }}>Commands you can use</div>
+                {[
+                  ['SET WAIT TIME', ['"We\'re busy for 2 hours"', '"Wait time is 45 minutes"']],
+                  ['TOGGLE AVAILABILITY', ['"Stop taking jobs"', '"Back online"']],
+                  ['VIEW JOBS', ['"Show today\'s jobs"', '"List pending jobs"']],
+                  ['VIEW BOOKINGS', ['"Any bookings?"']],
+                  ['ASSIGN A JOB', ['"Assign JOB-0042 to Dave"']],
+                  ['COMPLETE A JOB', ['"JOB-0042 is done"']],
+                ].map(([title, examples]) => (
+                  <div key={title as string} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', letterSpacing: '0.08em', marginBottom: 4 }}>{title as string}</div>
+                    {(examples as string[]).map(ex => (
+                      <div key={ex} style={{ fontSize: 13, color: '#C8D8EA', marginBottom: 2 }}>{ex}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 12: You're Live */}
+          {currentStep === 12 && (
             <div style={{ textAlign: 'center', padding: '8px 0' }}>
               <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
               <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'white', marginBottom: 8 }}>You&apos;re live!</h2>
@@ -1092,8 +1256,10 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Navigation */}
-          {currentStep < 11 && currentStep !== 9 && (
+          {/* Navigation — steps 1-8 use the generic back/next. Step 9 has
+              its own payment buttons; steps 10-11 use the combined block
+              below; step 12 has goLive. */}
+          {currentStep <= 8 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <button onClick={back} disabled={currentStep === 1}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '11px 20px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 500, cursor: currentStep === 1 ? 'not-allowed' : 'pointer', opacity: currentStep === 1 ? 0.4 : 1 }}>
@@ -1107,8 +1273,12 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {currentStep === 10 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 32, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          {(currentStep === 10 || currentStep === 11) && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <button onClick={back}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '11px 20px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#4A7FBB', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
+                <ChevronLeft size={16} /> Back
+              </button>
               <button onClick={next} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '11px 28px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                 Continue <ChevronRight size={16} />
               </button>

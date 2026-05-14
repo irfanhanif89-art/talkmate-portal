@@ -10,6 +10,7 @@ import ServicesEditor, { type Service } from '@/components/portal/services-edito
 import { TrialManagementPanel, OnboardingCompleteButton } from './trial-panel'
 import { AdminTeamTab, AdminCallRoutingTab, AdminBookingsTab } from './admin-feature-tabs'
 import { AdminDispatcherTab } from './admin-dispatcher-tab'
+import { AdminCommandTab } from './admin-command-tab'
 import AddressAutocomplete from '@/components/portal/address-autocomplete'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
@@ -277,7 +278,7 @@ function ServicesQuickAdd({ industry, value, onChange }: { industry: string; val
   )
 }
 
-type Tab = 'details' | 'agent' | 'team' | 'call_routing' | 'bookings' | 'dispatcher' | 'billing' | 'history'
+type Tab = 'details' | 'agent' | 'team' | 'call_routing' | 'bookings' | 'dispatcher' | 'command' | 'billing' | 'history'
 
 export default function EditClientModal({
   business, onClose, onUpdate, onCancelled,
@@ -301,7 +302,9 @@ export default function EditClientModal({
       <TrialManagementPanel business={business} onUpdate={onUpdate} />
 
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.07)', marginTop: 18, marginBottom: 22, flexWrap: 'wrap' as const }}>
-        {(['details', 'agent', 'team', 'call_routing', 'bookings', 'dispatcher', 'billing', 'history'] as const).map(t => (
+        {(['details', 'agent', 'team', 'call_routing', 'bookings', 'dispatcher', 'command', 'billing', 'history'] as const)
+          .filter(t => t !== 'command' || showCommandTab(business))
+          .map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -318,6 +321,7 @@ export default function EditClientModal({
             : t === 'call_routing' ? 'Call Routing'
             : t === 'bookings' ? 'Bookings'
             : t === 'dispatcher' ? 'Dispatcher'
+            : t === 'command' ? 'Command'
             : t === 'billing' ? 'Billing'
             : 'History'}</button>
         ))}
@@ -329,10 +333,18 @@ export default function EditClientModal({
       {tab === 'call_routing' && <AdminCallRoutingTab business={business} />}
       {tab === 'bookings' && <AdminBookingsTab business={business} />}
       {tab === 'dispatcher' && <AdminDispatcherTab business={business} />}
+      {tab === 'command' && showCommandTab(business) && <AdminCommandTab business={business} />}
       {tab === 'billing' && <BillingTab business={business} onUpdate={onUpdate} />}
       {tab === 'history' && <HistoryTab business={business} />}
     </ModalShell>
   )
+}
+
+// TalkMate Command is towing Growth+ only. Hide the tab for everyone
+// else so the admin UI stays narrow for non-eligible clients.
+function showCommandTab(business: AdminBusiness): boolean {
+  const plan = (business.plan ?? '').toLowerCase()
+  return business.industry === 'towing' && ['growth', 'pro', 'professional'].includes(plan)
 }
 
 // ── Details tab ────────────────────────────────────────────────────────────

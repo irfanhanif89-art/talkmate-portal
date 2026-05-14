@@ -10,8 +10,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Star, Edit, Trash2, Zap } from 'lucide-react'
+import { Plus, Star, Edit, Trash2, Zap, Settings as SettingsIcon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import MenuImportBanner from '@/components/portal/menu-import-banner'
+import type { Service } from '@/lib/service-templates'
 
 interface CatalogItem {
   id: string; name: string; description: string; price: number | null
@@ -19,11 +21,22 @@ interface CatalogItem {
   duration_minutes: number | null; is_featured: boolean; sort_order: number
 }
 
+// Source of truth fallback: for towing-style businesses, pricing lives in
+// businesses.services (Agent Settings) rather than catalog_items. If the
+// catalog is empty but services exist, show those instead of "No services yet".
+interface NotifConfigServiceRow {
+  name: string
+  price?: number | string
+  category?: string
+  description?: string
+}
+
 const emptyItem = (): Partial<CatalogItem> => ({ name: '', description: '', price: null, category: '', active: true, upsell_prompt: '', duration_minutes: null, is_featured: false })
 
 export default function CatalogPage() {
   const { config, businessId } = useBusinessType()
   const supabase = createClient()
+  const router = useRouter()
   const [items, setItems] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -32,6 +45,10 @@ export default function CatalogPage() {
   const [syncing, setSyncing] = useState(false)
   const [syncToast, setSyncToast] = useState(false)
   const [lastSynced, setLastSynced] = useState<number | null>(null)
+  // Services-derived fallback display (towing & similar businesses that
+  // manage pricing in Agent Settings rather than the catalog).
+  const [fallbackServices, setFallbackServices] = useState<NotifConfigServiceRow[]>([])
+  const [industry, setIndustry] = useState<string | null>(null)
 
   useEffect(() => {
     const t = localStorage.getItem('catalog_last_synced')
@@ -53,7 +70,37 @@ export default function CatalogPage() {
 
   async function fetchItems() {
     const { data } = await supabase.from('catalog_items').select('*').eq('business_id', businessId).order('sort_order')
-    setItems(data ?? [])
+    const list = data ?? []
+    setItems(list)
+
+    // If catalog_items is empty, fall back to the data the business already
+    // manages elsewhere so the page never shows "No services yet" when prices
+    // exist. Source of truth precedence:
+    //   1. businesses.services (Agent Settings → AI Voice Agent → Services)
+    //   2. notifications_config.services (legacy admin-entered price list)
+    if (list.length === 0 && businessId) {
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('industry, services, notifications_config')
+        .eq('id', businessId)
+        .single()
+      if (biz) {
+        const b = biz as Record<string, unknown>
+        setIndustry((b.industry as string) ?? null)
+        const svc = Array.isArray(b.services) ? b.services as Service[] : []
+        const cfg = (b.notifications_config ?? {}) as Record<string, unknown>
+        const cfgSvc = Array.isArray(cfg.services)
+          ? cfg.services as NotifConfigServiceRow[]
+          : []
+        const enabledFromBiz = svc
+          .filter(s => s && s.name && s.enabled !== false)
+          .map<NotifConfigServiceRow>(s => ({ name: s.name, price: s.price || undefined }))
+        setFallbackServices(enabledFromBiz.length > 0 ? enabledFromBiz : cfgSvc)
+      }
+    } else {
+      setFallbackServices([])
+    }
+
     setLoading(false)
   }
 
@@ -131,6 +178,12 @@ export default function CatalogPage() {
 
       {loading ? (
         <p style={{ color: '#4A7FBB' }}>Loading…</p>
+      ) : items.length === 0 && fallbackServices.length > 0 ? (
+        <ServicesFromAgentSettings
+          services={fallbackServices}
+          industry={industry}
+          onManage={() => router.push('/settings')}
+        />
       ) : items.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-lg font-semibold text-white mb-2">No {config.catalogItemLabel.toLowerCase()}s yet</p>
@@ -249,6 +302,87 @@ export default function CatalogPage() {
           Changes synced to your AI agent
         </div>
       )}
+    </div>
+  )
+}
+
+// Read-only fallback panel: surfaces the prices a business has already
+// configured in Agent Settings (businesses.services or the legacy
+// notifications_config.services) so the catalog page never shows
+// "No services yet" when real pricing exists elsewhere.
+function ServicesFromAgentSettings({
+  services,
+  industry,
+  onManage,
+}: {
+  services: NotifConfigServiceRow[]
+  industry: string | null
+  onManage: () => void
+}) {
+  // Group by category if categories exist; otherwise one flat list.
+  const grouped: Record<string, NotifConfigServiceRow[]> = {}
+  let hasCategories = false
+  for (const s of services) {
+    const cat = s.category?.trim()
+    if (cat) hasCategories = true
+    const key = cat || 'Services & Pricing'
+    if (!grouped[key]) grouped[key] = []
+    grouped[key].push(s)
+  }
+  const isTowingLike = industry === 'towing' || industry === 'transport' || industry === 'roadside'
+
+  return (
+    <div>
+      <div style={{
+        background: 'rgba(74,159,232,0.06)',
+        border: '1px solid rgba(74,159,232,0.2)',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 20,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+      }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'white', margin: 0, marginBottom: 4 }}>
+            {isTowingLike
+              ? 'Your pricing is managed in Agent Settings'
+              : 'These prices are pulled from your AI agent configuration'}
+          </p>
+          <p style={{ fontSize: 12, color: '#7BAED4', margin: 0 }}>
+            Edit names, prices, and which services are active in Agent Settings → AI Voice Agent.
+          </p>
+        </div>
+        <Button
+          onClick={onManage}
+          variant="outline"
+          className="gap-2"
+          style={{ borderColor: '#E8622A', color: '#E8622A', whiteSpace: 'nowrap', flexShrink: 0 }}
+        >
+          <SettingsIcon size={14} /> Manage in Agent Settings
+        </Button>
+      </div>
+
+      {Object.entries(grouped).map(([cat, rows]) => (
+        <div key={cat} style={{ marginBottom: 24 }}>
+          {hasCategories && (
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>{cat}</div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {rows.map((item, i) => (
+              <div key={`${cat}-${i}`} className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
+                <h3 className="font-semibold text-white text-sm mb-2">{item.name}</h3>
+                {item.description && <p className="text-xs mb-3" style={{ color: '#7BAED4' }}>{item.description}</p>}
+                <div className="flex items-center justify-between">
+                  <span className="font-bold" style={{ color: item.price ? '#E8622A' : '#4A7FBB', fontSize: 15 }}>
+                    {item.price ? (typeof item.price === 'string' ? (item.price.startsWith('$') ? item.price : '$' + item.price) : '$' + item.price) : 'POA'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -38,7 +38,7 @@ export default async function PortalLayout({ children }: { children: React.React
   // pending_payment > suspended > expired > cancelled.
   const { data: bizList } = await supabase
     .from('businesses')
-    .select('id, name, business_type, plan, onboarding_completed, industry, is_partner, dispatch_enabled, account_status, created_at')
+    .select('id, name, business_type, plan, onboarding_completed, industry, is_partner, dispatch_enabled, command_enabled, account_status, created_at')
     .eq('owner_user_id', user.id)
 
   const STATUS_PRIORITY = [
@@ -147,6 +147,7 @@ export default async function PortalLayout({ children }: { children: React.React
         hasCommandCentre={planConfig.hasCommandCentre}
         hasPipeline={['real_estate', 'trades', 'professional_services'].includes((business.industry as string | null) ?? '')}
         hasDispatch={Boolean((business as { dispatch_enabled?: boolean }).dispatch_enabled)}
+        hasCommand={Boolean((business as { command_enabled?: boolean }).command_enabled)}
         isWhiteLabelPartner={Boolean((business as { is_partner?: boolean }).is_partner)}
         unseenChangelog={unseenChangelog}
       >

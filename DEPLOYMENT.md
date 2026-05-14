@@ -1,8 +1,133 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 12 — Services fix + TalkMate Command (2026-05-14)
+
+### Part A — Services fix (Settings + /catalog)
+
+**The bug:** The Settings → AI Voice Agent tab and the /catalog page both
+showed a read-only price list with "Contact us to update" for clients
+whose pricing had been pre-configured by admin (e.g. GM Towing with 55
+real prices). Clients couldn't edit their own data.
+
+**The fix:**
+
+1. **Settings → AI Voice Agent** — removed the gate that hid
+   `ServicesEditor` when `notifications_config.services` had rows.
+   `ServicesEditor` (`mode="client"`) is now always rendered; the
+   read-only grouped list block was deleted.
+
+2. **Backfill seed** — when `businesses.services` is empty but
+   `notifications_config.services` has data, the Settings page
+   transforms those rows into editable `Service[]` entries on load
+   (custom rows, default unit "per job"). The seed is in-memory only;
+   the rows persist to `businesses.services` on the first save.
+
+3. **/catalog** — for clients whose `catalog_items` table is empty,
+   the page now falls back to displaying `businesses.services` (or
+   `notifications_config.services` as a legacy fallback) inside a
+   read-only "These prices are managed in Agent Settings" panel with a
+   button that deep-links to /settings. No "No services yet" for
+   GM Towing.
+
+**Source of truth going forward:** `businesses.services` is the single
+editable source for towing-style pricing. The legacy
+`notifications_config.services` is read only as a seed when
+`businesses.services` is empty; admins should migrate clients to the
+editor as they're touched.
+
+**Admin Agent Setup tab:** already renders `ServicesEditor` in admin
+mode (`edit-client-modal.tsx:633`); no change needed.
+
+### Part B — TalkMate Command
+
+Per-client Telegram + WhatsApp bots for towing Growth+ clients. Plain-
+English commands parsed by Grok and executed against the dispatcher
+schema. **Each client gets their own bot with their own token** —
+total isolation between clients. Donna's existing OpenClaw bot
+(`TELEGRAM_BOT_TOKEN`) is untouched.
+
+#### Migration — `supabase/migrations/027_talkmate_command.sql`
+
+New tables:
+- `command_bots` — one row per client (UNIQUE on `client_id`). Holds
+  Telegram token/username/chat_id and WhatsApp number assigned from
+  the Twilio pool. RLS read scoped via `get_current_client_id()`.
+- `command_history` — every parsed + executed command. RLS read
+  scoped per client. Indexed for the recent-history view.
+- `businesses.command_enabled` — feature gate. Flipped to TRUE by
+  the bot auto-creator on towing Growth+ activation.
+
+#### NEW env vars (Donna must set in Vercel before bots go live)
+
+| Var | Purpose |
+|---|---|
+| `TELEGRAM_BOTFATHER_TOKEN` | **Reserved name** — present so deploy parity tooling sees it. Not actually used by the code path because BotFather can't be driven via the bot API (see "Manual bot creation" below). Safe to leave unset for now. |
+| `TELEGRAM_WEBHOOK_SECRET` | **Required.** Random string shared with every per-client Telegram webhook. Generate with `openssl rand -hex 32` and paste into Vercel before flipping the first client live. |
+| `TWILIO_WHATSAPP_POOL_NUMBER` | **Required for WhatsApp.** A Twilio WhatsApp-enabled number (E.164, no `whatsapp:` prefix) that gets assigned to new towing clients automatically on activation. Without this, clients still get a Telegram bot but no WhatsApp number. |
+| `NEXT_PUBLIC_APP_URL` | Optional. Used to compute the per-client webhook URL when finalising a Telegram bot (`/api/admin/clients/[id]/command` PATCH). Falls back to `https://${VERCEL_URL}` then to the request origin. |
+| `TWILIO_SKIP_SIGNATURE` | **Do not set in production.** Integration tests only. Skips Twilio signature validation on the WhatsApp webhook. |
+
+#### Manual bot creation (REQUIRED — not optional)
+
+The Telegram Bot API cannot drive BotFather. BotFather is itself a
+bot, and only a *userbot* (a regular Telegram user account using
+MTProto / TDLib) can create child bots. Spinning up a userbot in a
+SaaS backend is not appropriate.
+
+The shipped flow assumes manual creation:
+
+1. **Client activation** — `POST /api/admin/clients/[id]/activate`
+   automatically inserts a `pending` `command_bots` row for towing
+   Growth+ clients, with a candidate name (`<Business> TalkMate`) and
+   candidate username (`talkmate_<slug>_<4 digits>_bot`). It also
+   sets `businesses.command_enabled = true` so the client's portal
+   shows the /settings/command page even before the token is set.
+2. **Donna creates the bot** in Telegram:
+   - Open Telegram, message `@BotFather`.
+   - `/newbot` → paste the candidate name when prompted.
+   - Paste the candidate username when prompted (or pick another
+     `talkmate_*_bot` if it's taken).
+   - Copy the token BotFather returns.
+3. **Donna pastes the token** into the admin Edit Client modal →
+   **Command** tab → "Paste Telegram bot token" → Save. The PATCH
+   endpoint verifies the token with `getMe`, saves it, and sets the
+   webhook to
+   `https://app.talkmate.com.au/api/command/telegram/<clientId>`
+   with the `TELEGRAM_WEBHOOK_SECRET`.
+4. The client opens Telegram and messages the bot. The first
+   message pins their `chat_id` and triggers a welcome message.
+
+#### Command behaviour — deviations from the brief
+
+- **set_wait_time** writes to `dispatch_config.default_wait_minutes`,
+  not `dispatch_config.wait_time_minutes`. The former is the field
+  already read by `/api/vapi/functions` and the dispatch board, so
+  the voice agent actually sees the updated wait when a client says
+  "we're busy for 2 hours".
+- **toggle_availability** writes
+  `dispatch_config.accepting_jobs: boolean` rather than upserting to
+  `driver_availability`. The brief's upsert was missing `driver_id`
+  (the table is per-driver). A business-level flag is the right model
+  for "stop taking jobs" / "back online"; the voice agent reads this
+  flag to decide whether to accept new jobs.
+- **Migration numbering** — the brief specifies `027` even though `025`
+  is the latest committed migration. Honored as `027` so the brief and
+  the file system match; `026` is reserved for a parallel session.
+
+#### Vapi assistants — call-recording consent disclosure
+
+The brief notes a separate audit of Vapi assistants that need the
+call-recording consent disclosure added. **No code change in this
+repo.** Donna to confirm:
+
+- [ ] GM Towing — recording disclosure added
+- [ ] (other live assistants — fill in as Donna audits)
 
 ---
 

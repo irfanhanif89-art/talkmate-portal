@@ -56,7 +56,6 @@ export default function SettingsPage() {
   const [services, setServices] = useState<Service[] | null>(null)
   const [tradeType, setTradeType] = useState<string | null>(null)
   const [forwardTo, setForwardTo] = useState('')
-  const [rawServices, setRawServices] = useState<Array<{name: string; price?: number; category?: string; description?: string}> | null>(null)
   const [industry, setIndustry] = useState<string | null>(null)
   const [loadedServices, setLoadedServices] = useState(false)
   const [savingServices, setSavingServices] = useState(false)
@@ -92,14 +91,32 @@ export default function SettingsPage() {
       setServiceArea((cfg.service_area as ServiceArea) ?? {})
       setIndustry((biz.industry as string) ?? null)
       setTradeType((biz.trade_type as string | null) ?? null)
-      // businesses.services = generic template (ServicesEditor)
+      // businesses.services is the source of truth for the editable price list.
+      // If it's empty but the admin-entered notifications_config.services has rows
+      // (e.g. GM Towing's 55 prices, set up before clients could self-serve), seed
+      // those into the editor as custom rows so the client can view + edit them.
+      // The seed is in-memory only — the rows persist to businesses.services on first save.
       const bizServices = Array.isArray(biz.services) ? biz.services as Service[] : []
-      setServices(bizServices)
-      setLoadedServices(true)
-      // notifications_config.services = admin-entered price list shown as read-only grouped display
-      if (Array.isArray(cfg.services) && (cfg.services as unknown[]).length > 0) {
-        setRawServices(cfg.services as Array<{name: string; price?: number; category?: string; description?: string}>)
+      const cfgServices = Array.isArray(cfg.services)
+        ? cfg.services as Array<{ name: string; price?: number; category?: string; description?: string }>
+        : []
+      let seeded: Service[] = bizServices
+      if (bizServices.length === 0 && cfgServices.length > 0) {
+        seeded = cfgServices
+          .filter(s => s && typeof s.name === 'string' && s.name.trim().length > 0)
+          .map(s => ({
+            id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            name: s.name,
+            price: s.price != null ? String(s.price) : '',
+            unit: 'per job',
+            enabled: true,
+            custom: true,
+          }))
       }
+      setServices(seeded)
+      setLoadedServices(true)
       // Populate escalation, FAQs, forwarding, voice, and notification settings from DB
       setEscalation((cfg.escalation_rules as string) || escalation)
       setForwardTo((cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || '')
@@ -338,8 +355,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Only show ServicesEditor when there is no admin-configured price list */}
-          {loadedServices && (!rawServices || rawServices.length === 0) && (
+          {loadedServices && (
             <div style={{ marginBottom: 16 }}>
               <ServicesEditor
                 mode="client"
@@ -353,28 +369,6 @@ export default function SettingsPage() {
               />
             </div>
           )}
-
-          {rawServices && rawServices.length > 0 && (() => {
-            const grouped: Record<string, typeof rawServices> = {}
-            rawServices.forEach(s => { const cat = s.category || 'Other'; if (!grouped[cat]) grouped[cat] = []; grouped[cat].push(s) })
-            return (
-              <div style={{ marginBottom: 24 }}>
-                <label style={lbl}>Configured Price List</label>
-                <p style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 12, marginTop: 0 }}>Your custom pricing configured by TalkMate. Contact us to update.</p>
-                {Object.entries(grouped).map(([cat, items]) => (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{cat}</div>
-                    {items.map((item, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#071829', borderRadius: 8, marginBottom: 4, border: '1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>{item.name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: item.price ? '#22C55E' : '#4A7FBB', flexShrink: 0, marginLeft: 12 }}>{item.price ? '$' + item.price : 'POA'}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )
-          })()}
           <div style={{ marginBottom: 28 }}>
             <ServiceAreaEditor
               value={serviceArea}
