@@ -268,24 +268,32 @@ async function logOutcome(
   clientId: string,
   params: Record<string, unknown>,
 ) {
-  const callId = (params.call_id as string | undefined)?.trim()
-  if (!callId) return { result: { logged: false, error: 'call_id required' } }
+  // Vapi passes its own call identifier (`call_xxx`), NOT a portal
+  // UUID. Migration 028 added `calls.vapi_call_id` for exactly this
+  // case — before that, this update silently no-op'd because Postgres
+  // refused to coerce the string into the UUID `id` column. That was
+  // the root cause of "nothing being logged after calls."
+  const vapiCallId = (params.call_id as string | undefined)?.trim()
+  if (!vapiCallId) return { result: { logged: false, error: 'call_id required' } }
 
-  const update: Record<string, unknown> = {}
-  if (typeof params.outcome === 'string') update.outcome = params.outcome
-  if (typeof params.transfer_to === 'string') update.transfer_to = params.transfer_to
-  if (typeof params.transfer_success === 'boolean') update.transfer_success = params.transfer_success
-  if (typeof params.summary === 'string') update.transcript = params.summary
-  // We deliberately don't overwrite `transcript` if Vapi already emits
-  // a full one through the webhooks/vapi pipeline — only set if our
-  // function-call summary is the first thing to arrive. Apps will pick
-  // whichever has content.
+  // Build the patch. We upsert rather than update so log_outcome and
+  // end-of-call-report can land in any order and merge into one row.
+  // Only include fields that the assistant actually set.
+  const patch: Record<string, unknown> = {
+    vapi_call_id: vapiCallId,
+    business_id: clientId,
+  }
+  if (typeof params.outcome === 'string') patch.outcome = params.outcome
+  if (typeof params.transfer_to === 'string') patch.transfer_to = params.transfer_to
+  if (typeof params.transfer_success === 'boolean') patch.transfer_success = params.transfer_success
+  // The Vapi function's `summary` parameter is a one-liner; store it
+  // in the dedicated `summary` column (migration 003) rather than
+  // overwriting `transcript`, which is the full conversation text.
+  if (typeof params.summary === 'string') patch.summary = params.summary
 
   const { error } = await supabase
     .from('calls')
-    .update(update)
-    .eq('id', callId)
-    .eq('business_id', clientId)
+    .upsert(patch, { onConflict: 'vapi_call_id' })
 
   if (error) return { result: { logged: false, error: error.message } }
   return { result: { logged: true } }

@@ -1,8 +1,78 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 12b — Vapi webhook receiver fix (2026-05-14)
+
+### Why nothing was being logged after calls
+
+`calls.id` is a Postgres `uuid PRIMARY KEY` (migration 001). Both the
+existing Vapi webhook receiver (`/api/webhooks/vapi`) and the mid-call
+`log_outcome` function (`/api/vapi/functions`) were trying to write
+Vapi's `call_xxx` string identifier into that UUID column. Postgres
+silently rejected the cast, so every upsert / update no-op'd and
+nothing reached the database. Vapi was sending — the receiver was
+dropping.
+
+### What changed
+
+1. **Migration `028_vapi_call_id.sql`** — adds
+   `calls.vapi_call_id text` with a partial UNIQUE index (NULLs
+   allowed for legacy rows). All Vapi-driven writes now key on this
+   column. No data migration needed; existing rows stay untouched.
+
+2. **`/api/webhooks/vapi/route.ts`** rewritten end-to-end:
+   - Validates `VAPI_WEBHOOK_SECRET` via plain header
+     (`x-vapi-secret` or `x-webhook-secret`), `Authorization: Bearer`,
+     or HMAC-SHA256 (`x-vapi-signature`). When the env var is unset
+     the route accepts unauthenticated requests so Donna's first
+     probe doesn't 401 — set the secret before going live.
+   - Looks up the business by `vapi_agent_id` column first, then
+     `notifications_config->>'vapi_assistant_id'` as a fallback for
+     legacy-wired clients. Unmatched assistants log a warning and
+     return 200 (no Vapi retry storm).
+   - Upserts the call row keyed on `vapi_call_id` — never tries to
+     write a string into the UUID `id`.
+   - Upserts contacts on `(client_id, phone)` using the post-008
+     contacts shape (`client_id`, `last_seen`, `call_count`).
+     Increments call_count for known callers, creates a new row for
+     unknown ones.
+   - Preserves the industry side-effect inserts (`jobs`,
+     `appointments`, `orders`) using the canonical UUID `call_id`.
+   - Always returns `{ received: true }` 200 on non-auth failures so
+     Vapi doesn't retry; internal failures hit `console.error`.
+
+3. **`/api/vapi/functions` `log_outcome`** — now upserts on
+   `vapi_call_id` rather than updating by the UUID `id`. log_outcome
+   and end-of-call-report can land in any order and merge into the
+   same row. The `summary` parameter now writes to the dedicated
+   `summary` column instead of being aliased onto `transcript`.
+
+### Donna setup — REQUIRED before bots / Vapi can log
+
+1. **Run migration 028** in the Supabase SQL editor (idempotent).
+2. **Set Vercel env var `VAPI_WEBHOOK_SECRET`** to a random string
+   (`openssl rand -hex 32`). Leaving it unset means the route accepts
+   anonymous traffic.
+3. **For every Vapi assistant**, in the Vapi dashboard → assistant →
+   **Server URL** field, set:
+   - URL: `https://app.talkmate.com.au/api/webhooks/vapi`
+   - Server URL Secret: paste the same `VAPI_WEBHOOK_SECRET` value
+     (Vapi sends it as `x-vapi-secret`).
+   - Enable the `end-of-call-report` event (other events accepted
+     too, but this is the one that persists the call).
+
+   Assistants to update (audit in progress):
+   - [ ] GM Towing
+   - [ ] (other live assistants — fill in as Donna audits)
+
+4. (Recommended) Verify by placing a test call to a configured
+   assistant and confirming a row appears in `calls` with the
+   expected `vapi_call_id`, `transcript`, and `recording_url`.
 
 ---
 
