@@ -129,7 +129,10 @@ export function AdminCommandTab({ business }: { business: AdminBusiness }) {
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          {/* WhatsApp is wired up in the backend (/api/command/whatsapp)
+              but intentionally hidden from this admin UI until the
+              Twilio number pool and approvals are in place. */}
+          <div style={{ marginBottom: 14 }}>
             <Panel
               title="📨 Telegram"
               statusActive={bot.telegram_enabled && bot.status === 'active'}
@@ -140,15 +143,6 @@ export function AdminCommandTab({ business }: { business: AdminBusiness }) {
               <Row k="Name" v={bot.telegram_bot_name ?? '—'} />
               <Row k="Chat ID" v={bot.telegram_chat_id ? `${bot.telegram_chat_id.slice(0, 6)}…` : 'Not linked'} />
               <Row k="Activated" v={fmtDate(bot.telegram_activated_at)} />
-            </Panel>
-
-            <Panel
-              title="💬 WhatsApp"
-              statusActive={bot.whatsapp_enabled}
-              statusLabel={bot.whatsapp_enabled ? 'ACTIVE' : 'PENDING'}
-            >
-              <Row k="Number" v={bot.whatsapp_number ?? 'Not assigned'} />
-              <Row k="Activated" v={fmtDate(bot.whatsapp_activated_at)} />
             </Panel>
           </div>
 

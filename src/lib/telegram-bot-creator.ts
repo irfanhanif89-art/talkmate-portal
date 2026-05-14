@@ -68,7 +68,13 @@ export async function createTelegramBotForClient(params: {
   // confirmed (or replaced) by the admin during the manual creation step.
   const candidateName = buildBotName(params.businessName)
   const candidateUsername = buildBotUsername(params.businessName)
-  const whatsappNumber = process.env.TWILIO_WHATSAPP_POOL_NUMBER || null
+  // WhatsApp is hidden from the client UI for now, but the backend
+  // webhook is still wired up. Until Donna has a real Twilio pool
+  // number assigned per client, the env var holds a placeholder like
+  // 'pending' — we coerce any non-E.164-looking value to NULL so the
+  // UNIQUE index on command_bots.whatsapp_number doesn't collide
+  // across clients sharing the same placeholder.
+  const whatsappNumber = sanitiseWhatsappNumber(process.env.TWILIO_WHATSAPP_POOL_NUMBER)
 
   const { error } = await admin.from('command_bots').insert({
     client_id: params.clientId,
@@ -188,6 +194,17 @@ function buildBotUsername(businessName: string): string {
 
 function stripTrailingSlash(s: string): string {
   return s.endsWith('/') ? s.slice(0, -1) : s
+}
+
+// Accept E.164-shaped numbers (e.g. "+61412345678"); coerce anything
+// else (empty, "pending", "tbc", etc.) to null so the unique index on
+// command_bots.whatsapp_number doesn't collide when many clients share
+// a placeholder env value.
+function sanitiseWhatsappNumber(raw: string | undefined | null): string | null {
+  const v = (raw ?? '').trim()
+  if (!v) return null
+  if (!/^\+\d{8,15}$/.test(v)) return null
+  return v
 }
 
 interface TgMeResult { ok: boolean; username?: string; firstName?: string; error?: string }

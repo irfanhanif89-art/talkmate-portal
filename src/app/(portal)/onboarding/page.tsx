@@ -1127,18 +1127,21 @@ export default function OnboardingPage() {
                 <div style={{ fontSize: 52, marginBottom: 16 }}>💬</div>
                 <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 8 }}>Connect TalkMate Command</h2>
                 <p style={{ color: '#7BAED4', fontSize: 14, lineHeight: 1.6, maxWidth: 460, margin: '0 auto' }}>
-                  Manage your dispatcher from Telegram or WhatsApp — set wait times, assign jobs, and check bookings without opening the portal.
+                  Manage your dispatcher from Telegram — set wait times, assign jobs, and check bookings without opening the portal.
                 </p>
               </div>
 
               <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#4A9FE8', marginBottom: 6 }}>What is TalkMate Command?</div>
                 <p style={{ fontSize: 13, color: '#7BAED4', margin: 0 }}>
-                  Send a message in plain English. Your bot handles the rest — updates your dispatcher, confirms the change, and logs every action in your portal.
+                  Send a message in plain English to your TalkMate Telegram bot. It handles the rest — updates your dispatcher, confirms the change, and logs every action in your portal.
                 </p>
               </div>
 
-              {/* Telegram */}
+              {/* Telegram — only channel surfaced in the UI for now.
+                  WhatsApp is wired up in the backend (/api/command/whatsapp)
+                  but hidden from clients until the Twilio number pool and
+                  approvals are in place. */}
               <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>📨 Telegram</div>
@@ -1169,40 +1172,6 @@ export default function OnboardingPage() {
                   <li>Press <strong style={{ color: 'white' }}>Start</strong></li>
                   <li>Send any message to activate</li>
                 </ol>
-              </div>
-
-              {/* WhatsApp */}
-              <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>💬 WhatsApp</div>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
-                    background: commandBot.whatsapp_enabled ? 'rgba(34,197,94,0.15)' : 'rgba(232,98,42,0.12)',
-                    color: commandBot.whatsapp_enabled ? '#22C55E' : '#E8622A',
-                  }}>{commandBot.whatsapp_enabled ? '✓ ACTIVE' : 'PENDING'}</span>
-                </div>
-                {commandBot.whatsapp_number ? (
-                  <>
-                    <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 12 }}>
-                      Number: <strong style={{ color: 'white' }}>{commandBot.whatsapp_number}</strong>
-                    </div>
-                    <a
-                      href={`https://wa.me/${commandBot.whatsapp_number.replace(/[^\d]/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ display: 'inline-block', padding: '10px 18px', background: '#22C55E', color: 'white', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}
-                    >Save to WhatsApp →</a>
-                    <ol style={{ fontSize: 12, color: '#4A7FBB', margin: '14px 0 0 18px', padding: 0, lineHeight: 1.7 }}>
-                      <li>Save the number as a contact called <strong style={{ color: 'white' }}>TalkMate</strong></li>
-                      <li>Send <strong style={{ color: 'white' }}>&quot;Hi&quot;</strong> to activate</li>
-                      <li>Start sending commands</li>
-                    </ol>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 12, color: '#4A7FBB', fontStyle: 'italic' }}>
-                    We&apos;re assigning your WhatsApp number now — you&apos;ll see it here once it&apos;s ready.
-                  </div>
-                )}
               </div>
 
               {/* Command reference */}

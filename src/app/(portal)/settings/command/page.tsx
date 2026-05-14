@@ -111,11 +111,14 @@ export default function CommandSettingsPage() {
       <header style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 22, fontWeight: 800, color: 'white', margin: 0, marginBottom: 6 }}>TalkMate Command</h2>
         <p style={{ color: '#7BAED4', fontSize: 14, margin: 0 }}>
-          Manage your dispatcher from Telegram or WhatsApp. Send a message in plain English — your bot handles the rest.
+          Manage your dispatcher from Telegram. Send a message in plain English — your bot handles the rest.
         </p>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }} className="grid-responsive">
+      {/* WhatsApp is wired up in the backend (/api/command/whatsapp) but
+          intentionally hidden from clients until the Twilio number pool
+          and approvals are in place. */}
+      <div style={{ marginBottom: 24 }}>
         <Card>
           <CardHeader title="📨 Telegram" pill={bot.telegram_enabled ? 'ACTIVE' : 'PENDING'} pillOk={bot.telegram_enabled} />
           <Row label="Bot" value={bot.telegram_bot_username ? `@${bot.telegram_bot_username}` : 'Being set up'} />
@@ -123,15 +126,6 @@ export default function CommandSettingsPage() {
           <Row label="Activated" value={fmtDate(bot.telegram_activated_at)} />
           {bot.telegram_bot_username && bot.status === 'active' && (
             <a href={`https://t.me/${bot.telegram_bot_username}`} target="_blank" rel="noopener noreferrer" style={ctaBtn('#E8622A')}>Open in Telegram →</a>
-          )}
-        </Card>
-
-        <Card>
-          <CardHeader title="💬 WhatsApp" pill={bot.whatsapp_enabled ? 'ACTIVE' : 'PENDING'} pillOk={bot.whatsapp_enabled} />
-          <Row label="Number" value={bot.whatsapp_number ?? 'Being assigned'} />
-          <Row label="Activated" value={fmtDate(bot.whatsapp_activated_at)} />
-          {bot.whatsapp_number && (
-            <a href={`https://wa.me/${bot.whatsapp_number.replace(/[^\d]/g, '')}`} target="_blank" rel="noopener noreferrer" style={ctaBtn('#22C55E')}>Save to WhatsApp →</a>
           )}
         </Card>
       </div>
