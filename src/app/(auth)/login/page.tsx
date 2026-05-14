@@ -45,11 +45,48 @@ function LoginPageInner() {
   const [magicSent, setMagicSent] = useState(false)
   const [testimonialIdx] = useState(0)
 
+  // Session 11 — MFA step-up state. After a successful password sign-in
+  // we check the AAL; if step-up is required, we capture the factorId
+  // and show a 6-digit code input instead of redirecting.
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null)
+  const [mfaCode, setMfaCode] = useState('')
+
   async function handlePassword(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) { setError(error.message); setLoading(false); return }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) { setError(signInError.message); setLoading(false); return }
+
+    // Check whether the user needs to step up to aal2 (i.e. has MFA
+    // enrolled). Supabase issues an aal1 session on first signIn even
+    // when MFA is required — we step up before navigating.
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal?.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
+      const { data: factors } = await supabase.auth.mfa.listFactors()
+      const totp = factors?.totp?.[0]
+      if (totp) {
+        setMfaFactorId(totp.id)
+        setLoading(false)
+        return
+      }
+    }
+
+    window.location.href = nextUrl
+  }
+
+  async function handleMfa(e: React.FormEvent) {
+    e.preventDefault()
+    if (!mfaFactorId || mfaCode.length !== 6) return
+    setLoading(true); setError('')
+    const { error: mfaError } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: mfaFactorId, code: mfaCode,
+    })
+    if (mfaError) {
+      setError(mfaError.message || 'That code didn\'t match. Try again.')
+      setMfaCode('')
+      setLoading(false)
+      return
+    }
     window.location.href = nextUrl
   }
 
@@ -159,6 +196,45 @@ function LoginPageInner() {
           </div>
         )}
 
+        {/* MFA challenge — shown after a password sign-in if 2FA is enrolled */}
+        {mfaFactorId ? (
+          <form onSubmit={handleMfa}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4A7FBB', marginBottom: 8, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                Enter your 6-digit authentication code
+              </label>
+              <input
+                type="text"
+                value={mfaCode}
+                onChange={e => setMfaCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                placeholder="123456"
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                style={{ ...inp, letterSpacing: 8, textAlign: 'center', fontSize: 22, fontWeight: 700 }}
+              />
+              <p style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>
+                Open your authenticator app and paste the current code.
+              </p>
+            </div>
+            <button type="submit" disabled={loading || mfaCode.length !== 6} style={{
+              width: '100%', padding: '15px', background: loading || mfaCode.length !== 6 ? '#7B3A1A' : '#E8622A', color: 'white',
+              border: 'none', borderRadius: 12, fontFamily: 'Outfit, sans-serif', fontSize: 16, fontWeight: 700,
+              cursor: loading || mfaCode.length !== 6 ? 'not-allowed' : 'pointer',
+            }}>
+              {loading ? '⚡ Verifying…' : 'Verify & sign in →'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMfaFactorId(null); setMfaCode(''); setError('') }}
+              style={{ marginTop: 14, width: '100%', padding: '10px', background: 'transparent', border: 'none', color: '#4A7FBB', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+            >
+              ← Use a different account
+            </button>
+          </form>
+        ) : (
+          <>
         {/* Tab Toggle */}
         <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, marginBottom: 28 }}>
           {(['password', 'magic'] as const).map(t => (
@@ -247,6 +323,8 @@ function LoginPageInner() {
         }}>
           Create an account →
         </a>
+          </>
+        )}
 
         {/* Trust badges */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 36, flexWrap: 'wrap' }}>

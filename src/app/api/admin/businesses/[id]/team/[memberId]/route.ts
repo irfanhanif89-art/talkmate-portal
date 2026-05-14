@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 const ALLOWED_FIELDS = new Set([
   'name', 'role', 'department', 'phone', 'extension',
@@ -35,11 +36,20 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'team_member_updated',
+    businessId: id,
+    after: { member_id: memberId, ...update },
+    request,
+  })
+
   return NextResponse.json({ ok: true, member: data })
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; memberId: string }> },
 ) {
   const auth = await requireAdmin()
@@ -47,6 +57,13 @@ export async function DELETE(
 
   const { id, memberId } = await params
   const admin = createAdminClient()
+  const { data: before } = await admin
+    .from('team_members')
+    .select('name, role, phone')
+    .eq('id', memberId)
+    .eq('client_id', id)
+    .maybeSingle()
+
   const { error } = await admin
     .from('team_members')
     .delete()
@@ -54,5 +71,14 @@ export async function DELETE(
     .eq('client_id', id)
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'team_member_removed',
+    businessId: id,
+    before: { member_id: memberId, ...(before ?? {}) },
+    request,
+  })
+
   return NextResponse.json({ ok: true })
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { sendSms } from '@/lib/twilio'
+import { validatePassword } from '@/lib/password'
 
 // Self-serve signup route — Session 8. Public, no auth header required.
 // Replaces nothing; sits alongside the older /api/auth/register flow.
@@ -97,8 +98,11 @@ export async function POST(request: Request) {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ success: false, error: 'A valid email address is required.' }, { status: 400 })
   }
-  if (!password || password.length < 8) {
-    return NextResponse.json({ success: false, error: 'Password must be at least 8 characters.' }, { status: 400 })
+  // Session 11 — full strength check (length + upper + number + special).
+  // Returns the first failing rule as a user-facing message.
+  const pwError = validatePassword(password ?? '')
+  if (pwError) {
+    return NextResponse.json({ success: false, error: pwError }, { status: 400 })
   }
   if (!fullName) {
     return NextResponse.json({ success: false, error: 'Your full name is required.' }, { status: 400 })

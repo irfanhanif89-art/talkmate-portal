@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { generateTempPassword, isAdminPlan, PLAN_PRICE_AUD, requireAdmin } from '@/lib/admin-auth'
 import { postEmailTrigger } from '@/lib/make-webhook'
 import { sendEmail } from '@/lib/resend'
+import { logAdminAction } from '@/lib/audit'
 
 const ALLOWED_INDUSTRIES = new Set([
   // Legacy keys (businesses created before library-aligned update)
@@ -318,6 +319,20 @@ export async function POST(req: Request) {
     await admin.from('businesses').update({ welcome_email_sent: true }).eq('id', business.id)
     business.welcome_email_sent = true
   }
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'client_created',
+    businessId: business.id,
+    businessName: business.name ?? business_name,
+    after: {
+      plan,
+      industry,
+      account_status: business.account_status ?? null,
+      onboarded_by: 'admin',
+    },
+    request: req,
+  })
 
   return NextResponse.json({ ok: true, business })
 }

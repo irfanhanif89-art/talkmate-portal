@@ -1,8 +1,100 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 11 — Security foundations (2026-05-15)
+
+Branch: `security-foundations` — do NOT merge to main. Donna PRs after review.
+
+### What landed
+
+1. **Multi-factor authentication (TOTP)** on /settings/security. Optional
+   per user; once enrolled, the login page does an AAL step-up challenge
+   automatically. Supabase's native `auth.mfa.*` flow — no custom factor
+   storage.
+2. **Password strength enforcement.** Server-side `validatePassword()`
+   in `src/lib/password.ts` is now applied by `/api/auth/signup`,
+   `/api/auth/register`, `/api/auth/change-password`, and
+   `/api/auth/accept-invite`. UI rule checklist via the
+   `<PasswordStrength />` component on every password input.
+3. **Basic RBAC.** New `staff_members` table (separate from the existing
+   `team_members` directory). Roles: `owner` (businesses.owner_user_id),
+   `manager` (edit services/team/routing, no billing), `staff`
+   (view-only across operational pages). `useRole()` hook resolves
+   role client-side; layout SSR resolves role server-side and threads
+   `portalRole` into the sidebar so nav items are gated without a
+   client-flash. Sensitive nav entries (Billing, top-level Settings,
+   Agent Settings, Call Routing, White Label) are hidden for staff
+   /manager based on `ROLE_PERMISSIONS`.
+4. **Staff invite + accept flow.** Owner-only "Team Access" panel at
+   /settings/security. `/api/portal/staff/invite` stores a SHA-256
+   hash of the token (plaintext only in the email link), sends a
+   Resend email, and creates a pending `staff_members` row.
+   `/accept-invite?token=...` looks up the invite, asks for a
+   password, calls `auth.signUp()`, stamps `auth_user_id` +
+   `accepted_at`, and logs the user in.
+5. **Admin audit log.** New `admin_audit_log` table (service-role only,
+   no RLS). `src/lib/audit.ts` exposes `logAdminAction()` +
+   `diffFields()`. Integrated into: client create, client PATCH
+   (auto-derives `plan_changed`/`account_status_changed`/`client_updated`),
+   activate, suspend, cancel, start/convert/end/extend/reactivate
+   trial, dispatch enable + config update, team-member add/update/delete.
+   New `/admin/audit-log` page with filters (business name / action /
+   date range) and an expandable before/after diff panel.
+6. **Data retention infrastructure.** New
+   `businesses.data_retention_days` column (default 365). Monthly cron
+   at `/api/cron/data-retention` runs on the 1st at 00:00 UTC; counts
+   eligible rows in `calls`, `bookings`, `callbacks`, `dispatch_jobs`
+   older than the per-client cutoff. **Defaults to dry-run mode** —
+   never deletes anything unless `DRY_RUN_RETENTION=false` is
+   explicitly set in Vercel. Logs each pass to `admin_audit_log`.
+
+### Migration — `supabase/migrations/026_rbac_and_audit.sql`
+
+Adds the three pieces above. Idempotent. **Run after 028 (already in
+production)** — Postgres applies in filename order but Supabase tracks
+each migration independently, so a back-filled 026 lands cleanly on a
+database that already has 027/028 applied.
+
+### Required Donna setup
+
+1. **Run migration 026** in the Supabase SQL editor.
+2. **Enable TOTP in Supabase Auth.** Supabase Dashboard →
+   Authentication → Sign In Methods → MFA → enable
+   Time-based One-Time Password (TOTP).
+3. **Set Vercel env vars** if not already present:
+   - `RESEND_API_KEY` (already used elsewhere; confirms staff invite
+     emails will send).
+   - `CRON_SECRET` (already present; the data-retention cron uses the
+     shared `verifyCron` helper).
+   - `DRY_RUN_RETENTION` — leave **unset** or `true`. Setting to
+     `false` enables real deletion in the monthly cron. Do NOT flip
+     this without an explicit decision.
+4. **Add the call-recording consent disclosure** to every active Vapi
+   assistant's first message. Queensland legal requirement. Either at
+   the start, or rolled into the greeting:
+   - `"This call may be recorded for quality and training purposes."`
+   - Or: `"Good [morning/afternoon], [Business Name], [Agent Name] speaking. Just to let you know this call may be recorded. How can I help you today?"`
+
+   Assistants to update (Donna handles in Vapi dashboard, no code
+   change):
+   - All active client assistants — GM Towing, and any other live
+     client agents
+   - All 13 demo agents (TalkMate's industry demo numbers)
+
+### What changed for existing users
+
+- Anyone with a current `owner` role keeps full access. The sidebar's
+  Account section grows a "Security" link for everyone, and (admin
+  only) an "Audit Log" link.
+- Signup + register + change-password now require an uppercase letter,
+  a number, and a special character on top of the 8-char minimum.
+- Login gets a TOTP step-up challenge only for users who have explicitly
+  enrolled MFA — everyone else logs in exactly as before.
 
 ---
 

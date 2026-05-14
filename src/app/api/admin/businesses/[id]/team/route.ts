@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 // Admin team-directory list + create for a specific business.
 // Service-role client bypasses RLS; scope is enforced via the path's
@@ -67,5 +68,14 @@ export async function POST(
     .single()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'team_member_added',
+    businessId: id,
+    after: { name: data?.name, role: data?.role, phone: data?.phone, member_id: data?.id },
+    request,
+  })
+
   return NextResponse.json({ ok: true, member: data })
 }

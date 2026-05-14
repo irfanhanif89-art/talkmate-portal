@@ -44,7 +44,7 @@ export default async function PortalLayout({ children }: { children: React.React
   const STATUS_PRIORITY = [
     'active', 'trial', 'pending', 'pending_payment', 'suspended', 'expired', 'cancelled',
   ]
-  const business = (bizList ?? []).slice().sort((a, b) => {
+  let business = (bizList ?? []).slice().sort((a, b) => {
     const ai = STATUS_PRIORITY.indexOf((a.account_status as string) ?? '')
     const bi = STATUS_PRIORITY.indexOf((b.account_status as string) ?? '')
     const aRank = ai === -1 ? STATUS_PRIORITY.length : ai
@@ -54,6 +54,31 @@ export default async function PortalLayout({ children }: { children: React.React
     // the canonical state for the same owner.
     return new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime()
   })[0]
+
+  // Session 11 — if the user isn't an owner, they might be an invited
+  // staff/manager. Resolve via staff_members and load the parent
+  // business as if they owned it (RLS / API gates handle write
+  // permissions separately based on the portalRole).
+  let portalRole: 'owner' | 'manager' | 'staff' = 'owner'
+  if (!business) {
+    const { data: staffRow } = await supabase
+      .from('staff_members')
+      .select('client_id, role')
+      .eq('auth_user_id', user.id)
+      .eq('active', true)
+      .maybeSingle()
+    if (staffRow?.client_id) {
+      const { data: staffBiz } = await supabase
+        .from('businesses')
+        .select('id, name, business_type, plan, onboarding_completed, industry, is_partner, dispatch_enabled, command_enabled, account_status, created_at')
+        .eq('id', staffRow.client_id)
+        .maybeSingle()
+      if (staffBiz) {
+        business = staffBiz
+        portalRole = staffRow.role === 'manager' ? 'manager' : 'staff'
+      }
+    }
+  }
 
   if (!business) {
     // Authenticated user but no business record at all. Don't redirect
@@ -138,6 +163,7 @@ export default async function PortalLayout({ children }: { children: React.React
         userName={userName}
         userEmail={user.email ?? ''}
         userRole={userProfile?.role ?? 'owner'}
+        portalRole={portalRole}
         plan={business.plan ?? 'starter'}
         callsThisMonth={callsThisMonth ?? 0}
         todayCallCount={todayCount ?? 0}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 const TRIAL_DAYS = 7
 
@@ -23,6 +24,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const end = new Date(start.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000)
 
   const admin = createAdminClient()
+  const { data: before } = await admin
+    .from('businesses')
+    .select('plan, account_status')
+    .eq('id', id)
+    .maybeSingle()
+
   const { data, error } = await admin
     .from('businesses')
     .update({
@@ -41,6 +48,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await admin.from('client_comms_log').insert({
     business_id: id,
     note: `Started ${TRIAL_DAYS}-day free trial on the ${plan} plan. Ends ${end.toISOString().slice(0, 10)}.`,
+  })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'trial_started',
+    businessId: id,
+    businessName: data?.name ?? null,
+    before: { plan: before?.plan ?? null, account_status: before?.account_status ?? null },
+    after: { plan, account_status: 'trial', trial_end_date: end.toISOString() },
+    request: req,
   })
 
   return NextResponse.json({ ok: true, business: data })

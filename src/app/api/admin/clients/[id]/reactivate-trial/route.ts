@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { logAdminAction } from '@/lib/audit'
 
 const TRIAL_DAYS = 7
 
 // Restart a 7-day trial. Used by the "Reactivate trial" button on
 // expired accounts.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
@@ -33,6 +34,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   await admin.from('client_comms_log').insert({
     business_id: id,
     note: `Trial reactivated for ${TRIAL_DAYS} more days.`,
+  })
+
+  await logAdminAction({
+    adminEmail: auth.user.email ?? 'unknown',
+    action: 'trial_reactivated',
+    businessId: id,
+    businessName: data?.name ?? null,
+    after: { account_status: 'trial', trial_end_date: end.toISOString() },
+    request: req,
   })
 
   return NextResponse.json({ ok: true, business: data })

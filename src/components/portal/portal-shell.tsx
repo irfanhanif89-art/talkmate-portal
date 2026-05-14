@@ -11,6 +11,7 @@ interface Props {
   userName: string
   userEmail: string
   userRole: string
+  portalRole?: 'owner' | 'manager' | 'staff'
   plan: string
   callsThisMonth: number
   todayCallCount: number
@@ -47,6 +48,7 @@ export default function PortalShell(props: Props) {
         businessName={props.businessName}
         userEmail={props.userEmail}
         userRole={props.userRole}
+        portalRole={props.portalRole ?? 'owner'}
         plan={props.plan}
         callsThisMonth={props.callsThisMonth}
         partnerEarningsThisMonth={props.partnerEarningsThisMonth}
