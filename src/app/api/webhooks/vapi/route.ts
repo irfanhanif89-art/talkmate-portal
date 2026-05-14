@@ -295,8 +295,31 @@ async function handleEndOfCall(
   // Contacts — upsert on (client_id, phone). Increment call_count and
   // refresh last_seen. The contacts table uses `client_id` (migration
   // 008) not the older `business_id` shape.
+  let contactId: string | null = null
   if (phone) {
-    await upsertContact(supabase, business.id, phone, callerName, endedAt)
+    contactId = await upsertContact(supabase, business.id, phone, callerName, endedAt)
+  }
+
+  // Link the call into the CRM's contact_calls join table (migration 008).
+  // The contact detail page reads exclusively from contact_calls — without
+  // this insert it shows "No calls logged yet" even though calls and
+  // contacts both have rows. `contact_calls.call_id` is TEXT and UNIQUE,
+  // so we use vapi_call_id directly and upsert to stay idempotent across
+  // webhook retries.
+  if (contactId) {
+    await supabase.from('contact_calls').upsert({
+      contact_id: contactId,
+      call_id: vapiCallId,
+      client_id: business.id,
+      call_at: startedAt ?? endedAt,
+      duration_seconds: durationSeconds,
+      outcome,
+      summary,
+      transcript: transcript || null,
+    }, { onConflict: 'call_id' })
+      .then(({ error }) => {
+        if (error) console.error('[vapi-webhook] contact_calls upsert failed', error.message)
+      })
   }
 
   // Industry side-effects — only run when we have meaningful data.
@@ -335,13 +358,16 @@ async function handleEndOfCall(
 
 // ── contacts upsert ─────────────────────────────────────────────────────
 
+// Returns the contact UUID so the caller can link the call into
+// contact_calls. Returns null on failure — the call still lands in
+// `calls`, but the CRM join won't be made.
 async function upsertContact(
   supabase: ReturnType<typeof createAdminClient>,
   clientId: string,
   phone: string,
   callerName: string | null,
   whenIso: string,
-) {
+): Promise<string | null> {
   const { data: existing } = await supabase
     .from('contacts')
     .select('id, call_count, name')
@@ -359,16 +385,22 @@ async function upsertContact(
         ...(callerName && !existing.name ? { name: callerName } : {}),
       })
       .eq('id', existing.id)
-  } else {
-    await supabase.from('contacts').insert({
-      client_id: clientId,
-      phone,
-      name: callerName,
-      first_seen: whenIso,
-      last_seen: whenIso,
-      call_count: 1,
-    })
+    return existing.id as string
   }
+
+  const { data: created, error } = await supabase.from('contacts').insert({
+    client_id: clientId,
+    phone,
+    name: callerName,
+    first_seen: whenIso,
+    last_seen: whenIso,
+    call_count: 1,
+  }).select('id').single()
+  if (error || !created) {
+    console.error('[vapi-webhook] contacts insert failed', error?.message)
+    return null
+  }
+  return created.id as string
 }
 
 // ── industry side-effects (preserved from original receiver) ────────────

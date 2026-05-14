@@ -187,10 +187,20 @@ export default function CallsPage() {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id, phone').eq('owner_user_id', user.id).single()
-      if (!biz) return
+      // The column on `businesses` is `phone_number`, not `phone`. Asking
+      // for a non-existent column makes Supabase return `null` data and
+      // the `.single()` errors — `biz` is null, this function early-returns,
+      // and the page hangs on "Loading calls..." indefinitely. (The
+      // sidebar count is computed separately in the portal layout, which
+      // is why it shows the right number while this page hangs.)
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id, phone_number')
+        .eq('owner_user_id', user.id)
+        .single()
+      if (!biz) { setLoading(false); return }
       setBusinessId(biz.id)
-      setBusinessPhone((biz as Record<string, string>).phone || '')
+      setBusinessPhone((biz as { phone_number?: string | null }).phone_number ?? '')
       const { data } = await supabase.from('calls').select('*').eq('business_id', biz.id).order('created_at', { ascending: false }).limit(100)
       setCalls(data || [])
       setLoading(false)
