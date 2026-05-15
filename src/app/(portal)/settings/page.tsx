@@ -6,6 +6,7 @@ import ServicePricingEditor, { type ServicePricing } from '@/components/portal/s
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
 import DivertInstructions from '@/components/portal/divert-instructions'
 import ServicesEditor, { type Service } from '@/components/portal/services-editor'
+import SyncAgentButton from '@/components/portal/sync-agent-button'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -389,6 +390,16 @@ export default function SettingsPage() {
               {syncing ? 'Syncing…' : 'Save & Sync to AI'}
             </button>
             <button onClick={() => previewVoice(greeting || 'Hi, thank you for calling!')} style={{ background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', padding: '12px 20px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>🎧 Preview Voice</button>
+          </div>
+
+          <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 10 }}>
+              Push VIP callers, team members, and agent tools to your live AI agent.
+            </div>
+            <SyncAgentButton
+              hasAgent={!!biz.vapi_agent_id}
+              initialLastSyncedAt={biz.agent_last_synced_at ?? null}
+            />
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { silentSyncAgent } from '@/components/portal/sync-agent-button'
 
 interface TeamMember {
   id: string
@@ -60,7 +61,11 @@ export default function TeamView({
   async function deleteMember(id: string) {
     if (!confirm('Remove this team member?')) return
     const res = await fetch(`/api/portal/team/${id}`, { method: 'DELETE' })
-    if (res.ok) { setTeam(t => t.filter(m => m.id !== id)); showToast('Removed') }
+    if (res.ok) {
+      setTeam(t => t.filter(m => m.id !== id))
+      showToast('Removed')
+      silentSyncAgent()
+    }
   }
 
   async function toggleActive(m: TeamMember) {
@@ -68,7 +73,10 @@ export default function TeamView({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !m.active }),
     })
-    if (res.ok) setTeam(t => t.map(x => x.id === m.id ? { ...x, active: !x.active } : x))
+    if (res.ok) {
+      setTeam(t => t.map(x => x.id === m.id ? { ...x, active: !x.active } : x))
+      silentSyncAgent()
+    }
   }
 
   return (
@@ -156,7 +164,7 @@ export default function TeamView({
         <MemberModal
           initial={editing}
           onClose={() => { setDraftOpen(false); setEditing(null) }}
-          onSaved={() => { setDraftOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added') }}
+          onSaved={() => { setDraftOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent() }}
         />
       )}
 

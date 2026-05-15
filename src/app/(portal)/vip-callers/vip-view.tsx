@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { silentSyncAgent } from '@/components/portal/sync-agent-button'
 
 interface Vip {
   id: string
@@ -48,7 +49,11 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
   async function deleteVip(id: string) {
     if (!confirm('Remove this VIP caller?')) return
     const res = await fetch(`/api/portal/vip-callers/${id}`, { method: 'DELETE' })
-    if (res.ok) { setList(l => l.filter(x => x.id !== id)); showToast('Removed') }
+    if (res.ok) {
+      setList(l => l.filter(x => x.id !== id))
+      showToast('Removed')
+      silentSyncAgent()
+    }
   }
 
   async function toggleActive(v: Vip) {
@@ -56,7 +61,10 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !v.active }),
     })
-    if (res.ok) setList(l => l.map(x => x.id === v.id ? { ...x, active: !x.active } : x))
+    if (res.ok) {
+      setList(l => l.map(x => x.id === v.id ? { ...x, active: !x.active } : x))
+      silentSyncAgent()
+    }
   }
 
   return (
@@ -125,7 +133,7 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
           initial={editing}
           team={team}
           onClose={() => { setDrawerOpen(false); setEditing(null) }}
-          onSaved={() => { setDrawerOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added') }}
+          onSaved={() => { setDrawerOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent() }}
         />
       )}
       {toast && <div style={toastStyle}>{toast}</div>}
