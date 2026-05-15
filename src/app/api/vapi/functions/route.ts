@@ -65,16 +65,47 @@ export async function POST(request: Request) {
   // If VAPI_WEBHOOK_SECRET is unset we permit calls (dev). Production
   // operators MUST set it.
 
-  let body: FnRequest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any
   try {
-    body = await request.json()
+    raw = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const fn = (body.function_name ?? '').trim()
-  const businessId = (body.business_id ?? '').trim()
-  const params = (body.params ?? {}) as Record<string, unknown>
+  // Support both the legacy custom format ({ function_name, business_id, params })
+  // and Vapi's native tool-call format ({ message: { type: 'function-call', functionCall: { name, parameters } }, call: { assistantId } })
+  let fn: string
+  let businessId: string
+  let params: Record<string, unknown>
+
+  const isVapiNative = raw?.message?.type === 'function-call' || raw?.message?.type === 'tool-calls'
+  if (isVapiNative) {
+    // Vapi native: extract function name + parameters
+    const fc = raw.message?.functionCall ?? raw.message?.toolCallList?.[0]?.function
+    fn = (fc?.name ?? '').trim()
+    const rawArgs = fc?.parameters ?? fc?.arguments ?? {}
+    params = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs
+
+    // Resolve business_id from the Vapi assistantId → businesses table
+    const assistantId: string = raw.call?.assistantId ?? raw.call?.assistant?.id ?? ''
+    if (!assistantId) {
+      return NextResponse.json({ error: 'Cannot resolve business: no assistantId in call context' }, { status: 400 })
+    }
+    const supabaseAdmin = createAdminClient()
+    const { data: biz } = await supabaseAdmin
+      .from('businesses')
+      .select('id')
+      .eq('vapi_agent_id', assistantId)
+      .single()
+    businessId = biz?.id ?? ''
+  } else {
+    // Legacy custom format
+    const body = raw as FnRequest
+    fn = (body.function_name ?? '').trim()
+    businessId = (body.business_id ?? '').trim()
+    params = (body.params ?? {}) as Record<string, unknown>
+  }
 
   if (!VALID_FNS.has(fn)) {
     return NextResponse.json({ error: `Unknown function: ${fn}` }, { status: 400 })
