@@ -114,6 +114,51 @@ const TOOL_DEFS: Record<string, { description: string; properties: Record<string
     },
     required: ['quote_id', 'addon_name'],
   },
+  // Session 15 — scheduler + waitlist (Growth/Pro only; gated below).
+  check_availability: {
+    description: 'Check if the requested date and time has an available slot. Always call this before create_booking when the caller proposes a specific date or time.',
+    properties: {
+      date: { type: 'string', description: 'The day requested. Accepts ISO date (YYYY-MM-DD) or natural language like "tomorrow".' },
+      time: { type: 'string', description: 'The time of day requested, e.g. "9am", "2:30pm", "14:30".' },
+      duration_minutes: { type: 'number', description: 'Optional. Estimated duration of the job. Defaults to the business default.' },
+    },
+    required: ['date', 'time'],
+  },
+  add_to_waitlist: {
+    description: 'Add the caller to the waitlist when no slot is available. Offer this only after check_availability says no slots fit. The caller is SMS’d immediately when a slot opens.',
+    properties: {
+      caller_phone: { type: 'string', description: "Caller's phone number" },
+      caller_name: { type: 'string', description: "Caller's name" },
+      requested_date: { type: 'string', description: 'Preferred date if the caller has one' },
+      truck_type: { type: 'string', description: 'Truck type if relevant' },
+      pickup_address: { type: 'string', description: 'Pickup address if relevant' },
+      dropoff_address: { type: 'string', description: 'Dropoff address if relevant' },
+      description: { type: 'string', description: 'Short description of the job' },
+      call_id: { type: 'string', description: 'The current Vapi call id' },
+    },
+    required: ['caller_phone'],
+  },
+  cancel_booking: {
+    description: 'Cancel an existing booking. Find the booking by booking_id, or by caller_phone plus the original scheduled_start.',
+    properties: {
+      booking_id: { type: 'string', description: 'The booking id to cancel, if known.' },
+      caller_phone: { type: 'string', description: "Caller's phone number, used to look up the booking if booking_id is not known." },
+      scheduled_start: { type: 'string', description: 'Original start timestamp, used to disambiguate when a caller has multiple bookings.' },
+      cancellation_reason: { type: 'string', description: 'Optional reason the caller gave.' },
+    },
+    required: [],
+  },
+  reschedule_booking: {
+    description: 'Move an existing booking to a new date and time. Find it by booking_id, or by caller_phone + scheduled_start. Always confirm availability of the new slot before saying yes.',
+    properties: {
+      booking_id: { type: 'string', description: 'The booking id to move, if known.' },
+      caller_phone: { type: 'string', description: "Caller's phone number, used to look up the booking if booking_id is not known." },
+      scheduled_start: { type: 'string', description: 'Original start timestamp, used to disambiguate.' },
+      new_date: { type: 'string', description: 'The new requested date.' },
+      new_time: { type: 'string', description: 'The new requested time of day.' },
+    },
+    required: ['new_date', 'new_time'],
+  },
 }
 
 // ---------- helpers ----------
@@ -281,6 +326,69 @@ function removeQuoteBlock(prompt: string): { next: string; changed: boolean } {
   return { next, changed: next !== prompt }
 }
 
+// ---------- Session 15 — VIP bypass prompt block (all plans) ----------
+
+function buildVipBypassBlock(): string {
+  return [
+    'VIP CALLER HANDLING:',
+    'If check_caller returns caller_type: "vip_bypass":',
+    '1. Do not greet the caller or speak.',
+    '2. Immediately transfer the call to the transfer_number returned.',
+    '3. If the transfer fails or is not answered, try once more immediately.',
+    '4. If the second transfer also fails, answer the call and say:',
+    '   "Hi [vip_name], this is [business_name]. The owner is not available right now. Can I take a message or help you with anything?"',
+    '5. Take a message and log it with outcome: vip_message_taken.',
+    '6. After the call, send an SMS to the owner with the VIP\'s name, number, and message summary.',
+  ].join('\n')
+}
+const VIP_BYPASS_RE = /^VIP CALLER HANDLING:[\s\S]*?(?:\n\s*\n|$)/m
+function injectVipBypassBlock(prompt: string): { next: string; changed: boolean } {
+  const block = buildVipBypassBlock()
+  if (VIP_BYPASS_RE.test(prompt)) {
+    const replaced = prompt.replace(VIP_BYPASS_RE, block + '\n\n')
+    return { next: replaced, changed: replaced !== prompt }
+  }
+  const trimmed = prompt.replace(/\s+$/, '')
+  return { next: `${trimmed}\n\n${block}\n`, changed: true }
+}
+
+// ---------- Session 15 — Scheduler + waitlist prompt block (Growth/Pro) ----------
+
+function buildSchedulerBlock(): string {
+  return [
+    'SCHEDULER AND BOOKINGS:',
+    'When a caller wants to book a job or appointment:',
+    '1. Call check_availability with the requested date and time.',
+    '2. If available: collect all required details and call create_booking.',
+    '3. If not available: offer the next available slot from the response.',
+    '4. If no slots fit at all: offer to add the caller to the waitlist by calling add_to_waitlist.',
+    '5. After a booking is confirmed: advise the caller they will receive an SMS confirmation.',
+    '',
+    'WAITLIST:',
+    'When offering the waitlist say: "We are fully booked for that time, but I can add you to our waitlist. If a slot opens up, we will SMS you straight away and give you 30 minutes to confirm. Would you like to be added?"',
+    'If yes: call add_to_waitlist.',
+    '',
+    'CANCELLATIONS AND RESCHEDULES:',
+    'If the caller wants to cancel: call cancel_booking with the booking_id (if they know it) or caller_phone.',
+    'If the caller wants to reschedule: call reschedule_booking with the new date and time.',
+  ].join('\n')
+}
+const SCHEDULER_RE = /^SCHEDULER AND BOOKINGS:[\s\S]*?(?:\n\s*\n|$)/m
+function injectSchedulerBlock(prompt: string): { next: string; changed: boolean } {
+  const block = buildSchedulerBlock()
+  if (SCHEDULER_RE.test(prompt)) {
+    const replaced = prompt.replace(SCHEDULER_RE, block + '\n\n')
+    return { next: replaced, changed: replaced !== prompt }
+  }
+  const trimmed = prompt.replace(/\s+$/, '')
+  return { next: `${trimmed}\n\n${block}\n`, changed: true }
+}
+function removeSchedulerBlock(prompt: string): { next: string; changed: boolean } {
+  if (!SCHEDULER_RE.test(prompt)) return { next: prompt, changed: false }
+  const next = prompt.replace(SCHEDULER_RE, '')
+  return { next, changed: next !== prompt }
+}
+
 // ---------- route ----------
 
 export async function POST() {
@@ -367,13 +475,14 @@ export async function POST() {
   const serverUrl = appUrl + '/api/vapi/functions'
 
   const template = existingTools.find(t => toolName(t) === 'check_caller') ?? null
-  // Quote tools are Growth/Pro only. Starter plans get them stripped if
-  // present so a downgrade cleans up properly.
+  // Growth/Pro plans get the quoting and scheduler tools. Starter agents
+  // get the base four. Downgrades cleanly strip the extras below.
   const plan = (business.plan as string | null) ?? 'starter'
   const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
   const baseTools = ['check_caller', 'log_outcome', 'get_team', 'schedule_callback']
   const quoteTools = ['calculate_job_quote', 'log_quote_addon']
-  const ensured = quoteToolsEnabled ? [...baseTools, ...quoteTools] : baseTools
+  const schedulerTools = ['check_availability', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking']
+  const ensured = quoteToolsEnabled ? [...baseTools, ...quoteTools, ...schedulerTools] : baseTools
 
   let toolsChanged = false
   const nextTools: VapiTool[] = existingTools.slice()
@@ -391,9 +500,9 @@ export async function POST() {
       }
     }
   }
-  // Strip quote tools on Starter — handles plan downgrades cleanly.
+  // Strip quote + scheduler tools on Starter — handles plan downgrades cleanly.
   if (!quoteToolsEnabled) {
-    for (const fn of quoteTools) {
+    for (const fn of [...quoteTools, ...schedulerTools]) {
       const idx = nextTools.findIndex(t => toolName(t) === fn)
       if (idx !== -1) {
         nextTools.splice(idx, 1)
@@ -415,6 +524,28 @@ export async function POST() {
     if (quoteResult.changed) {
       updatedPrompt = quoteResult.next
       fieldsUpdated.push('quote_block_removed')
+    }
+  }
+
+  // ---- VIP BYPASS prompt block (all plans) ----
+  const vipBypassResult = injectVipBypassBlock(updatedPrompt)
+  if (vipBypassResult.changed) {
+    updatedPrompt = vipBypassResult.next
+    fieldsUpdated.push('vip_bypass_block_added')
+  }
+
+  // ---- SCHEDULER prompt block (Growth/Pro only) ----
+  if (quoteToolsEnabled) {
+    const schedResult = injectSchedulerBlock(updatedPrompt)
+    if (schedResult.changed) {
+      updatedPrompt = schedResult.next
+      fieldsUpdated.push('scheduler_block_added')
+    }
+  } else {
+    const schedResult = removeSchedulerBlock(updatedPrompt)
+    if (schedResult.changed) {
+      updatedPrompt = schedResult.next
+      fieldsUpdated.push('scheduler_block_removed')
     }
   }
 

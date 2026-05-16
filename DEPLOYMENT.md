@@ -1,8 +1,117 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 15 — Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays (2026-05-16)
+
+### Migration
+
+**Run before deploy:** `supabase/migrations/031_accounts_vip_scheduler.sql`
+
+Adds:
+- `vip_callers` extended with `account_type` (account / vip), `company_name`, `abn`, `billing_contact_name`, `billing_contact_email`, `linked_numbers` (jsonb), `vip_bypass` (boolean). The existing `active` column was kept — the brief mentioned `is_active` in places but the live table uses `active`.
+- `bookings` extended with `description`, route fields (`pickup_address` + contacts, `dropoff_address` + contacts), lat/lng, `distance_km`, `duration_minutes`, `truck_type`, `rate_type`, `account_id` (FK to vip_callers), `driver_id` (FK to drivers), `booking_source` (agent/manual/google_calendar/walk_in), `estimated_value`, `scheduled_start`/`scheduled_end`, `actual_start`/`actual_end`, `no_show`, SMS-tracking flags (`sms_confirmation_sent`, `sms_reminder_24h_sent`, `sms_reminder_2h_sent`), `cancellation_reason`, `waitlist_position`.
+- `waitlist` table (RLS) with `position`, `status` (waiting/offered/claimed/expired/cancelled), `offered_at`, `offer_expires_at`, `claimed_at`, `booking_id`, `call_id`.
+- `public_holidays` table (no RLS) sourced from data.gov.au. National holidays are fanned out into one row per state on sync so the scheduler can do `where state = $1` cleanly.
+- `sms_log` table (RLS) with `to_phone`, `message`, `twilio_sid`, `status`, `sms_type`, `booking_id`, `waitlist_id`, `sent_at`, `error_message`.
+- `businesses` extended with `sms_used_this_month`, `sms_reset_at`.
+- `scheduler_settings` extended with `default_duration_tilt_minutes`, `default_duration_sideloader_minutes`, `default_duration_minutes`, `reminder_24h_enabled`, `reminder_2h_enabled`, `waitlist_auto_notify`, `waitlist_claim_window_minutes`, `cancellation_policy_enabled`, `cancellation_notice_hours`, `cancellation_fee_aud`, `overridden_holidays`.
+
+All statements are idempotent.
+
+### What landed
+
+1. **`src/lib/sms.ts`** — single Twilio SMS service. Normalises phone numbers to +61 E.164, enforces plan SMS limits (Starter 0 / Growth 200 / Pro 500), opportunistically resets the monthly counter on the first send of the month, calls Twilio's REST `Messages.json` endpoint, writes every send (success or failure) to `sms_log`, and increments `businesses.sms_used_this_month`. Eight templated message types: `templateBookingConfirmation`, `templateReminder24h`, `templateReminder2h`, `templateCancellation`, `templateWaitlistOffer`, `templateWaitlistClaimed`, `templateWaitlistExpired`, `templateVipMissedCall`. **Direct Twilio replaces Make.com for all booking SMS** going forward.
+2. **`POST /api/portal/sms/send`** — manual SMS send for the portal UI; routes through `sendSMS`.
+3. **`/vip-callers` redesigned** with two tabs:
+   - **Accounts tab**: card layout with company name, ABN, billing contact, linked-number chips, active toggle, edit + view history. New `POST/GET/PATCH/DELETE /api/portal/accounts` and `/api/portal/accounts/[id]/history` endpoints (admin equivalents under `/api/admin/businesses/[id]/accounts`).
+   - **VIP Callers tab**: existing table layout with a green "Direct Transfer" badge on every bypass VIP. The "Add VIP" modal now shows the bypass info banner and defaults `vip_bypass = true` for every new entry.
+   - Tab state mirrored in URL (`?tab=accounts` / `?tab=vip`).
+4. **`/scheduler` page** with three tabs:
+   - **Calendar**: toggle between **week view** (52px time gutter + 7 day columns, today highlighted, hour rows from operating hours, closed hours use diagonal stripe hatch, agent jobs orange / manual blue / in-progress green / cancelled red) and **day view** (driver-lane layout — each active driver gets a horizontal row, plus an "Unassigned" lane; job blocks are absolutely positioned with left offset by start time and width by duration; sticky time header; "OPEN" tint on empty cells; live "now" indicator). Click a slot to open Add Job pre-filled with that date/time/driver.
+   - **Job List**: table with status filter, columns Date/Time, Customer, Route, Truck, Driver, Source badge, Status badge. No price column.
+   - **Settings**: operating hours grid (per-day open/close + enabled), buffer minutes, max concurrent jobs, default durations (tilt/sideloader for towing; appointment duration for others), SMS toggles (locked on Starter), waitlist toggles, cancellation policy, state + timezone with auto-mapping. Saves via `/api/portal/scheduler-config` and triggers `silentSyncAgent()`.
+5. **Bookings API** — `GET` extended with `from`/`to` filters for the scheduler grid; **new `POST`** for manual bookings (auto-resolves `account_id` from caller phone against `vip_callers.linked_numbers`, fires SMS confirmation when scheduler setting is on). `PATCH /api/portal/bookings/[id]` extended to allow updating all scheduler fields plus cancellation. Cancelling a booking now sends a cancellation SMS and pings `/api/portal/waitlist/offer` for the now-open slot. Admin equivalents under `/api/admin/businesses/[id]/bookings`.
+6. **Waitlist engine**: `GET/POST /api/portal/waitlist`, `PATCH/DELETE /api/portal/waitlist/[id]`, `POST /api/portal/waitlist/offer` (internal — gated by `INTERNAL_API_SECRET` or `VAPI_WEBHOOK_SECRET`; picks the next waiting entry, marks it offered, sends the SMS, stamps the expiry).
+7. **Three new Vercel cron jobs** (added to `vercel.json`):
+   - `/api/cron/waitlist-expiry` every 15 minutes — flips offered → expired past the claim window, sends the expired SMS, then pushes the offer to the next entry on each affected client.
+   - `/api/cron/sms-reminders` hourly — sends 24h and 2h reminders for upcoming bookings, gated by `scheduler_settings.reminder_24h_enabled` / `reminder_2h_enabled` and the plan SMS allowance. Window logic: 24h between now+23h and now+25h, 2h between now+1h45m and now+2h15m. Flips `sms_reminder_*_sent` on success only.
+   - `/api/cron/sync-public-holidays` annually (Jan 1) — pulls current + next year from `data.gov.au` resource `33673aca-0857-42e5-b8f0-9981b4755686`, parses YYYYMMDD dates, maps `nat`/`act`/`nsw`/`nt`/`qld`/`sa`/`tas`/`vic`/`wa`, fans out national holidays per state, upserts on `(state, holiday_date)`. Can be invoked on-demand by hitting the endpoint with `Authorization: Bearer ${CRON_SECRET}`.
+8. **`GET /api/portal/public-holidays`** — read-only list for the scheduler settings banner.
+9. **`check_caller` rewritten** to detect:
+   - **Accounts**: matches inbound phone against `vip_callers.phone` AND any `linked_numbers[].phone` using last-9-digit comparison. Returns `caller_type: 'account'` with `account_id`, `company_name`, `billing_contact_name/email`, `rate_type: 'account'`.
+   - **VIP bypass**: returns `caller_type: 'vip_bypass'` with `transfer_number` (from `notifications_config.live_transfer_number`), `vip_name`, `business_name`.
+   - **Regular VIP** (legacy non-bypass) and **existing contact** / **unknown** flows are preserved.
+10. **Three new Vapi functions** appended:
+    - `check_availability` — checks operating hours + public holidays + concurrent job count + driver availability (towing). Returns `{ available, message, scheduled_start, scheduled_end }` on success or a reason code (`closed_day`, `outside_hours`, `public_holiday`, `capacity`, `no_drivers`).
+    - `add_to_waitlist` — inserts into waitlist with auto-incrementing position. Returns the position and a natural-language message.
+    - `cancel_booking` — finds by `booking_id` or `caller_phone + scheduled_start`, applies cancellation policy notice if configured, sets status to cancelled, fires waitlist offer.
+    - `reschedule_booking` — finds the booking, reuses `check_availability` for the new slot, updates `scheduled_start`/`scheduled_end`, resets the SMS-reminder flags.
+11. **Sync routes** (both `/api/vapi/sync` and `/api/admin/vapi/sync`) ensure the four new scheduler tools on Growth/Pro, strip them on Starter, inject a `VIP CALLER HANDLING:` prompt block on all plans, and inject a `SCHEDULER AND BOOKINGS:` block on Growth/Pro.
+12. **Sidebar nav**: added `Scheduler` entry (CalendarDays icon) between Quotes and Analytics in both the client sidebar and the admin portal shell. Admin parity routes added for `/admin/clients/[clientId]/portal/scheduler`.
+13. **Website updates** (talkmate-website repo): pricing page plans rebuilt — Starter lost "SMS confirmations" (booking SMS is a Growth/Pro feature now), Growth gained Job scheduler + 200 booking SMS / month + waitlist + distance quoting + account management, Pro gained 500 booking SMS / month. Features page added three highlighted cards (Job scheduler, Live distance quoting, SMS confirmations/reminders) plus Waitlist and Account client management. Removed WhatsApp from `IntegrationsRow.tsx`.
+
+### New API endpoints
+
+Portal:
+- `POST /api/portal/sms/send`
+- `GET / POST / PATCH / DELETE /api/portal/accounts(/[id])` + `GET /api/portal/accounts/[id]/history`
+- `POST /api/portal/bookings` (was GET-only)
+- `GET / PATCH /api/portal/scheduler-config`
+- `GET / POST /api/portal/waitlist`, `PATCH / DELETE /api/portal/waitlist/[id]`
+- `POST /api/portal/waitlist/offer` (internal)
+- `GET /api/portal/public-holidays`
+
+Admin:
+- `GET / POST / PATCH / DELETE /api/admin/businesses/[id]/accounts(/[accountId])` + history
+- `GET / PATCH /api/admin/businesses/[id]/scheduler-config`
+- `POST /api/admin/businesses/[id]/bookings` (was GET-only)
+- `GET /api/admin/businesses/[id]/drivers` (read-only)
+
+Crons:
+- `GET/POST /api/cron/waitlist-expiry`
+- `GET/POST /api/cron/sms-reminders`
+- `GET/POST /api/cron/sync-public-holidays`
+
+### Environment variables
+
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` — required by `src/lib/sms.ts`.
+- `CRON_SECRET` — required for the three new cron routes.
+- `INTERNAL_API_SECRET` (or `VAPI_WEBHOOK_SECRET` fallback) — gates `/api/portal/waitlist/offer`.
+- `NEXT_PUBLIC_APP_URL` — used by the cron job's internal `fetch` for follow-up waitlist offers.
+
+### Deviations from brief
+
+- Brief mentioned `is_active` on `vip_callers` in places, but the live table uses `active`. Migration 031 respects the existing column name.
+- Brief lists "no SMS on Starter" but the legacy Starter copy on the website previously included "SMS confirmations". Removed from Starter feature list to match the new plan gating.
+- Cancellation policy is enforced as a soft notice (the agent advises the caller of the fee but proceeds with the cancellation). Hard enforcement (refuse to cancel) was not in scope.
+- Scheduler dashboard uses the Booking table directly — no separate "calendar events" table. This simplifies the data model and means the agent and the portal always agree.
+- The `/icon` prerender error on the website repo pre-existed Session 15 and only surfaces on Windows local builds; Vercel deploys it cleanly.
+
+### Testing checklist
+
+- Run migration 031 in Supabase SQL editor. Confirm `vip_callers` has the new columns, `bookings` has the scheduler columns, `waitlist`/`public_holidays`/`sms_log` exist, `businesses` has `sms_used_this_month`, `scheduler_settings` has the new fields.
+- POST `/api/cron/sync-public-holidays` with `Authorization: Bearer ${CRON_SECRET}` and confirm `public_holidays` has VIC entries for 2026 and 2027.
+- Go to `/vip-callers` as GM Towing → Accounts tab loads → add an account with two linked numbers → save → tag chips render → View History opens the side drawer.
+- Switch to VIP Callers tab → add a VIP → the info banner about bypass is visible → save → "Direct Transfer" badge shows in the table.
+- Go to `/scheduler` → Day view shows driver lanes including an "Unassigned" row → click an empty cell → Add Job modal pre-fills with that slot and driver.
+- Save a booking → it appears immediately on the calendar → if the customer phone is set and `booking_confirmation_sms` is on, a row appears in `sms_log` and `sms_used_this_month` increments.
+- Open Settings tab → toggle reminders → Save → settings persist → silent sync fires.
+- In the Vapi dashboard, confirm GM Towing's assistant now has `check_availability`, `add_to_waitlist`, `cancel_booking`, `reschedule_booking` tools and both new prompt blocks. Starter clients have none of those tools or the scheduler block.
+- Disable the Make.com Booking SMS scenario (5684594) **after** confirming a live test booking sends via Twilio successfully.
+
+### Manual handoff for Donna
+
+1. Run `031_accounts_vip_scheduler.sql` in Supabase SQL editor.
+2. Confirm `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `CRON_SECRET` are all present in Vercel (Production + Preview).
+3. Trigger public holiday sync manually: `curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://app.talkmate.com.au/api/cron/sync-public-holidays`. Verify `public_holidays` table has VIC entries for 2026.
+4. After Vercel deploys, hit "Sync Agent" on GM Towing to push the new tools and prompt blocks to the live Vapi assistant.
+5. Send one test booking through the portal → confirm SMS lands → only **then** disable Make.com Booking SMS scenario (5684594). Do not delete it; mark inactive in Make.com.
+6. Report back.
 
 ---
 

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Phone, FileText, Settings, MessageSquare,
   Lock, Users, PhoneCall, BookOpen,
   UserCheck, Crown, ClipboardList, ExternalLink, ArrowLeft,
-  Tag, MapPin,
+  Tag, MapPin, CalendarDays,
 } from 'lucide-react'
 
 interface NavItem {
@@ -27,6 +27,8 @@ const SECTIONS: Section[] = [
       { href: '/calls', label: 'Calls', icon: Phone },
       // Session 14 — quotes log + service area config.
       { href: '/quotes', label: 'Quotes', icon: Tag },
+      // Session 15 — native scheduler with day + week views.
+      { href: '/scheduler', label: 'Scheduler', icon: CalendarDays },
     ],
   },
   {

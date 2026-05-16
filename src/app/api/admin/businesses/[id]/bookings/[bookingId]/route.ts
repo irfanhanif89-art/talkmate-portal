@@ -5,6 +5,11 @@ import { requireAdmin } from '@/lib/admin-auth'
 const ALLOWED_FIELDS = new Set([
   'status', 'caller_name', 'caller_phone', 'booking_type',
   'service_requested', 'preferred_date', 'preferred_time', 'notes',
+  'description', 'pickup_address', 'pickup_contact_name', 'pickup_contact_phone',
+  'dropoff_address', 'dropoff_contact_name', 'dropoff_contact_phone',
+  'truck_type', 'rate_type', 'driver_id', 'estimated_value',
+  'scheduled_start', 'scheduled_end', 'actual_start', 'actual_end',
+  'no_show', 'cancellation_reason',
 ])
 
 export async function PATCH(

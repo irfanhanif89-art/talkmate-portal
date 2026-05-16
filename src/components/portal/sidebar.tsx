@@ -9,7 +9,7 @@ import {
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
-  Truck, Car, ClipboardList, Tag, MapPin,
+  Truck, Car, ClipboardList, Tag, MapPin, CalendarDays,
 } from 'lucide-react'
 
 interface Props {
@@ -79,6 +79,10 @@ export default function PortalSidebar(props: Props) {
         // self-explanatory ("upgrade to start quoting") rather than
         // disappearing on Starter.
         { href: '/quotes', label: 'Quotes', icon: Tag, show: true },
+        // Session 15 — native scheduler. Position: between Quotes and
+        // Bookings (which lives further down). Visible on all plans;
+        // Starter sees a locked SMS row inside settings.
+        { href: '/scheduler', label: 'Scheduler', icon: CalendarDays, show: true },
         { href: '/analytics', label: 'Analytics', icon: BarChart2, show: true },
       ],
     },

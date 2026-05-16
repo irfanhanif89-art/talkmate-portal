@@ -5,16 +5,24 @@ const VALID_ACTIONS = new Set([
   'transfer_escalation', 'transfer_to_member', 'take_message', 'skip_queue',
 ])
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requireClient()
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
-  const { data, error } = await supabase
+  // Default to VIP-only since Session 15 split accounts into a dedicated
+  // tab; ?include=all keeps the legacy "everything" behaviour for any
+  // existing caller that wants the full vip_callers list.
+  const { searchParams } = new URL(request.url)
+  const includeAll = searchParams.get('include') === 'all'
+
+  let q = supabase
     .from('vip_callers')
     .select('*')
     .order('created_at', { ascending: false })
+  if (!includeAll) q = q.eq('account_type', 'vip')
 
+  const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ callers: data ?? [] })
 }
@@ -36,6 +44,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'transfer_to_member_id is required when action is transfer_to_member.' }, { status: 400 })
   }
 
+  // Session 15: new VIPs default to bypass=true. The agent transfers
+  // straight to live_transfer_number without speaking. Accounts go through
+  // /api/portal/accounts and never hit this branch.
   const { data, error } = await supabase
     .from('vip_callers')
     .insert({
@@ -48,6 +59,8 @@ export async function POST(request: Request) {
         ? (body.transfer_to_member_id as string)
         : null,
       active: body.active === false ? false : true,
+      account_type: 'vip',
+      vip_bypass: body.vip_bypass === false ? false : true,
     })
     .select('*')
     .single()

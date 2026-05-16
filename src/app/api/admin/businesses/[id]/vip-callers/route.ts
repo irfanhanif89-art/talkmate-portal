@@ -7,20 +7,25 @@ const VALID_ACTIONS = new Set([
 ])
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requireAdmin()
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const { id } = await params
+  const { searchParams } = new URL(request.url)
+  const includeAll = searchParams.get('include') === 'all'
+
   const admin = createAdminClient()
-  const { data, error } = await admin
+  let q = admin
     .from('vip_callers')
     .select('*')
     .eq('client_id', id)
     .order('created_at', { ascending: false })
+  if (!includeAll) q = q.eq('account_type', 'vip')
 
+  const { data, error } = await q
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, callers: data ?? [] })
 }
@@ -53,6 +58,8 @@ export async function POST(
       action,
       transfer_to_member_id: action === 'transfer_to_member' ? (body.transfer_to_member_id as string) : null,
       active: body.active === false ? false : true,
+      account_type: 'vip',
+      vip_bypass: body.vip_bypass === false ? false : true,
     })
     .select('*')
     .single()

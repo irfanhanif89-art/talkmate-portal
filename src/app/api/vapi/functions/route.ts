@@ -34,6 +34,11 @@ const VALID_FNS = new Set([
   // Session 14 — distance quoting (Growth/Pro only, gated inside handler)
   'calculate_job_quote',
   'log_quote_addon',
+  // Session 15 — scheduler + waitlist
+  'check_availability',
+  'add_to_waitlist',
+  'cancel_booking',
+  'reschedule_booking',
 ])
 
 interface FnRequest {
@@ -144,6 +149,14 @@ export async function POST(request: Request) {
         return NextResponse.json(await calculateJobQuote(supabase, businessId, params))
       case 'log_quote_addon':
         return NextResponse.json(await logQuoteAddon(supabase, businessId, params))
+      case 'check_availability':
+        return NextResponse.json(await checkAvailability(supabase, businessId, params))
+      case 'add_to_waitlist':
+        return NextResponse.json(await addToWaitlist(supabase, businessId, params))
+      case 'cancel_booking':
+        return NextResponse.json(await cancelBooking(supabase, businessId, params))
+      case 'reschedule_booking':
+        return NextResponse.json(await rescheduleBooking(supabase, businessId, params))
       default:
         return NextResponse.json({ error: 'unhandled' }, { status: 400 })
     }
@@ -164,25 +177,48 @@ async function checkCaller(
   params: Record<string, unknown>,
 ) {
   const phone = String(params.phone ?? '').trim()
-  if (!phone) return { result: { is_vip: false, is_existing: false, is_repeat: false } }
+  if (!phone) return { result: { is_vip: false, is_existing: false, is_repeat: false, caller_type: 'unknown' } }
 
-  // Need the business's repeat-caller threshold to flag repeats.
+  // Need the business's repeat-caller threshold + transfer number.
   const { data: biz } = await supabase
     .from('businesses')
-    .select('escalation_config')
+    .select('escalation_config, notifications_config, name')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const cfg = (biz?.escalation_config ?? {}) as EscalationConfig
   const threshold = Math.max(1, cfg.repeat_caller_threshold ?? 3)
+  const notif = (biz?.notifications_config ?? {}) as Record<string, unknown>
+  const transferNumber = (notif.live_transfer_number as string | undefined)?.trim() || null
 
-  // VIP lookup
-  const { data: vip } = await supabase
+  // Session 15 — match the inbound phone against:
+  //  (a) vip_callers.phone (legacy primary number)
+  //  (b) vip_callers.linked_numbers[*].phone (Accounts with multiple lines)
+  // Both lookups use the LAST 9 DIGITS as the comparison key so we don't
+  // fight with caller-ID format variations (+61, 0061, 04…). Account
+  // matches trump VIP matches because trade clients usually call from
+  // multiple shared lines; VIP bypass is for personal contacts.
+  const last9 = phone.replace(/\D/g, '').slice(-9)
+
+  const { data: vipRows } = await supabase
     .from('vip_callers')
-    .select('phone, name, note, action, transfer_to_member_id, active, team_members!vip_callers_transfer_to_member_id_fkey(name, phone)')
+    .select('id, phone, name, note, action, account_type, vip_bypass, transfer_to_member_id, active, company_name, billing_contact_name, billing_contact_email, linked_numbers, team_members!vip_callers_transfer_to_member_id_fkey(name, phone)')
     .eq('client_id', clientId)
-    .eq('phone', phone)
     .eq('active', true)
-    .maybeSingle()
+
+  const candidates = vipRows ?? []
+  function matchesRow(row: typeof candidates[number]): boolean {
+    const primary = String(row.phone ?? '').replace(/\D/g, '')
+    if (primary && primary.slice(-9) === last9) return true
+    const numbers = Array.isArray(row.linked_numbers) ? (row.linked_numbers as Array<{ phone?: string }>) : []
+    return numbers.some(n => {
+      const p = String(n?.phone ?? '').replace(/\D/g, '')
+      return p && p.slice(-9) === last9
+    })
+  }
+
+  const account = candidates.find(r => r.account_type === 'account' && matchesRow(r)) ?? null
+  const vipBypass = !account ? candidates.find(r => r.account_type === 'vip' && r.vip_bypass === true && matchesRow(r)) ?? null : null
+  const regularVip = !account && !vipBypass ? candidates.find(r => r.account_type === 'vip' && r.vip_bypass !== true && matchesRow(r)) ?? null : null
 
   // Contact lookup (existing caller history)
   const { data: contact } = await supabase
@@ -194,15 +230,64 @@ async function checkCaller(
     .maybeSingle()
 
   const callCount = contact?.call_count ?? 0
-  const transferMember = (vip as unknown as { team_members?: { name: string; phone: string } | null })?.team_members ?? null
+
+  if (account) {
+    return {
+      result: {
+        is_existing: true,
+        is_vip: false,
+        is_repeat: callCount >= threshold,
+        caller_type: 'account' as const,
+        account_id: account.id,
+        company_name: account.company_name ?? account.name ?? null,
+        billing_contact_name: account.billing_contact_name ?? null,
+        billing_contact_email: account.billing_contact_email ?? null,
+        rate_type: 'account' as const,
+        call_count: callCount,
+      },
+    }
+  }
+
+  if (vipBypass) {
+    return {
+      result: {
+        is_existing: true,
+        is_vip: true,
+        is_repeat: callCount >= threshold,
+        caller_type: 'vip_bypass' as const,
+        vip_id: vipBypass.id,
+        vip_name: vipBypass.name ?? null,
+        vip_note: vipBypass.note ?? null,
+        transfer_number: transferNumber,
+        business_name: biz?.name ?? null,
+        call_count: callCount,
+      },
+    }
+  }
+
+  const transferMember = (regularVip as unknown as { team_members?: { name: string; phone: string } | null })?.team_members ?? null
+  if (regularVip) {
+    return {
+      result: {
+        is_vip: true,
+        caller_type: 'vip' as const,
+        vip_id: regularVip.id,
+        vip_name: regularVip.name ?? null,
+        vip_note: regularVip.note ?? null,
+        vip_action: regularVip.action ?? null,
+        vip_transfer_member: transferMember,
+        is_existing: !!contact,
+        existing_name: contact?.name ?? null,
+        call_count: callCount,
+        is_repeat: callCount >= threshold,
+      },
+    }
+  }
 
   return {
     result: {
-      is_vip: !!vip,
-      vip_name: vip?.name ?? null,
-      vip_note: vip?.note ?? null,
-      vip_action: vip?.action ?? null,
-      vip_transfer_member: transferMember,
+      is_vip: false,
+      caller_type: contact ? 'existing' as const : 'unknown' as const,
       is_existing: !!contact,
       existing_name: contact?.name ?? null,
       call_count: callCount,
@@ -1290,6 +1375,326 @@ async function logQuoteAddon(
       total_price: newTotal,
       addons: nextAddons,
       message: `Added ${match?.name ?? addonName}. New total is $${newTotal}.`,
+    },
+  }
+}
+
+// ─── Session 15: scheduler + waitlist functions ────────────────────
+
+interface OperatingHoursMap {
+  monday?: { open?: string; close?: string; enabled?: boolean }
+  tuesday?: { open?: string; close?: string; enabled?: boolean }
+  wednesday?: { open?: string; close?: string; enabled?: boolean }
+  thursday?: { open?: string; close?: string; enabled?: boolean }
+  friday?: { open?: string; close?: string; enabled?: boolean }
+  saturday?: { open?: string; close?: string; enabled?: boolean }
+  sunday?: { open?: string; close?: string; enabled?: boolean }
+}
+
+const DOW_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+type DowKey = typeof DOW_NAMES[number]
+
+function parseRequestedTime(
+  date: string | null | undefined,
+  time: string | null | undefined,
+): Date | null {
+  if (!date && !time) return null
+  // Date can be "2026-05-20" or natural language like "tomorrow".
+  let baseDate: Date | null = null
+  if (date) {
+    const m = date.trim().toLowerCase()
+    const now = new Date()
+    if (m === 'today') baseDate = new Date(now)
+    else if (m === 'tomorrow') { baseDate = new Date(now); baseDate.setDate(baseDate.getDate() + 1) }
+    else {
+      const parsed = new Date(m)
+      baseDate = Number.isFinite(parsed.getTime()) ? parsed : null
+    }
+  }
+  if (!baseDate) baseDate = new Date()
+  if (time) {
+    const t = time.trim().toLowerCase().replace(/\s+/g, '')
+    const match = t.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)?$/)
+    if (match) {
+      let hour = parseInt(match[1], 10)
+      const minute = match[2] ? parseInt(match[2], 10) : 0
+      const meridiem = match[3]
+      if (meridiem === 'pm' && hour < 12) hour += 12
+      if (meridiem === 'am' && hour === 12) hour = 0
+      baseDate.setHours(hour, minute, 0, 0)
+    }
+  }
+  return baseDate
+}
+
+async function checkAvailability(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const requestedAt = parseRequestedTime(params.date as string | undefined, params.time as string | undefined)
+  if (!requestedAt) {
+    return { result: { available: false, reason: 'invalid_time', message: 'I did not catch the time. Can you say it again?' } }
+  }
+  const durationMinutes = Math.max(15, Math.min(8 * 60, Number(params.duration_minutes ?? 60) || 60))
+  const requestedEnd = new Date(requestedAt.getTime() + durationMinutes * 60_000)
+
+  const [bizRes, schedRes] = await Promise.all([
+    supabase.from('businesses').select('industry, plan').eq('id', clientId).maybeSingle(),
+    supabase.from('scheduler_settings').select('operating_hours, state, timezone, max_concurrent_jobs, overridden_holidays').eq('client_id', clientId).maybeSingle(),
+  ])
+  const industry = (bizRes.data?.industry as string | null) ?? null
+  const opHours = (schedRes.data?.operating_hours ?? {}) as OperatingHoursMap
+  const state = (schedRes.data?.state as string | null) ?? 'VIC'
+  const maxConcurrent = Math.max(1, (schedRes.data?.max_concurrent_jobs as number | null) ?? 1)
+  const overridden = (schedRes.data?.overridden_holidays as string[] | null) ?? []
+
+  // 1. Operating hours check
+  const dowName = DOW_NAMES[requestedAt.getDay()] as DowKey
+  const dayCfg = opHours[dowName]
+  if (dayCfg?.enabled === false) {
+    return { result: { available: false, reason: 'closed_day', message: "We're closed that day. Would you like a different day?" } }
+  }
+  if (dayCfg?.open && dayCfg?.close) {
+    const hhmm = `${String(requestedAt.getHours()).padStart(2, '0')}:${String(requestedAt.getMinutes()).padStart(2, '0')}`
+    if (hhmm < dayCfg.open || hhmm >= dayCfg.close) {
+      return { result: { available: false, reason: 'outside_hours', message: `That time is outside our operating hours (${dayCfg.open} to ${dayCfg.close}). Would you like a different time?` } }
+    }
+  }
+
+  // 2. Public holiday check (unless explicitly overridden)
+  const dateStr = `${requestedAt.getFullYear()}-${String(requestedAt.getMonth() + 1).padStart(2, '0')}-${String(requestedAt.getDate()).padStart(2, '0')}`
+  if (!overridden.includes(dateStr)) {
+    const { data: holiday } = await supabase
+      .from('public_holidays')
+      .select('holiday_name')
+      .eq('state', state)
+      .eq('holiday_date', dateStr)
+      .maybeSingle()
+    if (holiday) {
+      return { result: { available: false, reason: 'public_holiday', message: `That day is a public holiday (${holiday.holiday_name}). Would you like a different day?` } }
+    }
+  }
+
+  // 3. Concurrent job count
+  const startIso = requestedAt.toISOString()
+  const endIso = requestedEnd.toISOString()
+  const { count: overlap } = await supabase
+    .from('bookings')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .in('status', ['pending', 'confirmed'])
+    .lte('scheduled_start', endIso)
+    .gte('scheduled_end', startIso)
+  if ((overlap ?? 0) >= maxConcurrent) {
+    return { result: { available: false, reason: 'capacity', message: "We're fully booked at that time. Would you like to be added to the waitlist or try a different time?" } }
+  }
+
+  // 4. Towing-only: driver availability check
+  if (industry === 'towing') {
+    const { data: drivers } = await supabase
+      .from('drivers')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('active', true)
+    if (!drivers || drivers.length === 0) {
+      return { result: { available: false, reason: 'no_drivers', message: "We don't have a driver available at that time." } }
+    }
+  }
+
+  return {
+    result: {
+      available: true,
+      message: `Yes, ${requestedAt.toLocaleString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', hour12: true })} works. Shall I book it in?`,
+      scheduled_start: startIso,
+      scheduled_end: endIso,
+      duration_minutes: durationMinutes,
+    },
+  }
+}
+
+async function addToWaitlist(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const callerPhone = String(params.caller_phone ?? '').trim()
+  if (!callerPhone) {
+    return { result: { added: false, error: 'caller_phone required' } }
+  }
+
+  const { count } = await supabase
+    .from('waitlist')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', clientId)
+    .eq('status', 'waiting')
+  const position = (count ?? 0) + 1
+
+  const callId = (params.call_id as string | undefined)?.trim() ?? null
+  const { data, error } = await supabase
+    .from('waitlist')
+    .insert({
+      client_id: clientId,
+      caller_phone: callerPhone,
+      caller_name: typeof params.caller_name === 'string' ? params.caller_name : null,
+      requested_date: typeof params.requested_date === 'string' ? params.requested_date : null,
+      truck_type: typeof params.truck_type === 'string' ? params.truck_type : null,
+      pickup_address: typeof params.pickup_address === 'string' ? params.pickup_address : null,
+      dropoff_address: typeof params.dropoff_address === 'string' ? params.dropoff_address : null,
+      description: typeof params.description === 'string' ? params.description : null,
+      position,
+      status: 'waiting',
+      call_id: callId,
+    })
+    .select('id')
+    .single()
+  if (error || !data) return { result: { added: false, error: error?.message ?? 'insert failed' } }
+
+  return {
+    result: {
+      added: true,
+      waitlist_id: data.id,
+      position,
+      message: `You are number ${position} on the waitlist. We will SMS you as soon as a slot opens.`,
+    },
+  }
+}
+
+async function cancelBooking(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const bookingId = (params.booking_id as string | undefined)?.trim() ?? null
+  const callerPhone = (params.caller_phone as string | undefined)?.trim() ?? null
+  const scheduledStart = (params.scheduled_start as string | undefined)?.trim() ?? null
+
+  let q = supabase
+    .from('bookings')
+    .select('*')
+    .eq('client_id', clientId)
+    .in('status', ['pending', 'confirmed'])
+
+  if (bookingId) {
+    q = q.eq('id', bookingId)
+  } else if (callerPhone) {
+    q = q.eq('caller_phone', callerPhone)
+    if (scheduledStart) q = q.eq('scheduled_start', scheduledStart)
+  } else {
+    return { result: { cancelled: false, error: 'Need booking_id or caller_phone to find the booking.' } }
+  }
+
+  const { data: rows } = await q.order('scheduled_start', { ascending: true }).limit(2)
+  if (!rows || rows.length === 0) {
+    return { result: { cancelled: false, error: 'Could not find that booking.' } }
+  }
+  if (rows.length > 1 && !bookingId && !scheduledStart) {
+    return { result: { cancelled: false, error: 'Multiple bookings on file. Can you confirm the date and time?' } }
+  }
+  const booking = rows[0]
+
+  // Cancellation policy check
+  const { data: settings } = await supabase
+    .from('scheduler_settings')
+    .select('cancellation_policy_enabled, cancellation_notice_hours, cancellation_fee_aud')
+    .eq('client_id', clientId)
+    .maybeSingle()
+  let feeNotice: string | null = null
+  if (settings?.cancellation_policy_enabled && booking.scheduled_start) {
+    const startMs = new Date(booking.scheduled_start as string).getTime()
+    const noticeHours = settings.cancellation_notice_hours ?? 24
+    const hoursOut = (startMs - Date.now()) / (1000 * 60 * 60)
+    if (hoursOut < noticeHours && (settings.cancellation_fee_aud ?? 0) > 0) {
+      feeNotice = `Please note our cancellation policy requires ${noticeHours} hours notice. A $${settings.cancellation_fee_aud} cancellation fee may apply.`
+    }
+  }
+
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      status: 'cancelled',
+      cancellation_reason: (params.cancellation_reason as string | undefined) ?? null,
+    })
+    .eq('id', booking.id)
+  if (error) return { result: { cancelled: false, error: error.message } }
+
+  // Trigger cancellation SMS + waitlist push best-effort.
+  try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
+    const internalSecret = process.env.INTERNAL_API_SECRET || process.env.VAPI_WEBHOOK_SECRET || ''
+    fetch(`${appUrl}/api/portal/waitlist/offer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+      body: JSON.stringify({ client_id: clientId, scheduled_start: booking.scheduled_start }),
+    }).catch(() => {})
+  } catch {}
+
+  return {
+    result: {
+      cancelled: true,
+      booking_id: booking.id,
+      message: `Your booking on ${new Date(booking.scheduled_start as string).toLocaleString('en-AU')} has been cancelled. ${feeNotice ?? 'Sorry to see it go.'}`.trim(),
+    },
+  }
+}
+
+async function rescheduleBooking(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const bookingId = (params.booking_id as string | undefined)?.trim() ?? null
+  const callerPhone = (params.caller_phone as string | undefined)?.trim() ?? null
+  const oldStart = (params.scheduled_start as string | undefined)?.trim() ?? null
+  const newDate = (params.new_date as string | undefined) ?? null
+  const newTime = (params.new_time as string | undefined) ?? null
+
+  const newStart = parseRequestedTime(newDate, newTime)
+  if (!newStart) return { result: { rescheduled: false, error: 'I did not catch the new date and time.' } }
+
+  let q = supabase.from('bookings').select('*').eq('client_id', clientId)
+  if (bookingId) q = q.eq('id', bookingId)
+  else if (callerPhone) {
+    q = q.eq('caller_phone', callerPhone).in('status', ['pending', 'confirmed'])
+    if (oldStart) q = q.eq('scheduled_start', oldStart)
+  } else {
+    return { result: { rescheduled: false, error: 'Need booking_id or caller_phone.' } }
+  }
+
+  const { data: rows } = await q.limit(2)
+  if (!rows || rows.length === 0) return { result: { rescheduled: false, error: 'Could not find that booking.' } }
+  if (rows.length > 1) return { result: { rescheduled: false, error: 'Multiple bookings on file. Can you confirm the original date?' } }
+  const booking = rows[0]
+
+  // Reuse check_availability for the new slot
+  const avail = await checkAvailability(supabase, clientId, {
+    date: newDate, time: newTime,
+    duration_minutes: booking.scheduled_start && booking.scheduled_end
+      ? (new Date(booking.scheduled_end as string).getTime() - new Date(booking.scheduled_start as string).getTime()) / 60_000
+      : 60,
+  })
+  if (!('available' in avail.result) || avail.result.available !== true) {
+    return { result: { rescheduled: false, ...avail.result } }
+  }
+
+  const newEnd = new Date((avail.result as { scheduled_end: string }).scheduled_end)
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      scheduled_start: newStart.toISOString(),
+      scheduled_end: newEnd.toISOString(),
+      sms_reminder_24h_sent: false,
+      sms_reminder_2h_sent: false,
+    })
+    .eq('id', booking.id)
+  if (error) return { result: { rescheduled: false, error: error.message } }
+
+  return {
+    result: {
+      rescheduled: true,
+      booking_id: booking.id,
+      scheduled_start: newStart.toISOString(),
+      message: `All sorted. Your booking is now on ${newStart.toLocaleString('en-AU')}. You'll get an updated SMS confirmation.`,
     },
   }
 }
