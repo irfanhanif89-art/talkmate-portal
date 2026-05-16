@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import SchedulerView from '@/components/portal/scheduler-view'
+import LockedPreview from '@/components/portal/locked-preview'
+import SchedulerLockedDemo from '@/components/portal/scheduler-locked-demo'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +27,25 @@ export default async function AdminSchedulerPage({
   if (!business) redirect('/admin/clients')
 
   const plan = (business.plan as string | null) ?? 'starter'
+
+  if (plan === 'starter') {
+    return (
+      <LockedPreview
+        adminClientId={clientId}
+        bannerTitle="The Scheduler is available on Growth and Pro plans"
+        bannerSubtitle="Your agent books jobs automatically, sends SMS confirmations, and manages your waitlist."
+        featurePills={['Agent books jobs', 'SMS confirmations', 'Waitlist management', 'Public holiday detection', 'Driver availability']}
+        upgradeTarget="growth"
+        upgradePrice={499}
+        lockPlanLabel="Growth feature preview"
+        lockBoldText="This is a preview of the Scheduler"
+        lockMutedText="Upgrade this client to Growth to enable agent bookings and SMS."
+      >
+        <SchedulerLockedDemo />
+      </LockedPreview>
+    )
+  }
+
   return (
     <SchedulerView
       plan={plan}

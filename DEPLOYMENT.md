@@ -1,8 +1,124 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 16 — Locked preview pattern + scheduler route display (2026-05-17)
+
+### No migration required
+
+UI only. All schema (migrations 001-031) already live.
+
+### The pattern
+
+Every plan-gated page now renders a full preview of the feature instead
+of a blank "upgrade your plan" wall. Three layers:
+
+1. **Upgrade banner** sticky at the top of the page content (orange
+   gradient for upgrade variants, blue for the towing-only Command info
+   banner). Holds the title, subtitle, feature pills, a `See what's
+   included` ghost link to talkmate.com.au/pricing, and a primary
+   `Upgrade to Plan -- $X/mo` button pointing at the Stripe payment
+   link for the target plan.
+2. **Demo content** rendered at full opacity inside an `aria-hidden`
+   wrapper with `pointer-events: none` and `user-select: none`. Buttons,
+   tables, inputs all visually present but inert. No blur, no overlay.
+3. **Lock bar** sticky at the bottom with `Plan feature preview` label,
+   a bold "This is a preview of X" headline, a muted one-liner, and the
+   same upgrade button as the top banner.
+
+When `adminClientId` is passed, both upgrade buttons swap to a single
+**"Upgrade this client"** action that links to `/admin/clients/[clientId]`
+so Irfan can lift the plan from inside the admin view.
+
+### Files added
+
+| File | What it does |
+|---|---|
+| [src/lib/extract-suburb.ts](src/lib/extract-suburb.ts) | `extractSuburb(address)` walks AU address strings backwards looking for a state code (VIC/NSW/QLD/SA/WA/TAS/NT/ACT) and returns the suburb word(s) before it. `routeLabel(pickup, dropoff, fallback)` returns `Suburb → Suburb` for the scheduler blocks, falling back to the truck type when both addresses are null. |
+| [src/components/portal/locked-preview.tsx](src/components/portal/locked-preview.tsx) | Shared shell -- banner + demo wrapper + lock bar. Variants: `upgrade` (orange + Stripe link) and `info` (blue, no upgrade button). Respects `adminClientId` to swap to "Upgrade this client". |
+| [src/components/portal/dispatch-locked-demo.tsx](src/components/portal/dispatch-locked-demo.tsx) | Static dispatch board demo: 4 stat cards, 4 active job rows, 3 driver rows. |
+| [src/components/portal/scheduler-locked-demo.tsx](src/components/portal/scheduler-locked-demo.tsx) | Static week-view calendar demo with 10 bookings across Mon-Sat + stats bar. |
+| [src/components/portal/quotes-locked-demo.tsx](src/components/portal/quotes-locked-demo.tsx) | Static quotes log demo: 4 stat cards + 3-row history table. |
+| [src/components/portal/command-locked-demo.tsx](src/components/portal/command-locked-demo.tsx) | Telegram conversation mockup (3 sent / 3 received bubbles) + Commands Today stat card + Recent commands list. |
+| [src/app/(portal)/settings/command/command-client.tsx](src/app/(portal)/settings/command/command-client.tsx) | Renamed from the old `page.tsx`. The 'use client' Command settings UI now lives behind the new server-rendered gate. |
+
+### Files changed
+
+| File | What changed |
+|---|---|
+| [src/app/(portal)/dispatch/page.tsx](src/app/(portal)/dispatch/page.tsx) | Dropped `.single()` on `businesses` in favour of the layout's account_status priority filter (no more 500s on owners with multiple business rows). Towing + non-Pro renders `LockedPreview` + `DispatchLockedDemo`. Pro path falls through to the existing dispatch-board unchanged. |
+| [src/app/(portal)/scheduler/page.tsx](src/app/(portal)/scheduler/page.tsx) | Same account_status filter. Starter renders `LockedPreview` + `SchedulerLockedDemo`. Growth/Pro fall through to `SchedulerView` unchanged. |
+| [src/app/(portal)/quotes/page.tsx](src/app/(portal)/quotes/page.tsx) | Converted from a one-liner client wrapper to a server page that fetches the plan and gates Starter to `QuotesLockedDemo`. |
+| [src/app/(portal)/settings/command/page.tsx](src/app/(portal)/settings/command/page.tsx) | New server page. Non-towing -> blue info banner with no upgrade button. Towing + Starter -> orange upgrade preview. Towing + Growth/Pro -> the renamed `CommandSettingsClient`. |
+| [src/components/portal/scheduler-view.tsx](src/components/portal/scheduler-view.tsx) | Week-view block (`WeekDayColumn`) and day-view lane block now show `routeLabel(pickup, dropoff, truck_type)` on line 2. Day view's time row em dash replaced with `--` per the no-em-dash rule. |
+| [src/components/portal/sidebar.tsx](src/components/portal/sidebar.tsx) | Dispatch Board and TalkMate Command are now always visible for towing clients with a muted `lockTag` chip when the client doesn't have the plan (`PRO` for non-Pro, `GROWTH` for non-paid). Chip style matches the brief: 9px / 700 weight / muted text / 1px-by-5px padding / 4px radius. "Current plan" label added above the plan name. Upgrade buttons rewritten as `<a href={NEXT_PUBLIC_STRIPE_*_LINK}>` (fallback `/billing`). Pro now shows "You are on our top plan". |
+| [src/components/portal/portal-shell.tsx](src/components/portal/portal-shell.tsx) | New `industry` prop forwarded to `PortalSidebar`. |
+| [src/app/(portal)/layout.tsx](src/app/(portal)/layout.tsx) | Forwards `business.industry` to `PortalShell`. |
+| [src/app/admin/clients/[clientId]/portal/dispatch/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/dispatch/page.tsx) | Replaces the bare `AdminPagePlaceholder` with the plan-gated locked preview when the client is non-Pro towing. `adminClientId={clientId}` swaps the CTAs to "Upgrade this client". |
+| [src/app/admin/clients/[clientId]/portal/scheduler/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/scheduler/page.tsx) | Adds Starter -> locked preview branch above the existing `SchedulerView`. |
+| [src/app/admin/clients/[clientId]/portal/quotes/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/quotes/page.tsx) | Adds Starter -> locked preview branch above `QuotesLogView`. |
+| [src/app/admin/clients/[clientId]/portal/settings/command/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/settings/command/page.tsx) | Adds non-towing info banner + Starter towing upgrade preview branches; Pro/Growth towing falls through to the existing `AdminPagePlaceholder`. |
+
+### Gate logic summary
+
+| Page | Real-page access | Locked variant |
+|---|---|---|
+| `/dispatch` | Pro towing only | Towing + Starter/Growth: orange `Upgrade to Pro -- $799/mo`. Non-towing: existing industry Notice unchanged. |
+| `/scheduler` | Growth/Pro | Starter: orange `Upgrade to Growth -- $499/mo` + week-view demo. |
+| `/quotes` | Growth/Pro | Starter: orange `Upgrade to Growth -- $499/mo` + log demo. |
+| `/settings/command` | Growth/Pro towing | Towing + Starter: orange upgrade preview. Non-towing any plan: blue info banner, no upgrade button. |
+
+### Scheduler block route display
+
+Both week view (`WeekDayColumn`) and day view (`DayGrid` lane blocks)
+now show the route on line 2. Logic in `routeLabel`:
+
+- `pickup` + `dropoff` both extract a suburb -> `Suburb → Suburb`
+- only one extracts -> show that one
+- neither extracts -> show truck type (e.g. `Loaded Tilt Tray`)
+- truck type missing too -> show description fallback (week/day) or dash
+
+`extractSuburb` handles the AU format `"5/53 Horne St, Campbellfield VIC 3061"`:
+split by comma, walk parts in reverse, find the chunk containing a state
+code, return the words before it. Fallback truncates to 24 chars when no
+state code is present.
+
+### Sidebar plan-gate nav badges
+
+Two muted chips next to nav items when the client doesn't have access:
+
+- **Dispatch Board** -> `PRO` chip when towing + not Pro
+- **TalkMate Command** -> `GROWTH` chip when towing + not Growth/Pro
+
+Items remain clickable -- they route to the page, which renders the
+locked preview. This is intentionally separate from the existing
+`locked` field on `Command Centre` (which routes to `/billing` for
+"coming soon" items like Google Reviews).
+
+### Stripe payment links
+
+Upgrade CTAs (sidebar plan card + locked preview banners + lock bars)
+all read `process.env.NEXT_PUBLIC_STRIPE_GROWTH_LINK` and
+`process.env.NEXT_PUBLIC_STRIPE_PRO_LINK`. If unset, the sidebar plan
+card falls back to `/billing`; the locked-preview buttons fall back to
+`router.push('/billing')`. **Confirm these env vars are set in Vercel
+before Spectrum Towing or any Starter client tests the upgrade flow --
+trial-banner.tsx already references them, so the values should already
+be wired up in production.**
+
+### Verification
+
+- `npm run build` -- compiles cleanly. 130 routes generated, zero
+  TypeScript errors. The `middleware->proxy` deprecation warning is
+  pre-existing and unrelated.
+- No new dependencies, no migrations, no API route changes, no Make.com
+  or Vapi changes required.
+- Spectrum Towing (Starter, towing) will now see the full Dispatch demo
+  with the upgrade banner instead of the blank "being set up" notice.
 
 ---
 

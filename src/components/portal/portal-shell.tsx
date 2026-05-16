@@ -22,6 +22,7 @@ interface Props {
   hasPipeline?: boolean
   hasDispatch?: boolean
   hasCommand?: boolean
+  industry?: string | null
   isWhiteLabelPartner?: boolean
   unseenChangelog: number
   children: React.ReactNode
@@ -59,6 +60,7 @@ export default function PortalShell(props: Props) {
         hasPipeline={props.hasPipeline}
         hasDispatch={props.hasDispatch}
         hasCommand={props.hasCommand}
+        industry={props.industry ?? null}
         isWhiteLabelPartner={props.isWhiteLabelPartner}
         isOpenMobile={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}

@@ -27,9 +27,27 @@ interface Props {
   hasPipeline?: boolean
   hasDispatch?: boolean
   hasCommand?: boolean
+  industry?: string | null
   isWhiteLabelPartner?: boolean
   isOpenMobile: boolean
   onCloseMobile: () => void
+}
+
+// Session 16 -- plan gate helpers for sidebar nav badges.
+function isProPlan(plan: string): boolean {
+  return plan === 'pro' || plan === 'professional'
+}
+function isPaidPlan(plan: string): boolean {
+  return plan === 'growth' || isProPlan(plan)
+}
+
+const LOCKED_BADGE_STYLE: React.CSSProperties = {
+  fontSize: 9, fontWeight: 700,
+  background: 'rgba(255,255,255,0.06)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  color: '#7BAED4',
+  padding: '1px 5px', borderRadius: 4,
+  letterSpacing: '0.05em',
 }
 
 export default function PortalSidebar(props: Props) {
@@ -63,6 +81,11 @@ export default function PortalSidebar(props: Props) {
       badge?: { text: string; bg: string; color: string }
       locked?: boolean
       lockReason?: string
+      // Session 16 -- muted plan-gate chip rendered with the
+      // LOCKED_BADGE_STYLE. The nav item still navigates to the page
+      // (which shows the locked preview); not the same as `locked`,
+      // which is for "coming soon" items that route to /billing.
+      lockTag?: 'PRO' | 'GROWTH'
       show: boolean
     }>
   }> = [
@@ -115,9 +138,19 @@ export default function PortalSidebar(props: Props) {
       ],
     },
     {
+      // Session 16 -- Dispatch is now always visible for towing clients.
+      // Non-Pro clients land on the locked preview page rather than the
+      // nav item disappearing on Starter/Growth.
       label: 'Dispatch',
       items: [
-        { href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList, show: !!props.hasDispatch },
+        // Dispatch Board: always shown for towing, with a PRO badge when
+        // the client isn't on Pro. The page itself renders the locked
+        // preview behind the scenes.
+        {
+          href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList,
+          show: props.industry === 'towing',
+          lockTag: !isProPlan(props.plan) && props.industry === 'towing' ? 'PRO' : undefined,
+        },
         { href: '/dispatch/drivers', label: 'Drivers', icon: UserCheck, show: !!props.hasDispatch },
         { href: '/dispatch/vehicles', label: 'Vehicles', icon: Truck, show: !!props.hasDispatch },
         { href: '/settings/dispatch', label: 'Dispatch Settings', icon: Car, show: !!props.hasDispatch },
@@ -134,11 +167,15 @@ export default function PortalSidebar(props: Props) {
           lockReason: 'Growth+',
           show: true,
         },
+        // Session 16 -- TalkMate Command is now always visible for
+        // towing clients (Starter sees the locked preview). The
+        // badge says GROWTH when the client isn't paid-tier.
         {
           href: '/settings/command',
           label: 'TalkMate Command',
           icon: MessageCircle,
-          show: !!props.hasCommand,
+          show: props.industry === 'towing',
+          lockTag: !isPaidPlan(props.plan) && props.industry === 'towing' ? 'GROWTH' : undefined,
         },
       ],
     },
@@ -174,7 +211,7 @@ export default function PortalSidebar(props: Props) {
     },
   ]
 
-  function NavLink(item: { href: string; label: string; icon: React.ComponentType<{ size?: number }>; badge?: { text: string; bg: string; color: string }; locked?: boolean; lockReason?: string }) {
+  function NavLink(item: { href: string; label: string; icon: React.ComponentType<{ size?: number }>; badge?: { text: string; bg: string; color: string }; locked?: boolean; lockReason?: string; lockTag?: 'PRO' | 'GROWTH' }) {
     const Icon = item.icon
     const active = pathname === item.href || pathname.startsWith(item.href + '/')
     const isHovering = hovering === item.href
@@ -207,6 +244,9 @@ export default function PortalSidebar(props: Props) {
           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: 'rgba(232,98,42,0.18)', color: '#E8622A', letterSpacing: '0.05em' }}>
             {item.lockReason}
           </span>
+        )}
+        {item.lockTag && (
+          <span style={LOCKED_BADGE_STYLE}>{item.lockTag}</span>
         )}
       </button>
     )
@@ -251,12 +291,16 @@ export default function PortalSidebar(props: Props) {
         <div style={{
           background: 'rgba(232,98,42,0.06)', border: '1px solid rgba(232,98,42,0.2)', borderRadius: 12, padding: 12, marginBottom: 10,
         }}>
+          {/* Session 16 -- "Current plan" label sits above the plan name */}
+          <div style={{ fontSize: 9, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+            Current plan
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{planConfig.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#E8622A' }}>{planConfig.label}</span>
             <span style={{ fontSize: 11, color: '#7BAED4' }}>${planConfig.monthlyPrice}/mo</span>
           </div>
           <div style={{ fontSize: 11, color: '#7BAED4' }}>
-            {planConfig.callLimit ? `${props.callsThisMonth} / ${planConfig.callLimit} calls used` : `${props.callsThisMonth} calls — unlimited plan`}
+            {planConfig.callLimit ? `${props.callsThisMonth} / ${planConfig.callLimit} calls used` : `${props.callsThisMonth} calls -- unlimited plan`}
           </div>
           {planConfig.callLimit && (
             <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
@@ -269,26 +313,33 @@ export default function PortalSidebar(props: Props) {
             </div>
           )}
           {planConfig.key === 'starter' && (
-            <button
-              onClick={() => go('/billing')}
+            <a
+              href={process.env.NEXT_PUBLIC_STRIPE_GROWTH_LINK || '/billing'}
               style={{
-                marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
-                padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
+                display: 'block', marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
+                padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                fontFamily: 'Outfit,sans-serif', textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
               }}
             >
               Upgrade to Growth →
-            </button>
+            </a>
           )}
           {planConfig.key === 'growth' && (
-            <button
-              onClick={() => go('/billing')}
+            <a
+              href={process.env.NEXT_PUBLIC_STRIPE_PRO_LINK || '/billing'}
               style={{
-                marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
-                padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
+                display: 'block', marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
+                padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                fontFamily: 'Outfit,sans-serif', textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
               }}
             >
               Upgrade to Pro →
-            </button>
+            </a>
+          )}
+          {(planConfig.key === 'pro' || planConfig.key === 'professional') && (
+            <div style={{ marginTop: 10, fontSize: 11, color: '#7BAED4', textAlign: 'center', fontStyle: 'italic' }}>
+              You are on our top plan
+            </div>
           )}
         </div>
 

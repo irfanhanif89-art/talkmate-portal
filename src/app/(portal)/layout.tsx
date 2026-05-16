@@ -174,6 +174,7 @@ export default async function PortalLayout({ children }: { children: React.React
         hasPipeline={['real_estate', 'trades', 'professional_services'].includes((business.industry as string | null) ?? '')}
         hasDispatch={Boolean((business as { dispatch_enabled?: boolean }).dispatch_enabled)}
         hasCommand={Boolean((business as { command_enabled?: boolean }).command_enabled)}
+        industry={(business.industry as string | null) ?? null}
         isWhiteLabelPartner={Boolean((business as { is_partner?: boolean }).is_partner)}
         unseenChangelog={unseenChangelog}
       >

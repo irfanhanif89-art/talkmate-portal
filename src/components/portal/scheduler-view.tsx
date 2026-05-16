@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { silentSyncAgent } from '@/components/portal/sync-agent-button'
+import { routeLabel } from '@/lib/extract-suburb'
 
 // Session 15 — TalkMate native scheduler.
 // One page, three tabs (Calendar / Job List / Settings). Calendar has
@@ -565,7 +566,7 @@ function WeekDayBlocks({ bookings, hourStart, hourEnd, onClick }: {
           >
             <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{b.caller_name ?? 'Job'}</div>
             <div style={{ color: TEXT_DIM, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-              {b.description ?? (b.pickup_address ?? '')}
+              {routeLabel(b.pickup_address, b.dropoff_address, b.truck_type ? truckLabel(b.truck_type) : (b.description ?? null)) ?? '—'}
             </div>
           </div>
         )
@@ -696,11 +697,11 @@ function DayGrid({ anchor, bookings, drivers, settings, hourRange, isTowing, onJ
                   >
                     <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{b.caller_name ?? 'Job'}</div>
                     <div style={{ color: TEXT_DIM, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-                      {b.description ?? (b.pickup_address ?? '')}
+                      {routeLabel(b.pickup_address, b.dropoff_address, b.truck_type ? truckLabel(b.truck_type) : (b.description ?? null)) ?? '—'}
                     </div>
                     <div style={{ color: '#7BAED4', fontSize: 10, marginTop: 2, fontFamily: 'monospace' }}>
                       {start.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                      {' — '}
+                      {' -- '}
                       {end.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })}
                     </div>
                   </div>
