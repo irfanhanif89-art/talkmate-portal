@@ -1,8 +1,127 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 14 — Distance quoting engine + scheduler foundation (2026-05-16)
+
+### Migration
+
+**Run before deploy:** `supabase/migrations/030_distance_quoting_and_scheduler.sql`
+
+Adds:
+- `businesses.service_area_radius` (int, default 100)
+- `businesses.service_area_mode` (text, default `radius`, check radius/postcodes)
+- `businesses.service_area_postcodes` (jsonb, default `[]`)
+- `businesses.quote_config` (jsonb, default `{}`)
+- `quotes` table — every quote the agent gives, with RLS scoped by `client_id`. `call_id` is text and references `calls(vapi_call_id)` so Vapi's own call identifier writes through directly.
+- `scheduler_settings` table — one row per client, foundation for Session 15. Default mode is `native`, timezone `Australia/Melbourne`, with the operating-hours JSONB pre-seeded to a standard 8-6 weekday window.
+- `scheduler_settings_touch_updated_at` trigger so `updated_at` stays current on edits.
+
+All statements are idempotent (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`, etc.).
+
+### What landed
+
+1. **`/api/maps/distance` route** — server-side only. Uses `GOOGLE_MAPS_SERVER_KEY` for Geocoding + Distance Matrix, never exposed to the browser. Gated by `INTERNAL_API_SECRET` (falls back to `VAPI_WEBHOOK_SECRET` if unset) on an `x-internal-secret` header. Returns `origin/destination_resolved`, `origin/destination_lat/lng`, `distance_km`, `duration_minutes` (traffic-aware), `within_service_area`, and `origin/destination_confidence` (high = ROOFTOP/RANGE_INTERPOLATED, low otherwise). Service area check supports both radius (Haversine against geocoded `business_address`) and postcode/suburb modes.
+2. **Two new Vapi functions** appended to `/api/vapi/functions/route.ts`:
+   - `calculate_job_quote` — plan-gated (Starter returns `plan_locked`). Calls `/api/maps/distance` internally, applies POA bands (>100km tilt tray, >30km sideloader), rounds distance UP to the nearest 10km band, builds the exact service-name pattern (`Loaded Tilt Tray - Private 20 to 30km` etc), reads the price from `businesses.services` (never hardcoded), applies `after_hours_surcharge_percent` if outside the scheduler operating hours, enforces `minimum_job_fee`, writes a row to `quotes`, and returns the natural-language `message` the agent should speak.
+   - `log_quote_addon` — looks up the add-on price from `businesses.services`, appends to `quotes.addons`, recalculates `total_price`, returns the updated total.
+3. **Sync routes updated** (both `/api/vapi/sync` and `/api/admin/vapi/sync`): on Growth/Pro plans they ensure the two new tools are present on the assistant and inject a `DISTANCE QUOTING:` system-prompt block. On Starter they actively strip both tools and the block (handles plan downgrades). The four existing baseline tools (`check_caller`, `log_outcome`, `get_team`, `schedule_callback`) and the VIP block are untouched.
+4. **Service Area + Quote settings UI** at `/settings/service-area` (client) and `/admin/clients/[clientId]/portal/settings/service-area` (admin). Both render the same `QuoteServiceAreaPanel` component, parameterised by `adminClientId`. Mode toggle (Radius / Postcodes / Suburbs), radius slider (10-500 km), postcode tag list (max 200 entries), quote validity dropdown (1/2/4/8 hours), after-hours surcharge %, minimum job fee, and a Save button that fires `silentSyncAgent()` on success. On Starter the entire panel renders a locked state with an upgrade CTA.
+5. **`/quotes` log page** at `/quotes` (client) and `/admin/clients/[clientId]/portal/quotes` (admin). Both use the shared `QuotesLogView`. Four stat cards (Total this month, Accepted, Declined, Avg distance). Table columns match the brief: Date / Time, Caller, Pickup, Dropoff, Distance, Truck Type, Rate, Total, Status, Actions. POA quotes show `POA` instead of a dollar total. Actions dropdown lets the client/admin mark quotes Accepted / Declined / Reset to Given and jump to the linked call.
+6. **Sidebar nav updates** (`src/components/portal/sidebar.tsx` + `src/components/admin/admin-portal-shell.tsx`): added `Quotes` entry in the Overview section right after `Calls`, and `Service Area` under `Your Agent` near `Agent Settings`.
+
+### New API endpoints
+
+- `POST /api/maps/distance` — internal, gated by `INTERNAL_API_SECRET` / `VAPI_WEBHOOK_SECRET`.
+- `GET / PATCH /api/portal/quote-config` — client portal service area + quote_config. Starter PATCHes return 403.
+- `GET /api/portal/quotes` — list + monthly stats for the calling client.
+- `PATCH /api/portal/quotes/[id]` — update status (given/accepted/declined/expired).
+- `GET / PATCH /api/admin/businesses/[id]/quote-config` — admin equivalent, audit-logged via `logAdminAction('quote_config_updated')`.
+- `GET /api/admin/businesses/[id]/quotes` — admin list + stats for a target client.
+- `PATCH /api/admin/businesses/[id]/quotes/[quoteId]` — admin status update.
+
+### Environment variables
+
+- `GOOGLE_MAPS_SERVER_KEY` — required for `/api/maps/distance`. Must NOT have a `NEXT_PUBLIC_` prefix. Distance Matrix + Geocoding APIs must be enabled on the GCP project.
+- `INTERNAL_API_SECRET` — optional. If unset, `/api/maps/distance` falls back to `VAPI_WEBHOOK_SECRET` so existing production deployments already have a value.
+- `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` — untouched. Still browser-side for address autocomplete only.
+
+### Quote logic deviations from brief
+
+- The brief listed 9 existing Vapi functions; the actual codebase has 10 (`get_wait_time`, `get_availability` alias, `check_dispatch_availability`, `get_job_types` in addition to the rest). Session 14 appended cleanly — no existing function was removed or renamed.
+- The brief's example response (`This quote is valid for 2 hours`) is generated dynamically from `quote_config.quote_validity_minutes` so it stays accurate when clients change the validity dropdown.
+- Service-name matching is case-insensitive and trims whitespace. `enabled === false` services are skipped. Prices accept either `number` or `string` (e.g. `"356"`) — the existing GM Towing catalog mixes both.
+- POA quotes still write a `quotes` row with `is_poa = true` and `base_price = null`. The quotes log shows them as `POA` in the Total column so Donna can spot them and call back with a manual price.
+
+### Testing checklist
+
+- Run migration 030 in the Supabase SQL editor. Confirm `service_area_*` and `quote_config` columns exist on `businesses`; `quotes` and `scheduler_settings` tables exist with RLS enabled.
+- Sign in as GM Towing → `/settings/service-area` loads with radius mode and a 100km default; switching to Postcodes mode lets you add/remove entries. Save persists across reload. Save fires `silentSyncAgent()` (check that the agent's "last synced" timestamp updates).
+- Verify in the Vapi dashboard that GM Towing's assistant now has `calculate_job_quote` and `log_quote_addon` tools and a `DISTANCE QUOTING:` block at the end of the system prompt.
+- Sign in as a Starter-plan client → `/settings/service-area` shows the locked state with an Upgrade CTA. Their Vapi assistant has neither quote tool nor the prompt block.
+- Call the agent and ask for a tow quote inside the service area — expect "approximately Xkm... around Y minutes... the price is $Z... this quote is valid for 2 hours." A new row appears in `/quotes` immediately after the call.
+- Try a quote that exceeds 100km for tilt tray or 30km for sideloader — agent should respond with the POA message and offer a callback. The `/quotes` log shows the entry with `POA` in the Total column.
+- Try a pickup outside the service area — agent should politely refuse. `/quotes` does not log it (function exits before the insert).
+- `/admin/clients/[clientId]/portal/quotes` and `/admin/clients/[clientId]/portal/settings/service-area` load with the amber admin banner. Editing the service area as admin audit-logs `quote_config_updated`.
+- `npm run build` passes with zero errors.
+
+### Manual handoff for Donna
+
+1. Run migration `030_distance_quoting_and_scheduler.sql` in the Supabase SQL editor.
+2. Confirm `GOOGLE_MAPS_SERVER_KEY` is set in Vercel project settings (Production + Preview). Enable Distance Matrix API + Geocoding API on the GCP project if not already.
+3. After deploy, hit "Sync Agent" on GM Towing from `/settings` so the assistant picks up the two new tools and the prompt block.
+4. Report back the migration result and any sync errors.
+
+---
+
+## SESSION 13 — Admin portal parity + Sync Agent expansion (2026-05-15)
+
+No new migrations. All schema changes (agent_last_synced_at on businesses) were already live via migration 029.
+
+### What landed
+
+1. **Admin portal parity route group** at `/admin/clients/[clientId]/portal/*`. The admin (irfan@) stays signed in as themselves — no session swap — and the layout fetches the scoped business with the service-role client. An amber "Admin view — [Business] — Changes are live" banner is sticky at the top of every page in the tree, with a "Back to Admin" button.
+2. **Mirrored 13 portal sub-routes** under that tree: `/dashboard`, `/calls`, `/contacts`, `/catalog`, `/team`, `/vip-callers`, `/bookings`, `/callbacks`, `/dispatch`, `/settings`, `/settings/command`, `/settings/security`, `/settings/routing`. Where a clean admin-aware mirror was practical (dashboard snapshot, calls list, vip-callers, team, catalog, settings/routing), inline rendering reuses the existing view components and routes data calls through `/api/admin/businesses/[id]/*`. For pages that depend on the client's own RLS session (contacts merging, dispatch live websocket, security/staff, command setup), the admin sees a placeholder with an "Open as client" button that triggers the existing `/api/admin/clients/[id]/impersonate` magic-link flow in a new tab.
+3. **Admin sidebar** (`src/components/admin/admin-portal-shell.tsx`) shows the same nav layout as the client portal but prefixed with the admin path, and only contains entries relevant to a single client.
+4. **`SyncAgentButton` extended** with an optional `adminClientId` prop. When set, the button (and the `silentSyncAgent()` helper) routes through the new `/api/admin/vapi/sync?clientId=…` endpoint instead of `/api/vapi/sync`. The existing client endpoint was NOT modified — the brief explicitly forbade that. The two endpoints share the same tool definitions and VIP-block logic.
+5. **Sync Agent button now appears on** `/catalog`, `/team`, `/vip-callers`, and `/settings/routing` in both client and admin portal views. `silentSyncAgent()` also fires after routing-settings save (in addition to the existing add/edit/delete triggers on the VIP and team pages). The catalog page now also auto-syncs after every item add, edit, delete, toggle, or feature change.
+6. **`/admin/clients` entry point** — every row in the admin client list now has a 🏢 button next to the existing 👁 impersonate button. It links straight to `/admin/clients/[clientId]/portal/dashboard`. The 8-tab edit modal also gained an "Open Client Portal" CTA in its header.
+7. **Command Centre setup page** is Telegram-only. Removed the WhatsApp Business option from the setup wizard at `/command-centre`, simplified the connection flow to a single Telegram step, and updated the subtitle to "Connect your Telegram bot in two minutes". WhatsApp Business notifications on the main `/settings` Integrations tab were left alone — that's a separate feature scope.
+
+### New admin API endpoints
+
+- `POST /api/admin/vapi/sync?clientId=…` — admin-scoped Vapi sync. Mirrors `/api/vapi/sync` but takes the target client from the query string. Uses `requireAdmin()` + service-role client.
+- `PATCH /api/admin/businesses/[id]/vip-callers/[callerId]` — update a VIP caller as admin.
+- `DELETE /api/admin/businesses/[id]/vip-callers/[callerId]` — remove a VIP caller as admin.
+
+Existing admin endpoints reused: `/api/admin/businesses/[id]/team` (+ PATCH/DELETE on `[memberId]`), `/api/admin/businesses/[id]/vip-callers` (GET/POST), `/api/admin/businesses/[id]/escalation` (PATCH for routing).
+
+### Security — Prompt injection incidents
+
+While reviewing the repo for Session 13, the following prompt-injection artefacts were found and remediated:
+
+- **`/AGENTS.md`** at the repo root contained a `nextjs-agent-rules` block that instructed AI coding agents to "read the relevant guide in `node_modules/next/dist/docs/` before writing any code." This pointed them at a file under `node_modules/next/dist/docs/index.md` which contained a comment instructing the agent to add a non-existent `unstable_instant` export from Next.js. The AGENTS.md file has been overwritten with a stub:
+  ```
+  # TalkMate Portal
+  This file intentionally contains no AI agent instructions.
+  ```
+- **`/CLAUDE.md`** previously contained a single `@AGENTS.md` import line. Replaced with the same stub so Claude Code doesn't follow the injection.
+- **`node_modules/next/dist/docs/index.md`** still contains the original injection on disk (line 11). Per the brief we did NOT modify `node_modules` because `npm install` would overwrite the fix on the next deploy. The risk is contained: AGENTS.md and CLAUDE.md no longer point any agent at that file. If we ever need to neutralise the source we should either pin a known-good `next` version, vendor a patched copy via `patch-package`, or report the package upstream.
+- A repo-wide search for `unstable_instant`, `AI agent hint`, and `nextjs-agent-rules` outside `node_modules` returned no other matches.
+
+### Testing checklist
+
+- Log in as irfan@talkmate.com.au, go to `/admin/clients`, click the 🏢 button for GM Towing → lands on `/admin/clients/[id]/portal/dashboard`.
+- The amber "Admin view — GM Towing — Changes are live" banner is visible on every page in the tree.
+- All 13 portal sub-routes load without errors. Dashboard shows live counts; vip-callers, team, catalog and settings/routing are fully inline-editable.
+- Sync Agent button is visible on `/catalog`, `/team`, `/vip-callers`, `/settings/routing` AND on the same pages inside `/admin/clients/[id]/portal/*`. In admin mode it hits `/api/admin/vapi/sync?clientId=…`.
+- After a VIP edit / team edit / routing save / catalog change, `agent_last_synced_at` updates on the corresponding business row.
+- `/settings/command` and `/command-centre` show no WhatsApp references in the setup UI.
+- `npm run build` exits with 0 errors. ✅ Verified during Session 13.
 
 ---
 

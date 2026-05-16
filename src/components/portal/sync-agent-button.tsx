@@ -8,13 +8,25 @@ interface Props {
   hasAgent: boolean
   // ISO timestamp string for the last successful sync, if any.
   initialLastSyncedAt?: string | null
+  // When set, syncs are routed through the admin endpoint scoped to the
+  // given clientId (used inside /admin/clients/[clientId]/portal/*).
+  // When omitted, the normal client endpoint is used.
+  adminClientId?: string | null
 }
 
-// Fire a sync from another page (VIPs / Team) without surfacing UI. The
-// callers add/edit/delete a record and silently push the change to Vapi.
-export async function silentSyncAgent(): Promise<void> {
+// Build the correct sync URL depending on whether we're in admin mode.
+function syncUrl(adminClientId?: string | null): string {
+  if (adminClientId) return `/api/admin/vapi/sync?clientId=${encodeURIComponent(adminClientId)}`
+  return '/api/vapi/sync'
+}
+
+// Fire a sync from another page (VIPs / Team / Catalog / Routing) without
+// surfacing UI. Callers add/edit/delete a record and silently push the
+// change to Vapi. Accepts an optional admin client id so admin-portal
+// callers can scope the sync to a specific client.
+export async function silentSyncAgent(adminClientId?: string | null): Promise<void> {
   try {
-    await fetch('/api/vapi/sync', { method: 'POST' })
+    await fetch(syncUrl(adminClientId), { method: 'POST' })
   } catch (e) {
     // Auto-sync is best-effort. The user can hit the manual Sync Agent
     // button if it failed and they want to retry.
@@ -32,7 +44,7 @@ function formatTimestamp(iso: string | null | undefined): string {
   })
 }
 
-export default function SyncAgentButton({ hasAgent, initialLastSyncedAt }: Props) {
+export default function SyncAgentButton({ hasAgent, initialLastSyncedAt, adminClientId }: Props) {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(initialLastSyncedAt ?? null)
@@ -47,7 +59,7 @@ export default function SyncAgentButton({ hasAgent, initialLastSyncedAt }: Props
     if (busy || !hasAgent) return
     setBusy(true)
     try {
-      const res = await fetch('/api/vapi/sync', { method: 'POST' })
+      const res = await fetch(syncUrl(adminClientId), { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setToast({ kind: 'error', text: data?.error ?? 'Sync failed' })

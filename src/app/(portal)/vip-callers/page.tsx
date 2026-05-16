@@ -11,12 +11,17 @@ export default async function VipCallersPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
   const { data: business } = await supabase
-    .from('businesses').select('id, plan, call_transfer_enabled')
+    .from('businesses').select('id, plan, call_transfer_enabled, vapi_agent_id, agent_last_synced_at')
     .eq('owner_user_id', user.id).single()
   if (!business) redirect('/register')
   return (
     <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto', color: '#F2F6FB' }}>
-      <VipView plan={business.plan ?? 'starter'} transferEnabled={!!business.call_transfer_enabled} />
+      <VipView
+        plan={business.plan ?? 'starter'}
+        transferEnabled={!!business.call_transfer_enabled}
+        hasAgent={!!business.vapi_agent_id}
+        initialLastSyncedAt={business.agent_last_synced_at ?? null}
+      />
     </div>
   )
 }

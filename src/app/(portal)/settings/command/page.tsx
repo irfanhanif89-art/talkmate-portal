@@ -2,10 +2,11 @@
 
 // TalkMate Command — client portal management page.
 //
-// Surfaces the live state of a client's Telegram + WhatsApp bots, plus
-// the full command reference and recent command history. RLS scopes
-// everything to the caller's own business so no client can see another
-// client's data.
+// Surfaces the live state of a client's Telegram bot, plus the full
+// command reference and recent command history. RLS scopes everything
+// to the caller's own business so no client can see another client's
+// data. WhatsApp was removed from the product — only Telegram is
+// supported.
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -28,7 +29,7 @@ interface CommandBotRow {
 
 interface CommandHistoryRow {
   id: string
-  platform: 'telegram' | 'whatsapp'
+  platform: 'telegram' | 'whatsapp' // legacy: 'whatsapp' rows may exist in historical data but are not shown for new clients
   raw_message: string
   parsed_intent: string | null
   action_taken: string | null
@@ -115,9 +116,7 @@ export default function CommandSettingsPage() {
         </p>
       </header>
 
-      {/* WhatsApp is wired up in the backend (/api/command/whatsapp) but
-          intentionally hidden from clients until the Twilio number pool
-          and approvals are in place. */}
+      {/* Telegram is the only channel exposed to clients. */}
       <div style={{ marginBottom: 24 }}>
         <Card>
           <CardHeader title="📨 Telegram" pill={bot.telegram_enabled ? 'ACTIVE' : 'PENDING'} pillOk={bot.telegram_enabled} />
@@ -158,7 +157,7 @@ export default function CommandSettingsPage() {
             <span style={{ fontSize: 12, color: '#4A7FBB' }}>{bot.total_commands ?? 0} total · last {bot.last_command_at ? fmtDate(bot.last_command_at) : 'never'}</span>
           </div>
           {history.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#4A7FBB', margin: 0 }}>No commands yet — send your first message from Telegram or WhatsApp.</p>
+            <p style={{ fontSize: 13, color: '#4A7FBB', margin: 0 }}>No commands yet — send your first message from Telegram.</p>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

@@ -46,7 +46,8 @@ const EXAMPLE_COMMANDS = [
 
 export default function CommandCentreClient(props: Props) {
   const router = useRouter()
-  const [platform, setPlatform] = useState<'whatsapp' | 'telegram' | null>(props.connectedPlatform as 'whatsapp' | 'telegram' | null)
+  // Telegram is the only supported channel.
+  const platform: 'telegram' = 'telegram'
   const [token, setToken] = useState('')
   const [savingToken, setSavingToken] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -70,7 +71,7 @@ export default function CommandCentreClient(props: Props) {
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.85 }}>Run your business by texting</div>
           <div style={{ fontSize: 28, fontWeight: 800, marginTop: 8, lineHeight: 1.1 }}>Send commands. Get answers. From anywhere.</div>
           <div style={{ fontSize: 14, opacity: 0.9, marginTop: 12, lineHeight: 1.55 }}>
-            TalkMate Command answers business questions, updates your menu, sends invoices, and pauses your agent — all over WhatsApp or Telegram.
+            TalkMate Command answers business questions, updates your menu, sends invoices, and pauses your agent — all over Telegram.
           </div>
         </div>
 
@@ -100,9 +101,9 @@ export default function CommandCentreClient(props: Props) {
   }
 
   // ─── Setup wizard (Growth/Pro, not yet connected) ─────────────────────────
-  if (!platform || !props.hasToken) {
+  if (!props.hasToken) {
     async function saveToken() {
-      if (!platform || !token.trim()) return
+      if (!token.trim()) return
       setSavingToken(true)
       try {
         const res = await fetch('/api/command/connect', {
@@ -127,58 +128,30 @@ export default function CommandCentreClient(props: Props) {
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Assistant</div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: 0 }}>Set up Command Centre</h1>
-          <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 6 }}>Connect WhatsApp Business or Telegram in two minutes.</p>
+          <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 6 }}>Connect your Telegram bot in two minutes.</p>
         </div>
 
-        {!platform && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, marginBottom: 24 }}>
-            {([
-              { id: 'whatsapp', label: 'WhatsApp Business', icon: '💬', desc: 'Easy · 2 min · Most popular' },
-              { id: 'telegram', label: 'Telegram', icon: '✈️', desc: 'Easy · 1 min · Best for power users' },
-            ] as const).map(opt => (
-              <button key={opt.id} onClick={() => setPlatform(opt.id)} style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 22, cursor: 'pointer', textAlign: 'left', fontFamily: 'Outfit, sans-serif' }}>
-                <div style={{ fontSize: 30, marginBottom: 10 }}>{opt.icon}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'white' }}>{opt.label}</div>
-                <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 4 }}>{opt.desc}</div>
-              </button>
-            ))}
-          </div>
-        )}
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 22 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginBottom: 8 }}>Connect Telegram</div>
+          <ol style={{ paddingLeft: 18, fontSize: 13, color: '#7BAED4', lineHeight: 1.8, marginBottom: 14 }}>
+            <li>In Telegram, message <strong>@BotFather</strong>.</li>
+            <li>Run <code style={{ background: '#071829', padding: '2px 6px', borderRadius: 4 }}>/newbot</code> and follow the steps.</li>
+            <li>Paste your bot token below and click <strong>Test connection</strong>.</li>
+          </ol>
 
-        {platform && (
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 22 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginBottom: 8 }}>Connect {platform === 'whatsapp' ? 'WhatsApp Business' : 'Telegram'}</div>
-            <ol style={{ paddingLeft: 18, fontSize: 13, color: '#7BAED4', lineHeight: 1.8, marginBottom: 14 }}>
-              {platform === 'whatsapp' ? (
-                <>
-                  <li>Go to your WhatsApp Business API dashboard.</li>
-                  <li>Generate an API key (System User → Permanent token).</li>
-                  <li>Paste it below and click <strong>Test connection</strong>.</li>
-                </>
-              ) : (
-                <>
-                  <li>In Telegram, message <strong>@BotFather</strong>.</li>
-                  <li>Run <code style={{ background: '#071829', padding: '2px 6px', borderRadius: 4 }}>/newbot</code> and follow the steps.</li>
-                  <li>Paste your bot token below and click <strong>Test connection</strong>.</li>
-                </>
-              )}
-            </ol>
-
-            <input
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              placeholder={platform === 'whatsapp' ? 'WhatsApp Business API key' : 'Telegram bot token'}
-              style={{ width: '100%', background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 9, padding: '11px 14px', fontFamily: 'monospace', fontSize: 12, outline: 'none' }}
-            />
-            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <button onClick={saveToken} disabled={savingToken || !token} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', opacity: !token ? 0.5 : 1 }}>
-                {savingToken ? 'Saving…' : 'Test connection & save'}
-              </button>
-              <button onClick={() => setPlatform(null)} style={{ background: 'transparent', color: '#4A7FBB', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '10px 18px', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Back</button>
-            </div>
-            {savedMsg && <div style={{ fontSize: 12, color: '#22C55E', marginTop: 10 }}>{savedMsg}</div>}
+          <input
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            placeholder="Telegram bot token"
+            style={{ width: '100%', background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 9, padding: '11px 14px', fontFamily: 'monospace', fontSize: 12, outline: 'none' }}
+          />
+          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+            <button onClick={saveToken} disabled={savingToken || !token} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', opacity: !token ? 0.5 : 1 }}>
+              {savingToken ? 'Saving…' : 'Test connection & save'}
+            </button>
           </div>
-        )}
+          {savedMsg && <div style={{ fontSize: 12, color: '#22C55E', marginTop: 10 }}>{savedMsg}</div>}
+        </div>
       </div>
     )
   }

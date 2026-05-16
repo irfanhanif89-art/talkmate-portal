@@ -13,7 +13,7 @@ export default async function TeamPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, plan, call_transfer_enabled')
+    .select('id, plan, call_transfer_enabled, vapi_agent_id, agent_last_synced_at')
     .eq('owner_user_id', user.id)
     .single()
   if (!business) redirect('/register')
@@ -23,6 +23,8 @@ export default async function TeamPage() {
       <TeamView
         plan={business.plan ?? 'starter'}
         transferEnabled={!!business.call_transfer_enabled}
+        hasAgent={!!business.vapi_agent_id}
+        initialLastSyncedAt={business.agent_last_synced_at ?? null}
       />
     </div>
   )

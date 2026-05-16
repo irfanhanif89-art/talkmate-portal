@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { silentSyncAgent } from '@/components/portal/sync-agent-button'
+import SyncAgentButton, { silentSyncAgent } from '@/components/portal/sync-agent-button'
 
 interface TeamMember {
   id: string
@@ -30,9 +30,24 @@ const emptyDraft: MemberDraft = {
   is_escalation_contact: false, active: true,
 }
 
+interface TeamViewProps {
+  plan: string
+  transferEnabled: boolean
+  hasAgent?: boolean
+  initialLastSyncedAt?: string | null
+  // When set, the view operates in admin mode: data calls go through
+  // /api/admin/businesses/[clientId]/team and silent syncs are scoped
+  // via /api/admin/vapi/sync?clientId=…
+  adminClientId?: string | null
+}
+
 export default function TeamView({
-  plan, transferEnabled,
-}: { plan: string; transferEnabled: boolean }) {
+  plan,
+  transferEnabled,
+  hasAgent = true,
+  initialLastSyncedAt = null,
+  adminClientId = null,
+}: TeamViewProps) {
   const [team, setTeam] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,15 +55,19 @@ export default function TeamView({
   const [draftOpen, setDraftOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
-  useEffect(() => { reload() }, [])
+  const teamBase = adminClientId
+    ? `/api/admin/businesses/${adminClientId}/team`
+    : '/api/portal/team'
+
+  useEffect(() => { reload() }, [adminClientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function reload() {
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/portal/team')
+      const res = await fetch(teamBase)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to load team')
-      setTeam(data.team ?? [])
+      setTeam(data.team ?? data.members ?? [])
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -60,22 +79,22 @@ export default function TeamView({
 
   async function deleteMember(id: string) {
     if (!confirm('Remove this team member?')) return
-    const res = await fetch(`/api/portal/team/${id}`, { method: 'DELETE' })
+    const res = await fetch(`${teamBase}/${id}`, { method: 'DELETE' })
     if (res.ok) {
       setTeam(t => t.filter(m => m.id !== id))
       showToast('Removed')
-      silentSyncAgent()
+      silentSyncAgent(adminClientId)
     }
   }
 
   async function toggleActive(m: TeamMember) {
-    const res = await fetch(`/api/portal/team/${m.id}`, {
+    const res = await fetch(`${teamBase}/${m.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !m.active }),
     })
     if (res.ok) {
       setTeam(t => t.map(x => x.id === m.id ? { ...x, active: !x.active } : x))
-      silentSyncAgent()
+      silentSyncAgent(adminClientId)
     }
   }
 
@@ -88,10 +107,17 @@ export default function TeamView({
             Add your team members so TalkMate knows who to transfer calls to.
           </p>
         </div>
-        <button
-          onClick={() => { setEditing(null); setDraftOpen(true) }}
-          style={primaryBtn()}
-        >+ Add team member</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <SyncAgentButton
+            hasAgent={hasAgent}
+            initialLastSyncedAt={initialLastSyncedAt}
+            adminClientId={adminClientId}
+          />
+          <button
+            onClick={() => { setEditing(null); setDraftOpen(true) }}
+            style={primaryBtn()}
+          >+ Add team member</button>
+        </div>
       </div>
 
       {plan === 'starter' && !transferEnabled && (
@@ -163,8 +189,9 @@ export default function TeamView({
       {draftOpen && (
         <MemberModal
           initial={editing}
+          baseUrl={teamBase}
           onClose={() => { setDraftOpen(false); setEditing(null) }}
-          onSaved={() => { setDraftOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent() }}
+          onSaved={() => { setDraftOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent(adminClientId) }}
         />
       )}
 
@@ -176,9 +203,10 @@ export default function TeamView({
 }
 
 function MemberModal({
-  initial, onClose, onSaved,
+  initial, baseUrl, onClose, onSaved,
 }: {
   initial: TeamMember | null
+  baseUrl: string
   onClose: () => void
   onSaved: () => void
 }) {
@@ -193,7 +221,7 @@ function MemberModal({
   async function save() {
     setBusy(true); setErr(null)
     try {
-      const url = initial ? `/api/portal/team/${initial.id}` : '/api/portal/team'
+      const url = initial ? `${baseUrl}/${initial.id}` : baseUrl
       const method = initial ? 'PATCH' : 'POST'
       const res = await fetch(url, {
         method, headers: { 'Content-Type': 'application/json' },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import SyncAgentButton, { silentSyncAgent } from '@/components/portal/sync-agent-button'
 
 interface Config {
   after_hours_enabled?: boolean
@@ -20,13 +21,24 @@ const DEFAULT_SMS = 'Hi {name}, thanks for calling {business_name}. {summary} Ca
 const isMedical = (i: string) => ['healthcare', 'medical', 'dental', 'physio', 'medispa'].includes(i)
 
 export default function RoutingView({
-  plan, industry, defaultEmergencyKeywords, initialConfig, initialKnowledgeBase,
+  plan,
+  industry,
+  defaultEmergencyKeywords,
+  initialConfig,
+  initialKnowledgeBase,
+  hasAgent = true,
+  initialLastSyncedAt = null,
+  adminClientId = null,
 }: {
   plan: string
   industry: string
   defaultEmergencyKeywords: string[]
   initialConfig: Record<string, unknown>
   initialKnowledgeBase: string
+  hasAgent?: boolean
+  initialLastSyncedAt?: string | null
+  // When set, save calls go to the admin endpoint scoped to the client.
+  adminClientId?: string | null
 }) {
   const cfg = initialConfig as Config
   const [afterHoursEnabled, setAfterHoursEnabled] = useState(!!cfg.after_hours_enabled)
@@ -54,7 +66,10 @@ export default function RoutingView({
     setSaving(true); setError(null)
     try {
       const keywords = emergencyKeywords.split('\n').map(s => s.trim()).filter(Boolean)
-      const res = await fetch('/api/portal/settings/escalation', {
+      const url = adminClientId
+        ? `/api/admin/businesses/${adminClientId}/escalation`
+        : '/api/portal/settings/escalation'
+      const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,6 +91,9 @@ export default function RoutingView({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Save failed')
       setSavedAt(new Date().toLocaleTimeString('en-AU'))
+      // Routing settings change what the agent does after-hours / on
+      // escalation, so push the latest into Vapi in the background.
+      silentSyncAgent(adminClientId)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -238,6 +256,17 @@ export default function RoutingView({
         }}>
           {saving ? 'Saving…' : 'Save settings'}
         </button>
+      </div>
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <SyncAgentButton
+          hasAgent={hasAgent}
+          initialLastSyncedAt={initialLastSyncedAt}
+          adminClientId={adminClientId}
+        />
+        <p style={{ fontSize: 11, color: '#7BAED4', margin: '8px 0 0' }}>
+          Saving settings already pushes routing changes to the agent automatically. Use Sync Agent if you want to re-push without changing anything.
+        </p>
       </div>
     </div>
   )

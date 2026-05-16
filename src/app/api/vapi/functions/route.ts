@@ -31,6 +31,9 @@ const VALID_FNS = new Set([
   'check_dispatch_availability',
   'create_dispatch_job',
   'get_job_types',
+  // Session 14 — distance quoting (Growth/Pro only, gated inside handler)
+  'calculate_job_quote',
+  'log_quote_addon',
 ])
 
 interface FnRequest {
@@ -137,6 +140,10 @@ export async function POST(request: Request) {
         return NextResponse.json(await createDispatchJob(supabase, businessId, params))
       case 'get_job_types':
         return NextResponse.json(await getJobTypes(supabase, businessId))
+      case 'calculate_job_quote':
+        return NextResponse.json(await calculateJobQuote(supabase, businessId, params))
+      case 'log_quote_addon':
+        return NextResponse.json(await logQuoteAddon(supabase, businessId, params))
       default:
         return NextResponse.json({ error: 'unhandled' }, { status: 400 })
     }
@@ -890,6 +897,399 @@ async function createDispatchJob(
       assigned_driver: assignedDriverName ? { name: assignedDriverName } : null,
       confirmation_message: confirmation,
       sms_sent: !!process.env.MAKE_DISPATCH_JOB_WEBHOOK,
+    },
+  }
+}
+
+// ─── Session 14: distance quoting ─────────────────────────────────
+
+interface QuoteConfig {
+  enabled?: boolean
+  quote_validity_minutes?: number
+  poa_threshold_km?: number
+  after_hours_surcharge_percent?: number
+  minimum_job_fee?: number
+  currency?: string
+}
+
+interface ServiceEntry {
+  id?: string
+  name?: string
+  price?: number | string
+  enabled?: boolean
+  category?: string
+}
+
+interface QuoteAddon {
+  name: string
+  price: number
+  quantity: number
+}
+
+type TruckType = 'loaded_tilt_tray' | 'empty_tilt_tray' | 'sideloader_40ft'
+type RateType = 'account' | 'retail'
+
+const POA_LIMIT_TILT = 100
+const POA_LIMIT_SIDELOADER = 30
+
+function bandLabel(distanceKm: number): string | null {
+  if (distanceKm <= 0) return null
+  if (distanceKm <= 10) return '0 to 10km'
+  if (distanceKm <= 20) return '10 to 20km'
+  if (distanceKm <= 30) return '20 to 30km'
+  if (distanceKm <= 40) return '30 to 40km'
+  if (distanceKm <= 50) return '40 to 50km'
+  if (distanceKm <= 60) return '50 to 60km'
+  if (distanceKm <= 70) return '60 to 70km'
+  if (distanceKm <= 80) return '70 to 80km'
+  if (distanceKm <= 90) return '80 to 90km'
+  if (distanceKm <= 100) return '90 to 100km'
+  return null
+}
+
+function truckLabel(t: TruckType): string {
+  switch (t) {
+    case 'loaded_tilt_tray': return 'Loaded Tilt Tray'
+    case 'empty_tilt_tray': return 'Empty Tilt Tray'
+    case 'sideloader_40ft': return 'Sideloader 40ft'
+  }
+}
+
+// Build the service name we expect to find in businesses.services for a
+// given truck / rate / distance band. Format mirrors what was loaded into
+// the GM Towing catalog.
+function buildServicePattern(truck: TruckType, rate: RateType, band: string): string {
+  if (truck === 'sideloader_40ft') return `Sideloader 40ft - ${band}`
+  const base = truck === 'loaded_tilt_tray' ? 'Loaded Tilt Tray' : 'Empty Tilt Tray'
+  return rate === 'retail' ? `${base} - Private ${band}` : `${base} - ${band}`
+}
+
+function priceOf(s: ServiceEntry | null | undefined): number | null {
+  if (!s) return null
+  if (typeof s.price === 'number') return s.price
+  if (typeof s.price === 'string') {
+    const n = parseFloat(s.price.replace(/[^0-9.]/g, ''))
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+function findService(services: ServiceEntry[], targetName: string): ServiceEntry | null {
+  const needle = targetName.toLowerCase().trim()
+  return services.find(s => s.enabled !== false && (s.name ?? '').toLowerCase().trim() === needle) ?? null
+}
+
+interface SchedulerOpHours {
+  monday?: { open?: string; close?: string; enabled?: boolean }
+  tuesday?: { open?: string; close?: string; enabled?: boolean }
+  wednesday?: { open?: string; close?: string; enabled?: boolean }
+  thursday?: { open?: string; close?: string; enabled?: boolean }
+  friday?: { open?: string; close?: string; enabled?: boolean }
+  saturday?: { open?: string; close?: string; enabled?: boolean }
+  sunday?: { open?: string; close?: string; enabled?: boolean }
+}
+
+function isAfterHours(opHours: SchedulerOpHours | null, timezone: string): boolean {
+  // No scheduler row → fall back to 06:00-18:00 Mon-Fri local default.
+  const now = new Date()
+  const fmt = new Intl.DateTimeFormat('en-AU', {
+    timeZone: timezone || 'Australia/Melbourne', hour12: false,
+    weekday: 'short', hour: '2-digit', minute: '2-digit',
+  })
+  const parts = fmt.formatToParts(now)
+  const weekday = parts.find(p => p.type === 'weekday')?.value ?? 'Mon'
+  const hh = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const mm = parts.find(p => p.type === 'minute')?.value ?? '00'
+  const hhmm = `${hh}:${mm}`
+  const dayMap: Record<string, keyof SchedulerOpHours> = {
+    Sun: 'sunday', Mon: 'monday', Tue: 'tuesday', Wed: 'wednesday',
+    Thu: 'thursday', Fri: 'friday', Sat: 'saturday',
+  }
+  if (opHours) {
+    const day = opHours[dayMap[weekday] ?? 'monday']
+    if (!day || day.enabled === false) return true
+    const open = day.open ?? '06:00'
+    const close = day.close ?? '18:00'
+    return hhmm < open || hhmm >= close
+  }
+  // Default: weekday 06:00 - 18:00
+  const isWeekend = weekday === 'Sat' || weekday === 'Sun'
+  if (isWeekend) return true
+  return hhmm < '06:00' || hhmm >= '18:00'
+}
+
+async function calculateJobQuote(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const pickupAddress = String(params.pickup_address ?? '').trim()
+  const dropoffAddress = String(params.dropoff_address ?? '').trim()
+  const truckType = String(params.truck_type ?? '').trim() as TruckType
+  const rateType = String(params.rate_type ?? '').trim() as RateType
+  const callerPhone = (params.caller_phone as string | undefined)?.trim() ?? null
+  const callId = (params.call_id as string | undefined)?.trim() ?? null
+
+  if (!pickupAddress || !dropoffAddress || !truckType || !rateType) {
+    return { result: { quoted: false, reason: 'missing_params', message: 'pickup_address, dropoff_address, truck_type, rate_type required' } }
+  }
+  if (!['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader_40ft'].includes(truckType)) {
+    return { result: { quoted: false, reason: 'invalid_truck_type', message: 'Unknown truck type.' } }
+  }
+  if (!['account', 'retail'].includes(rateType)) {
+    return { result: { quoted: false, reason: 'invalid_rate_type', message: 'Unknown rate type.' } }
+  }
+
+  // ---- plan gate ---------------------------------------------------
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('plan, services, quote_config, timezone')
+    .eq('id', clientId)
+    .maybeSingle()
+  if (!biz) {
+    return { result: { quoted: false, reason: 'unknown_client', message: 'Quote engine could not load business config.' } }
+  }
+  if (biz.plan === 'starter') {
+    return { result: { quoted: false, reason: 'plan_locked', message: 'Quote calculation is available on Growth and Pro plans.' } }
+  }
+  const services = Array.isArray(biz.services) ? (biz.services as ServiceEntry[]) : []
+  const cfg = ((biz.quote_config ?? {}) as QuoteConfig) || {}
+  if (cfg.enabled === false) {
+    return { result: { quoted: false, reason: 'quote_disabled', message: 'Quoting is currently disabled for this business.' } }
+  }
+
+  // ---- distance + service area via /api/maps/distance --------------
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
+  const internalSecret = process.env.INTERNAL_API_SECRET || process.env.VAPI_WEBHOOK_SECRET || ''
+  let mapsRes: Response
+  try {
+    mapsRes = await fetch(`${appUrl}/api/maps/distance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalSecret,
+      },
+      body: JSON.stringify({
+        origin: pickupAddress,
+        destination: dropoffAddress,
+        client_id: clientId,
+      }),
+    })
+  } catch (e) {
+    console.error('[calculate_job_quote] maps fetch failed', e)
+    return { result: { quoted: false, reason: 'maps_unavailable', message: 'Could not calculate the distance right now. Please take their details and let them know we will call back.' } }
+  }
+  const maps = await mapsRes.json().catch(() => ({}))
+  if (!maps?.success) {
+    return { result: { quoted: false, reason: 'maps_error', message: 'I had trouble calculating that distance. Can I take your name and number and have someone call you back with a quote?' } }
+  }
+  if (maps.within_service_area === false) {
+    return { result: { quoted: false, reason: 'outside_service_area', message: 'Unfortunately that job falls outside our service area.' } }
+  }
+  if (maps.origin_confidence === 'low') {
+    return { result: { quoted: false, reason: 'address_unclear', message: 'I want to make sure I have the right address. Can you confirm the pickup address for me?' } }
+  }
+  if (maps.destination_confidence === 'low') {
+    return { result: { quoted: false, reason: 'address_unclear', message: 'Can you confirm the dropoff address for me?' } }
+  }
+
+  const distanceKm = Number(maps.distance_km ?? 0)
+  const durationMinutes = Number(maps.duration_minutes ?? 0)
+
+  // ---- POA bands ---------------------------------------------------
+  const poaThreshold = cfg.poa_threshold_km ?? (truckType === 'sideloader_40ft' ? POA_LIMIT_SIDELOADER : POA_LIMIT_TILT)
+  if (distanceKm > poaThreshold) {
+    await insertPoaQuote(supabase, clientId, callId, callerPhone, pickupAddress, dropoffAddress, maps, truckType, rateType, distanceKm, durationMinutes)
+    return { result: { quoted: false, reason: 'poa', message: 'That job is priced on application. Let me get the team to call you back with a quote. Can I take your name and best contact number?' } }
+  }
+
+  // ---- match band → service entry → price -------------------------
+  const band = bandLabel(distanceKm)
+  if (!band) {
+    await insertPoaQuote(supabase, clientId, callId, callerPhone, pickupAddress, dropoffAddress, maps, truckType, rateType, distanceKm, durationMinutes)
+    return { result: { quoted: false, reason: 'poa', message: 'That job is priced on application. Let me get the team to call you back with a quote.' } }
+  }
+
+  const serviceName = buildServicePattern(truckType, rateType, band)
+  const matched = findService(services, serviceName)
+  const matchedPrice = priceOf(matched)
+  if (matchedPrice == null) {
+    await insertPoaQuote(supabase, clientId, callId, callerPhone, pickupAddress, dropoffAddress, maps, truckType, rateType, distanceKm, durationMinutes)
+    return { result: { quoted: false, reason: 'poa', message: 'That job is priced on application. Let me get the team to call you back with a quote.' } }
+  }
+
+  // ---- after-hours surcharge --------------------------------------
+  let basePrice = matchedPrice
+  const surchargePct = Math.max(0, cfg.after_hours_surcharge_percent ?? 0)
+  if (surchargePct > 0) {
+    const { data: sched } = await supabase
+      .from('scheduler_settings')
+      .select('operating_hours, timezone')
+      .eq('client_id', clientId)
+      .maybeSingle()
+    const tz = (sched?.timezone as string | null) ?? (biz.timezone as string | null) ?? 'Australia/Melbourne'
+    const opHours = (sched?.operating_hours as SchedulerOpHours | null) ?? null
+    if (isAfterHours(opHours, tz)) {
+      basePrice = Math.round(basePrice * (1 + surchargePct / 100) * 100) / 100
+    }
+  }
+
+  // ---- minimum job fee --------------------------------------------
+  const minFee = cfg.minimum_job_fee ?? 0
+  if (minFee > 0 && basePrice < minFee) basePrice = minFee
+
+  // ---- quote validity ---------------------------------------------
+  const validityMinutes = cfg.quote_validity_minutes ?? 120
+  const quoteValidUntil = new Date(Date.now() + validityMinutes * 60_000).toISOString()
+
+  // ---- insert quotes row ------------------------------------------
+  const insert: Record<string, unknown> = {
+    client_id: clientId,
+    call_id: callId,
+    caller_phone: callerPhone,
+    pickup_address: pickupAddress,
+    dropoff_address: dropoffAddress,
+    pickup_lat: maps.origin_lat ?? null,
+    pickup_lng: maps.origin_lng ?? null,
+    dropoff_lat: maps.destination_lat ?? null,
+    dropoff_lng: maps.destination_lng ?? null,
+    distance_km: distanceKm,
+    duration_minutes: durationMinutes,
+    truck_type: truckType,
+    rate_type: rateType,
+    base_price: basePrice,
+    addons: [],
+    total_price: basePrice,
+    is_poa: false,
+    quote_valid_until: quoteValidUntil,
+    status: 'given',
+  }
+  const { data: quoteRow, error } = await supabase
+    .from('quotes')
+    .insert(insert)
+    .select('id')
+    .single()
+  if (error) console.error('[calculate_job_quote] insert failed', error)
+
+  // ---- response ---------------------------------------------------
+  const truckPhrase = truckLabel(truckType).toLowerCase()
+  const validityHours = Math.round((validityMinutes / 60) * 10) / 10
+  const validityCopy = validityHours === Math.floor(validityHours)
+    ? `${validityHours} hours`
+    : `${validityHours} hours`
+  const message =
+    `That job is approximately ${Math.round(distanceKm)}km and should take around ${durationMinutes} minutes. ` +
+    `The price for a ${truckPhrase} is $${basePrice}. ` +
+    `This quote is valid for ${validityCopy}. Would you like me to book this job in?`
+
+  return {
+    result: {
+      quoted: true,
+      quote_id: quoteRow?.id ?? null,
+      distance_km: distanceKm,
+      duration_minutes: durationMinutes,
+      truck_type: truckType,
+      rate_type: rateType,
+      base_price: basePrice,
+      addons: [] as QuoteAddon[],
+      total_price: basePrice,
+      quote_valid_until: quoteValidUntil,
+      currency: cfg.currency ?? 'AUD',
+      message,
+    },
+  }
+}
+
+async function insertPoaQuote(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  callId: string | null,
+  callerPhone: string | null,
+  pickup: string,
+  dropoff: string,
+  maps: Record<string, unknown>,
+  truckType: TruckType,
+  rateType: RateType,
+  distanceKm: number,
+  durationMinutes: number,
+) {
+  await supabase
+    .from('quotes')
+    .insert({
+      client_id: clientId,
+      call_id: callId,
+      caller_phone: callerPhone,
+      pickup_address: pickup,
+      dropoff_address: dropoff,
+      pickup_lat: (maps.origin_lat as number | undefined) ?? null,
+      pickup_lng: (maps.origin_lng as number | undefined) ?? null,
+      dropoff_lat: (maps.destination_lat as number | undefined) ?? null,
+      dropoff_lng: (maps.destination_lng as number | undefined) ?? null,
+      distance_km: distanceKm || null,
+      duration_minutes: durationMinutes || null,
+      truck_type: truckType,
+      rate_type: rateType,
+      base_price: null,
+      addons: [],
+      total_price: null,
+      is_poa: true,
+      status: 'given',
+    })
+}
+
+async function logQuoteAddon(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  const quoteId = String(params.quote_id ?? '').trim()
+  const addonName = String(params.addon_name ?? '').trim()
+  const quantity = Math.max(1, Math.round(Number(params.quantity ?? 1)))
+  if (!quoteId || !addonName) {
+    return { result: { logged: false, error: 'quote_id and addon_name required' } }
+  }
+
+  const { data: quote } = await supabase
+    .from('quotes')
+    .select('id, base_price, addons, total_price, client_id')
+    .eq('id', quoteId)
+    .eq('client_id', clientId)
+    .maybeSingle()
+  if (!quote) return { result: { logged: false, error: 'quote not found' } }
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('services')
+    .eq('id', clientId)
+    .maybeSingle()
+  const services = Array.isArray(biz?.services) ? (biz!.services as ServiceEntry[]) : []
+  const match = findService(services, addonName)
+  const addonPrice = priceOf(match)
+  if (addonPrice == null) {
+    return { result: { logged: false, error: `add-on "${addonName}" not found in services list` } }
+  }
+
+  const existingAddons = Array.isArray(quote.addons) ? (quote.addons as QuoteAddon[]) : []
+  const nextAddons: QuoteAddon[] = [
+    ...existingAddons,
+    { name: match?.name ?? addonName, price: addonPrice, quantity },
+  ]
+  const base = Number(quote.base_price ?? 0)
+  const addonTotal = nextAddons.reduce((sum, a) => sum + a.price * a.quantity, 0)
+  const newTotal = Math.round((base + addonTotal) * 100) / 100
+
+  const { error } = await supabase
+    .from('quotes')
+    .update({ addons: nextAddons, total_price: newTotal })
+    .eq('id', quoteId)
+
+  if (error) return { result: { logged: false, error: error.message } }
+  return {
+    result: {
+      logged: true,
+      total_price: newTotal,
+      addons: nextAddons,
+      message: `Added ${match?.name ?? addonName}. New total is $${newTotal}.`,
     },
   }
 }

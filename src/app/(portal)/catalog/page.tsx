@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinessType } from '@/context/business-type-context'
+import SyncAgentButton, { silentSyncAgent } from '@/components/portal/sync-agent-button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,8 +34,29 @@ interface NotifConfigServiceRow {
 
 const emptyItem = (): Partial<CatalogItem> => ({ name: '', description: '', price: null, category: '', active: true, upsell_prompt: '', duration_minutes: null, is_featured: false })
 
-export default function CatalogPage() {
-  const { config, businessId } = useBusinessType()
+// CatalogPage accepts optional admin overrides so it can also be
+// rendered under /admin/clients/[clientId]/portal/catalog. When
+// adminClientId is set the page operates on that client's business id
+// and routes silent syncs through the admin sync endpoint.
+interface CatalogPageProps {
+  adminClientId?: string | null
+  adminBusinessId?: string | null
+  adminHasAgent?: boolean
+  adminLastSyncedAt?: string | null
+}
+
+export default function CatalogPage({
+  adminClientId = null,
+  adminBusinessId = null,
+  adminHasAgent = true,
+  adminLastSyncedAt = null,
+}: CatalogPageProps = {}) {
+  const ctx = useBusinessType()
+  // In admin mode, override the in-portal business id with the scoped
+  // client. The catalog config (labels, categories, pricing flag) still
+  // comes from BusinessType context derived from the layout.
+  const businessId = adminBusinessId ?? ctx.businessId
+  const config = ctx.config
   const supabase = createClient()
   const router = useRouter()
   const [items, setItems] = useState<CatalogItem[]>([])
@@ -116,27 +138,34 @@ export default function CatalogPage() {
     }
     setSheetOpen(false)
     fetchItems()
+    silentSyncAgent(adminClientId)
   }
 
   async function deleteItem(id: string) {
     if (!confirm('Delete this item?')) return
     await supabase.from('catalog_items').delete().eq('id', id)
     setItems(prev => prev.filter(i => i.id !== id))
+    silentSyncAgent(adminClientId)
   }
 
   async function toggleActive(item: CatalogItem) {
     await supabase.from('catalog_items').update({ active: !item.active }).eq('id', item.id)
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, active: !i.active } : i))
+    silentSyncAgent(adminClientId)
   }
 
   async function toggleFeatured(item: CatalogItem) {
     await supabase.from('catalog_items').update({ is_featured: !item.is_featured }).eq('id', item.id)
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_featured: !i.is_featured } : i))
+    silentSyncAgent(adminClientId)
   }
 
   async function syncToAI() {
     setSyncing(true); setSyncMsg('')
-    const res = await fetch('/api/vapi/sync', { method: 'POST' })
+    const url = adminClientId
+      ? `/api/admin/vapi/sync?clientId=${encodeURIComponent(adminClientId)}`
+      : '/api/vapi/sync'
+    const res = await fetch(url, { method: 'POST' })
     setSyncing(false)
     if (res.ok) {
       const now = Date.now()
@@ -168,6 +197,11 @@ export default function CatalogPage() {
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>Last synced to AI: {timeAgoMs(lastSynced)}</span>
             )}
           </div>
+          <SyncAgentButton
+            hasAgent={adminHasAgent}
+            initialLastSyncedAt={adminLastSyncedAt}
+            adminClientId={adminClientId}
+          />
           <Button onClick={openAdd} className="gap-2" style={{ background: '#E8622A', color: 'white', border: 'none' }}>
             <Plus size={16} /> Add {config.catalogItemLabel}
           </Button>

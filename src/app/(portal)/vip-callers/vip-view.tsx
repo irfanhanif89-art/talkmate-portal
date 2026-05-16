@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { silentSyncAgent } from '@/components/portal/sync-agent-button'
+import SyncAgentButton, { silentSyncAgent } from '@/components/portal/sync-agent-button'
 
 interface Vip {
   id: string
@@ -22,7 +22,24 @@ const ACTION_LABELS: Record<Vip['action'], string> = {
   skip_queue: 'Skip queue',
 }
 
-export default function VipView({ plan, transferEnabled }: { plan: string; transferEnabled: boolean }) {
+interface VipViewProps {
+  plan: string
+  transferEnabled: boolean
+  hasAgent?: boolean
+  initialLastSyncedAt?: string | null
+  // When set, the view operates in admin mode: data calls go through
+  // /api/admin/businesses/[clientId]/* and silent syncs are scoped to
+  // the client via /api/admin/vapi/sync?clientId=…
+  adminClientId?: string | null
+}
+
+export default function VipView({
+  plan,
+  transferEnabled,
+  hasAgent = true,
+  initialLastSyncedAt = null,
+  adminClientId = null,
+}: VipViewProps) {
   const [list, setList] = useState<Vip[]>([])
   const [team, setTeam] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
@@ -30,14 +47,21 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
   const [editing, setEditing] = useState<Vip | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
-  useEffect(() => { reload() }, [])
+  const vipBase = adminClientId
+    ? `/api/admin/businesses/${adminClientId}/vip-callers`
+    : '/api/portal/vip-callers'
+  const teamBase = adminClientId
+    ? `/api/admin/businesses/${adminClientId}/team`
+    : '/api/portal/team'
+
+  useEffect(() => { reload() }, [adminClientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function reload() {
     setLoading(true)
     try {
       const [vipRes, teamRes] = await Promise.all([
-        fetch('/api/portal/vip-callers'),
-        fetch('/api/portal/team'),
+        fetch(vipBase),
+        fetch(teamBase),
       ])
       if (vipRes.ok) { const d = await vipRes.json(); setList(d.callers ?? []) }
       if (teamRes.ok) { const d = await teamRes.json(); setTeam(d.team ?? []) }
@@ -48,22 +72,22 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
 
   async function deleteVip(id: string) {
     if (!confirm('Remove this VIP caller?')) return
-    const res = await fetch(`/api/portal/vip-callers/${id}`, { method: 'DELETE' })
+    const res = await fetch(`${vipBase}/${id}`, { method: 'DELETE' })
     if (res.ok) {
       setList(l => l.filter(x => x.id !== id))
       showToast('Removed')
-      silentSyncAgent()
+      silentSyncAgent(adminClientId)
     }
   }
 
   async function toggleActive(v: Vip) {
-    const res = await fetch(`/api/portal/vip-callers/${v.id}`, {
+    const res = await fetch(`${vipBase}/${v.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !v.active }),
     })
     if (res.ok) {
       setList(l => l.map(x => x.id === v.id ? { ...x, active: !x.active } : x))
-      silentSyncAgent()
+      silentSyncAgent(adminClientId)
     }
   }
 
@@ -76,7 +100,14 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
             Phone numbers that get priority treatment when they call.
           </p>
         </div>
-        <button onClick={() => { setEditing(null); setDrawerOpen(true) }} style={primaryBtn()}>+ Add VIP caller</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <SyncAgentButton
+            hasAgent={hasAgent}
+            initialLastSyncedAt={initialLastSyncedAt}
+            adminClientId={adminClientId}
+          />
+          <button onClick={() => { setEditing(null); setDrawerOpen(true) }} style={primaryBtn()}>+ Add VIP caller</button>
+        </div>
       </div>
 
       {plan === 'starter' && !transferEnabled && (
@@ -132,8 +163,9 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
         <VipModal
           initial={editing}
           team={team}
+          baseUrl={vipBase}
           onClose={() => { setDrawerOpen(false); setEditing(null) }}
-          onSaved={() => { setDrawerOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent() }}
+          onSaved={() => { setDrawerOpen(false); setEditing(null); reload(); showToast(editing ? 'Saved' : 'Added'); silentSyncAgent(adminClientId) }}
         />
       )}
       {toast && <div style={toastStyle}>{toast}</div>}
@@ -141,9 +173,10 @@ export default function VipView({ plan, transferEnabled }: { plan: string; trans
   )
 }
 
-function VipModal({ initial, team, onClose, onSaved }: {
+function VipModal({ initial, team, baseUrl, onClose, onSaved }: {
   initial: Vip | null
   team: TeamMember[]
+  baseUrl: string
   onClose: () => void
   onSaved: () => void
 }) {
@@ -159,7 +192,7 @@ function VipModal({ initial, team, onClose, onSaved }: {
   async function save() {
     setBusy(true); setErr(null)
     try {
-      const url = initial ? `/api/portal/vip-callers/${initial.id}` : '/api/portal/vip-callers'
+      const url = initial ? `${baseUrl}/${initial.id}` : baseUrl
       const method = initial ? 'PATCH' : 'POST'
       const body: Record<string, unknown> = { phone, name, note, action, active }
       if (action === 'transfer_to_member') body.transfer_to_member_id = transferToMemberId

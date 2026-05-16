@@ -292,6 +292,11 @@ export default function AdminClientsView({
                       title="Login as client (opens new tab)"
                       style={iconBtn('#8B5CF6')}
                     >{impersonateBusy === b.id ? '…' : '👁'}</button>
+                    <Link
+                      href={`/admin/clients/${b.id}/portal/dashboard`}
+                      title="Open Client Portal (admin view — stays signed in)"
+                      style={{ ...iconBtn('#F59E0B'), textDecoration: 'none' as const, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                    >🏢</Link>
                     {(b.account_status === 'pending' || b.account_status === 'suspended') && (
                       <button
                         onClick={() => handleActivate(b.id)}

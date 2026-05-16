@@ -84,6 +84,36 @@ const TOOL_DEFS: Record<string, { description: string; properties: Record<string
     },
     required: ['caller_phone'],
   },
+  // Session 14 — distance quoting (Growth/Pro only; gated below).
+  calculate_job_quote: {
+    description: 'Calculate a job quote based on pickup and dropoff addresses, truck type, and customer rate type. Call this after confirming the customer type (account or retail) and collecting both addresses.',
+    properties: {
+      pickup_address: { type: 'string', description: 'The full pickup address as given by the caller' },
+      dropoff_address: { type: 'string', description: 'The full dropoff address as given by the caller' },
+      truck_type: {
+        type: 'string',
+        enum: ['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader_40ft'],
+        description: 'The type of truck required for the job',
+      },
+      rate_type: {
+        type: 'string',
+        enum: ['account', 'retail'],
+        description: 'account for trade/account customers, retail for private customers',
+      },
+      caller_phone: { type: 'string', description: "The caller's phone number" },
+      call_id: { type: 'string', description: 'The Vapi call ID for this call' },
+    },
+    required: ['pickup_address', 'dropoff_address', 'truck_type', 'rate_type'],
+  },
+  log_quote_addon: {
+    description: 'Append an add-on (waiting time, toll, door direction change, futile trip) to an existing quote and return the updated total. Call this for each add-on the caller confirms after the initial quote.',
+    properties: {
+      quote_id: { type: 'string', description: 'The quote id returned by calculate_job_quote' },
+      addon_name: { type: 'string', description: 'The exact name of the add-on as it appears in the services list (e.g. "Waiting Time - Loaded Tilt Tray")' },
+      quantity: { type: 'number', description: 'Units of the add-on. Defaults to 1.' },
+    },
+    required: ['quote_id', 'addon_name'],
+  },
 }
 
 // ---------- helpers ----------
@@ -208,6 +238,49 @@ function injectOrReplaceVipBlock(prompt: string): { next: string; changed: boole
   return { next, changed: true }
 }
 
+// ---------- Session 14 — distance quoting prompt block ----------
+
+const QUOTE_BLOCK_HEADER = 'DISTANCE QUOTING:'
+
+function buildQuoteBlock(): string {
+  return [
+    'DISTANCE QUOTING:',
+    'You can calculate job quotes for callers. Before quoting:',
+    '1. Confirm whether the caller is an account/trade customer or a private/retail customer.',
+    '2. Ask what truck type is needed (tilt tray loaded, tilt tray empty, or sideloader).',
+    '3. Get the full pickup address and dropoff address.',
+    '4. Call calculate_job_quote with all details.',
+    '5. If the function returns quoted: true, read out the distance, ETA, and price naturally.',
+    '6. Ask if there are any extras (waiting time, tolls, door direction changes).',
+    '7. If yes to extras, call log_quote_addon for each one and state the updated total.',
+    '8. State the quote is valid for the duration the function returned.',
+    '9. If the function returns quoted: false with reason poa, tell the caller it is priced on application and offer a callback.',
+    '10. If the function returns quoted: false with reason outside_service_area, politely advise the location is outside the service area.',
+    '11. If the function returns quoted: false with reason address_unclear, ask the caller to confirm the address before proceeding.',
+  ].join('\n')
+}
+
+// Match the entire DISTANCE QUOTING section (header + lines until blank line or EOF).
+const QUOTE_BLOCK_RE = /^DISTANCE QUOTING:[\s\S]*?(?:\n\s*\n|$)/m
+
+function injectQuoteBlock(prompt: string): { next: string; changed: boolean } {
+  const block = buildQuoteBlock()
+  if (QUOTE_BLOCK_RE.test(prompt)) {
+    const replaced = prompt.replace(QUOTE_BLOCK_RE, block + '\n\n')
+    return { next: replaced, changed: replaced !== prompt }
+  }
+  // Append at the end (still readable for the model; existing sections stay untouched).
+  const trimmed = prompt.replace(/\s+$/, '')
+  const next = `${trimmed}\n\n${block}\n`
+  return { next, changed: true }
+}
+
+function removeQuoteBlock(prompt: string): { next: string; changed: boolean } {
+  if (!QUOTE_BLOCK_RE.test(prompt)) return { next: prompt, changed: false }
+  const next = prompt.replace(QUOTE_BLOCK_RE, '')
+  return { next, changed: next !== prompt }
+}
+
 // ---------- route ----------
 
 export async function POST() {
@@ -294,7 +367,13 @@ export async function POST() {
   const serverUrl = appUrl + '/api/vapi/functions'
 
   const template = existingTools.find(t => toolName(t) === 'check_caller') ?? null
-  const ensured = ['check_caller', 'log_outcome', 'get_team', 'schedule_callback']
+  // Quote tools are Growth/Pro only. Starter plans get them stripped if
+  // present so a downgrade cleans up properly.
+  const plan = (business.plan as string | null) ?? 'starter'
+  const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  const baseTools = ['check_caller', 'log_outcome', 'get_team', 'schedule_callback']
+  const quoteTools = ['calculate_job_quote', 'log_quote_addon']
+  const ensured = quoteToolsEnabled ? [...baseTools, ...quoteTools] : baseTools
 
   let toolsChanged = false
   const nextTools: VapiTool[] = existingTools.slice()
@@ -312,7 +391,32 @@ export async function POST() {
       }
     }
   }
+  // Strip quote tools on Starter — handles plan downgrades cleanly.
+  if (!quoteToolsEnabled) {
+    for (const fn of quoteTools) {
+      const idx = nextTools.findIndex(t => toolName(t) === fn)
+      if (idx !== -1) {
+        nextTools.splice(idx, 1)
+        toolsChanged = true
+      }
+    }
+  }
   if (toolsChanged) fieldsUpdated.push('tools_updated')
+
+  // ---- DISTANCE QUOTING prompt block (Growth/Pro only) ----
+  if (quoteToolsEnabled) {
+    const quoteResult = injectQuoteBlock(updatedPrompt)
+    if (quoteResult.changed) {
+      updatedPrompt = quoteResult.next
+      fieldsUpdated.push('quote_block_added')
+    }
+  } else {
+    const quoteResult = removeQuoteBlock(updatedPrompt)
+    if (quoteResult.changed) {
+      updatedPrompt = quoteResult.next
+      fieldsUpdated.push('quote_block_removed')
+    }
+  }
 
   // ---- Build PATCH body ----
   const promptChanged = updatedPrompt !== currentPrompt

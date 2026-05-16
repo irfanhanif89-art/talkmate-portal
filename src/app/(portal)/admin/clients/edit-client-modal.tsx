@@ -292,11 +292,26 @@ export default function EditClientModal({
 
   return (
     <ModalShell onClose={onClose}>
-      <div style={{ marginBottom: 4 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white', margin: 0 }}>{business.name}</h2>
-        <p style={{ fontSize: 12, color: '#7BAED4', margin: '4px 0 0 0' }}>
-          ID: <code style={{ fontSize: 11 }}>{business.id}</code>
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white', margin: 0 }}>{business.name}</h2>
+          <p style={{ fontSize: 12, color: '#7BAED4', margin: '4px 0 0 0' }}>
+            ID: <code style={{ fontSize: 11 }}>{business.id}</code>
+          </p>
+        </div>
+        <a
+          href={`/admin/clients/${business.id}/portal/dashboard`}
+          title="Open client portal in admin view (stays signed in)"
+          style={{
+            padding: '8px 14px', borderRadius: 9, fontSize: 12, fontWeight: 700,
+            background: 'rgba(245,158,11,0.12)', color: '#F59E0B',
+            border: '1px solid rgba(245,158,11,0.40)', textDecoration: 'none' as const,
+            fontFamily: 'Outfit, sans-serif', whiteSpace: 'nowrap',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          <span aria-hidden>🏢</span> Open Client Portal
+        </a>
       </div>
 
       <TrialManagementPanel business={business} onUpdate={onUpdate} />

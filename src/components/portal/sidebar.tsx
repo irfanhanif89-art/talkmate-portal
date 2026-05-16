@@ -9,7 +9,7 @@ import {
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
-  Truck, Car, ClipboardList,
+  Truck, Car, ClipboardList, Tag, MapPin,
 } from 'lucide-react'
 
 interface Props {
@@ -74,6 +74,11 @@ export default function PortalSidebar(props: Props) {
           href: '/calls', label: 'Calls', icon: Phone, show: true,
           badge: props.todayCallCount > 0 ? { text: String(props.todayCallCount), bg: 'rgba(74,159,232,0.18)', color: '#4A9FE8' } : undefined,
         },
+        // Session 14 — Quotes log sits between Calls and Contacts as
+        // briefed. Visible on all plans so the empty state stays
+        // self-explanatory ("upgrade to start quoting") rather than
+        // disappearing on Starter.
+        { href: '/quotes', label: 'Quotes', icon: Tag, show: true },
         { href: '/analytics', label: 'Analytics', icon: BarChart2, show: true },
       ],
     },
@@ -90,6 +95,9 @@ export default function PortalSidebar(props: Props) {
         // don't get a nav entry. They can still hit /calls etc.
         { href: '/settings', label: 'Agent Settings', icon: Settings, show: isManagerOrOwner },
         { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall, show: isManagerOrOwner },
+        // Session 14 — service area + quote config. Locked-state UI
+        // is rendered server-side so we can keep it visible on Starter.
+        { href: '/settings/service-area', label: 'Service Area', icon: MapPin, show: isManagerOrOwner },
         { href: '/appointments', label: 'Jobs', icon: Calendar, show: true },
       ],
     },

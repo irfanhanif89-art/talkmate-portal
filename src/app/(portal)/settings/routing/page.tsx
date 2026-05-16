@@ -34,7 +34,7 @@ export default async function RoutingSettingsPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, industry, plan, call_transfer_enabled, escalation_config, knowledge_base')
+    .select('id, industry, plan, call_transfer_enabled, escalation_config, knowledge_base, vapi_agent_id, agent_last_synced_at')
     .eq('owner_user_id', user.id)
     .single()
   if (!business) redirect('/register')
@@ -50,6 +50,8 @@ export default async function RoutingSettingsPage() {
         defaultEmergencyKeywords={defaultKeywords}
         initialConfig={(business.escalation_config ?? {}) as Record<string, unknown>}
         initialKnowledgeBase={(business.knowledge_base as string) ?? ''}
+        hasAgent={!!business.vapi_agent_id}
+        initialLastSyncedAt={business.agent_last_synced_at ?? null}
       />
     </div>
   )
