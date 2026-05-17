@@ -170,7 +170,13 @@ function safeEq(a: string, b: string): boolean {
 
 // ── business lookup ─────────────────────────────────────────────────────
 
-interface BusinessRow { id: string; business_type: string | null }
+interface BusinessRow {
+  id: string
+  business_type: string | null
+  escalation_number: string | null
+  talkmate_number: string | null
+  name: string | null
+}
 
 async function findBusinessByAssistant(
   supabase: ReturnType<typeof createAdminClient>,
@@ -179,7 +185,7 @@ async function findBusinessByAssistant(
   // Primary lookup: vapi_agent_id column (set during onboarding).
   const { data: primary } = await supabase
     .from('businesses')
-    .select('id, business_type')
+    .select('id, business_type, escalation_number, talkmate_number, name')
     .eq('vapi_agent_id', assistantId)
     .maybeSingle()
   if (primary) return primary as BusinessRow
@@ -189,10 +195,16 @@ async function findBusinessByAssistant(
   // when the primary missed.
   const { data: fallback } = await supabase
     .from('businesses')
-    .select('id, business_type, notifications_config')
+    .select('id, business_type, escalation_number, talkmate_number, name, notifications_config')
     .filter('notifications_config->>vapi_assistant_id', 'eq', assistantId)
     .maybeSingle()
-  if (fallback) return { id: fallback.id as string, business_type: (fallback.business_type as string | null) ?? null }
+  if (fallback) return {
+    id: fallback.id as string,
+    business_type: (fallback.business_type as string | null) ?? null,
+    escalation_number: (fallback.escalation_number as string | null) ?? null,
+    talkmate_number: (fallback.talkmate_number as string | null) ?? null,
+    name: (fallback.name as string | null) ?? null,
+  }
 
   return null
 }
@@ -336,6 +348,9 @@ async function handleEndOfCall(
     if (error) console.error('[vapi-webhook] notifications insert failed', error.message)
   })
 
+  // SMS notification to business owner/escalation number on call end.
+  await maybeSendOwnerSms(business, call, msg.analysis?.summary ?? call.summary ?? msg.summary ?? null, phone)
+
   // Optional Make.com fan-out (kept from the original receiver).
   const makeUrl = process.env.MAKE_WEBHOOK_URL
   if (makeUrl) {
@@ -473,6 +488,53 @@ async function maybeInsertOrder(
   }).then(({ error }) => {
     if (error) console.error('[vapi-webhook] orders insert failed', error.message)
   })
+}
+
+// ── owner SMS notification ─────────────────────────────────────────────
+
+async function maybeSendOwnerSms(
+  business: BusinessRow,
+  call: VapiCall,
+  summary: string | null,
+  callerPhone: string | null,
+): Promise<void> {
+  const toNumber = business.escalation_number
+  const fromNumber = business.talkmate_number ?? process.env.TWILIO_PHONE_NUMBER
+  if (!toNumber || !fromNumber) return
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  const authToken = process.env.TWILIO_AUTH_TOKEN
+  if (!accountSid || !authToken) return
+
+  // Format the SMS — concise, all key info for the owner
+  const caller = callerPhone ?? 'Unknown'
+  const bizName = business.name ?? 'Your business'
+  const summaryText = summary
+    ? summary.replace(/\n+/g, ' ').substring(0, 400)
+    : 'No summary available.'
+
+  const body = `📞 ${bizName} — New call\nFrom: ${caller}\n\n${summaryText}\n\nReply to this number to call back.`
+
+  try {
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
+    const params = new URLSearchParams({ To: toNumber, From: fromNumber, Body: body })
+    const resp = await fetch(twilioUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    })
+    if (!resp.ok) {
+      const err = await resp.text()
+      console.error('[vapi-webhook] owner SMS failed', { status: resp.status, err: err.substring(0, 200) })
+    } else {
+      console.log('[vapi-webhook] owner SMS sent to', toNumber)
+    }
+  } catch (e) {
+    console.error('[vapi-webhook] owner SMS exception', (e as Error).message)
+  }
 }
 
 // ── derivation helpers ──────────────────────────────────────────────────
