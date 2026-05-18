@@ -40,6 +40,18 @@ export async function executeCommand(
       return assignJob(clientId, parsed.params, supabase)
     case 'complete_job':
       return completeJob(clientId, parsed.params, supabase)
+    case 'view_quotes':
+      return viewQuotes(clientId, parsed.params, supabase)
+    case 'view_drivers':
+      return viewDrivers(clientId, supabase)
+    case 'pause_agent':
+      return pauseAgent(clientId, parsed.params, supabase)
+    case 'close_day':
+      return closeDay(clientId, parsed.params, supabase)
+    case 'missed_summary':
+      return missedSummary(clientId, supabase)
+    case 'vip_lookup':
+      return vipLookup(clientId, parsed.params, supabase)
     default:
       return helpText()
   }
@@ -311,17 +323,278 @@ async function completeJob(
   return `✅ ${job.job_number} marked as complete.`
 }
 
+// ── view_quotes ─────────────────────────────────────────────────────────
+
+async function viewQuotes(
+  clientId: string,
+  params: Record<string, unknown>,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const filterRaw = String(params.filter ?? 'today').toLowerCase()
+  const filter: 'today' | 'all' = filterRaw === 'all' ? 'all' : 'today'
+
+  let query = supabase
+    .from('quotes')
+    .select('caller_phone, pickup_address, dropoff_address, truck_type, base_price, is_poa, created_at')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (filter === 'today') {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    query = query.gte('created_at', today.toISOString())
+  }
+
+  const { data: quotes, error } = await query
+  if (error) return `❌ Couldn't load quotes: ${error.message}`
+  if (!quotes || quotes.length === 0) {
+    return filter === 'today' ? `📊 No quotes today.` : `📊 No quotes on file.`
+  }
+
+  const list = quotes.map(q => {
+    const price = q.is_poa ? 'POA' : q.base_price != null ? `$${q.base_price}` : '—'
+    const route = [q.pickup_address, q.dropoff_address].filter(Boolean).join(' to ')
+    return `• ${q.caller_phone ?? 'Unknown'} — ${q.truck_type ?? 'truck'} — ${route || 'no route'} — ${price}`
+  }).join('\n')
+
+  const label = filter === 'today' ? 'today' : 'recent'
+  return `📊 ${quotes.length} quote${quotes.length === 1 ? '' : 's'} ${label}:\n\n${list}`
+}
+
+// ── view_drivers ─────────────────────────────────────────────────────────
+
+async function viewDrivers(clientId: string, supabase: SupabaseClient): Promise<string> {
+  const { data: drivers, error } = await supabase
+    .from('drivers')
+    .select('id, name, phone, active')
+    .eq('client_id', clientId)
+    .eq('active', true)
+    .order('name')
+
+  if (error) return `❌ Couldn't load drivers: ${error.message}`
+  if (!drivers || drivers.length === 0) return `🚛 No active drivers on file.`
+
+  // Fetch most recent availability override per driver
+  const driverIds = drivers.map(d => d.id)
+  const { data: avail } = await supabase
+    .from('driver_availability')
+    .select('driver_id, status, created_at')
+    .in('driver_id', driverIds)
+    .order('created_at', { ascending: false })
+
+  // Keep only the most recent status per driver
+  const statusMap = new Map<string, string>()
+  if (avail) {
+    for (const row of avail) {
+      if (!statusMap.has(row.driver_id)) {
+        statusMap.set(row.driver_id, row.status)
+      }
+    }
+  }
+
+  const list = drivers.map(d => {
+    const status = statusMap.get(d.id) ?? 'available'
+    return `• ${d.name} — ${status}`
+  }).join('\n')
+
+  return `🚛 ${drivers.length} active driver${drivers.length === 1 ? '' : 's'}:\n\n${list}`
+}
+
+// ── pause_agent ──────────────────────────────────────────────────────────
+
+async function pauseAgent(
+  clientId: string,
+  params: Record<string, unknown>,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const minutes = toInt(params.minutes)
+  if (minutes == null || minutes <= 0 || minutes > 24 * 60) {
+    return `❌ How long should I pause for? Try "pause agent for 2 hours" or "stop agent for 30 minutes".`
+  }
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('dispatch_config')
+    .eq('id', clientId)
+    .single()
+  const cfg = (biz?.dispatch_config ?? {}) as Record<string, unknown>
+
+  const resumeAt = new Date(Date.now() + minutes * 60000).toISOString()
+  const { error } = await supabase
+    .from('businesses')
+    .update({
+      dispatch_config: { ...cfg, accepting_jobs: false, resume_at: resumeAt },
+    })
+    .eq('id', clientId)
+  if (error) return `❌ Couldn't pause agent: ${error.message}`
+
+  const resumeTime = new Date(resumeAt).toLocaleTimeString('en-AU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return `⏸ Agent paused for ${humaniseMinutes(minutes)}. Will resume at ${resumeTime}.`
+}
+
+// ── close_day ────────────────────────────────────────────────────────────
+
+const DAY_ALIASES: Record<string, string> = {
+  sun: 'sunday', sunday: 'sunday',
+  mon: 'monday', monday: 'monday',
+  tue: 'tuesday', tues: 'tuesday', tuesday: 'tuesday',
+  wed: 'wednesday', weds: 'wednesday', wednesday: 'wednesday',
+  thu: 'thursday', thur: 'thursday', thurs: 'thursday', thursday: 'thursday',
+  fri: 'friday', friday: 'friday',
+  sat: 'saturday', saturday: 'saturday',
+}
+
+async function closeDay(
+  clientId: string,
+  params: Record<string, unknown>,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const dayRaw = String(params.day ?? '').toLowerCase().trim()
+  const day = DAY_ALIASES[dayRaw]
+  if (!day) return `❌ Couldn't recognise that day. Try "close on Sunday" or "open on Saturday".`
+
+  const closed = !!params.closed
+
+  const { data: settings, error: fetchErr } = await supabase
+    .from('scheduler_settings')
+    .select('operating_hours')
+    .eq('client_id', clientId)
+    .maybeSingle()
+
+  if (fetchErr) return `❌ Couldn't load scheduler settings: ${fetchErr.message}`
+  if (!settings) {
+    return `❌ No scheduler settings found. Set up your schedule in the portal first.`
+  }
+
+  const hours = ((settings.operating_hours ?? {}) as Record<string, unknown>)
+  const dayHours = (hours[day] ?? {}) as Record<string, unknown>
+
+  const { error } = await supabase
+    .from('scheduler_settings')
+    .update({
+      operating_hours: {
+        ...hours,
+        [day]: { ...dayHours, enabled: !closed },
+      },
+    })
+    .eq('client_id', clientId)
+
+  if (error) return `❌ Couldn't update schedule: ${error.message}`
+
+  const dayLabel = day.charAt(0).toUpperCase() + day.slice(1)
+  return `✅ ${dayLabel} marked as ${closed ? 'closed' : 'open'}.`
+}
+
+// ── missed_summary ────────────────────────────────────────────────────────
+
+async function missedSummary(clientId: string, supabase: SupabaseClient): Promise<string> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  const [callsRes, jobsRes, quotesRes] = await Promise.all([
+    supabase
+      .from('calls')
+      .select('caller_number, outcome, ended_reason, started_at')
+      .eq('business_id', clientId)
+      .gte('started_at', since)
+      .order('started_at', { ascending: false }),
+    supabase
+      .from('dispatch_jobs')
+      .select('status, created_at')
+      .eq('client_id', clientId)
+      .gte('created_at', since),
+    supabase
+      .from('quotes')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', clientId)
+      .gte('created_at', since),
+  ])
+
+  const calls = callsRes.data ?? []
+  const jobs = jobsRes.data ?? []
+  const quoteCount = quotesRes.count ?? 0
+
+  const hungUp = calls.filter(c =>
+    c.ended_reason === 'silence-timed-out' || c.ended_reason === 'customer-did-not-answer'
+  )
+  const newJobs = jobs.filter(j => j.status !== 'complete')
+  const pendingJobs = jobs.filter(j => j.status === 'pending')
+
+  const attentionCalls = hungUp.slice(0, 3).map(c => {
+    return `  - ${c.caller_number ?? 'Unknown'} — ${c.outcome ?? c.ended_reason ?? 'hung up'}`
+  }).join('\n')
+
+  let msg = `📋 *Last 24 hours:*\n`
+  msg += `📞 Calls: ${calls.length} total${hungUp.length > 0 ? `, ${hungUp.length} hung up early` : ''}\n`
+  msg += `🔧 Jobs: ${newJobs.length} new, ${pendingJobs.length} pending\n`
+  msg += `📊 Quotes: ${quoteCount}\n`
+  if (hungUp.length > 0) {
+    msg += `\n⚠️ Calls needing attention:\n${attentionCalls}`
+    if (hungUp.length > 3) msg += `\n  ...and ${hungUp.length - 3} more`
+  }
+  return msg
+}
+
+// ── vip_lookup ────────────────────────────────────────────────────────────
+
+async function vipLookup(
+  clientId: string,
+  params: Record<string, unknown>,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const phone = String(params.phone ?? '').trim().replace(/\s+/g, '')
+  if (!phone) return `❌ Which number? Try "is 0412345678 a VIP".`
+
+  // Match on last 9 digits to handle country code variations
+  const last9 = phone.slice(-9)
+
+  const { data: vips, error } = await supabase
+    .from('vip_callers')
+    .select('name, company, note, phone')
+    .eq('client_id', clientId)
+
+  if (error) return `❌ Couldn't check VIP list: ${error.message}`
+
+  const match = (vips ?? []).find(v => {
+    const vPhone = String(v.phone ?? '').replace(/\s+/g, '')
+    return vPhone.slice(-9) === last9
+  })
+
+  if (!match) return `ℹ️ Not a VIP caller.`
+
+  const parts = [match.name ?? 'Unknown']
+  if (match.company) parts.push(`(${match.company})`)
+  if (match.note) parts.push(`— ${match.note}`)
+  return `⭐ VIP: ${parts.join(' ')}`
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────
 
 export function helpText(): string {
   return `❓ I didn't quite get that. Here's what I can help with:\n\n` +
-    `• Calls: "How many calls today?" / "Any missed calls?"\n` +
-    `• Jobs: "Show today's jobs"\n` +
-    `• Bookings: "Any bookings?"\n` +
-    `• Wait time: "We're busy for 2 hours"\n` +
-    `• Availability: "Stop taking jobs" / "Back online"\n` +
-    `• Assign a job: "Assign JOB-0042 to Dave"\n` +
-    `• Complete a job: "JOB-0042 is done"`
+    `📞 *Calls*\n` +
+    `• "How many calls today?" / "Any missed calls?"\n` +
+    `• "What did I miss?" / "Catch me up"\n\n` +
+    `🔧 *Jobs & Dispatch*\n` +
+    `• "Show today's jobs" / "List pending jobs"\n` +
+    `• "Any bookings?"\n` +
+    `• "Assign JOB-0042 to Dave"\n` +
+    `• "JOB-0042 is done"\n\n` +
+    `📊 *Quotes*\n` +
+    `• "Any quotes today?" / "Show recent quotes"\n\n` +
+    `🚛 *Drivers*\n` +
+    `• "Who is available?" / "Driver status"\n\n` +
+    `⭐ *VIP*\n` +
+    `• "Is 0412345678 a VIP?" / "Who is 0412345678?"\n\n` +
+    `⚙️ *Agent Control*\n` +
+    `• "We're busy for 2 hours" (sets wait time)\n` +
+    `• "Stop taking jobs" / "Back online"\n` +
+    `• "Pause agent for 1 hour"\n` +
+    `• "Close on Sunday" / "Open on Saturday"`
 }
 
 function toInt(v: unknown): number | null {

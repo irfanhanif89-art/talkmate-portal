@@ -148,16 +148,16 @@ export async function POST(
 function welcomeMessage(): string {
   return (
     `👋 Welcome to TalkMate Command!\n\n` +
-    `Ask me anything about your calls, jobs, and dispatcher — plain English.\n\n` +
+    `Ask me anything about your calls, jobs, quotes, and dispatcher — plain English.\n\n` +
     `Try:\n` +
-    `• "How many calls today?"\n` +
-    `• "Any missed calls?"\n` +
-    `• "Show today's jobs"\n` +
-    `• "Any bookings?"\n` +
-    `• "We're busy for 2 hours"\n` +
-    `• "Stop taking jobs" / "Back online"\n` +
-    `• "Assign JOB-0042 to Dave"\n` +
-    `• "JOB-0042 is done"`
+    `📞 "How many calls today?" / "What did I miss?"\n` +
+    `🔧 "Show today's jobs" / "Any bookings?"\n` +
+    `📊 "Any quotes today?"\n` +
+    `🚛 "Who is available?" / "Driver status"\n` +
+    `⭐ "Is 0412345678 a VIP?"\n` +
+    `⚙️ "We're busy for 2 hours" / "Stop taking jobs"\n` +
+    `⏸ "Pause agent for 1 hour"\n` +
+    `📅 "Close on Sunday" / "Open on Saturday"`
   )
 }
 

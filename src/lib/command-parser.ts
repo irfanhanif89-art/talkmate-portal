@@ -18,6 +18,12 @@ export type CommandIntent =
   | 'view_calls'
   | 'assign_job'
   | 'complete_job'
+  | 'view_quotes'
+  | 'view_drivers'
+  | 'pause_agent'
+  | 'close_day'
+  | 'missed_summary'
+  | 'vip_lookup'
   | 'unknown'
 
 export interface ParsedCommand {
@@ -71,6 +77,42 @@ complete_job { job_number: string }
   "JOB-0042 is done" -> job_number: "JOB-0042"
   "mark job 42 complete" -> job_number: "JOB-0042"
 
+view_quotes { filter: "today" | "all" }
+  "any quotes today" -> filter: "today"
+  "show recent quotes" -> filter: "today"
+  "what quotes came in" -> filter: "today"
+  "all quotes" -> filter: "all"
+
+view_drivers {}
+  "who is available"
+  "driver status"
+  "which drivers are on"
+  "who is working"
+
+pause_agent { minutes: number }
+  "pause agent for 2 hours" -> minutes: 120
+  "stop agent for 30 minutes" -> minutes: 30
+  "take agent offline for an hour" -> minutes: 60
+
+close_day { day: string, closed: boolean }
+  "close on sunday" -> day: "sunday", closed: true
+  "we are closed saturday" -> day: "saturday", closed: true
+  "open on sunday" -> day: "sunday", closed: false
+  "re-open saturday" -> day: "saturday", closed: false
+  Normalise day to full lowercase name (sunday, monday, tuesday, wednesday, thursday, friday, saturday).
+
+missed_summary {}
+  "what did i miss"
+  "catch me up"
+  "summary while i was out"
+  "what happened today"
+
+vip_lookup { phone: string }
+  "is 0412345678 a vip" -> phone: "0412345678"
+  "check 0412345678" -> phone: "0412345678"
+  "who is 0412345678" -> phone: "0412345678"
+  Extract the phone number from the message as-is.
+
 unknown {}
   Anything that doesn't match the above. Do not guess.
 
@@ -94,6 +136,12 @@ const VALID_INTENTS: CommandIntent[] = [
   'view_calls',
   'assign_job',
   'complete_job',
+  'view_quotes',
+  'view_drivers',
+  'pause_agent',
+  'close_day',
+  'missed_summary',
+  'vip_lookup',
   'unknown',
 ]
 
