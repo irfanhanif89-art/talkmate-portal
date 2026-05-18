@@ -15,6 +15,7 @@ export type CommandIntent =
   | 'toggle_availability'
   | 'view_jobs'
   | 'view_bookings'
+  | 'view_calls'
   | 'assign_job'
   | 'complete_job'
   | 'unknown'
@@ -55,6 +56,13 @@ view_bookings {}
   "show pending bookings"
   "what's booked in"
 
+view_calls { filter: "today" | "missed" | "all" }
+  "how many calls today" -> filter: "today"
+  "how many calls have come through" -> filter: "today"
+  "any missed calls" -> filter: "missed"
+  "show recent calls" -> filter: "all"
+  "call summary" -> filter: "today"
+
 assign_job { job_number: string, driver_name: string }
   "assign JOB-0042 to Dave" -> job_number: "JOB-0042", driver_name: "Dave"
   "give the container job to Mark" -> use the most recent matching job; if unclear, set job_number to "" so the system can ask.
@@ -83,6 +91,7 @@ const VALID_INTENTS: CommandIntent[] = [
   'toggle_availability',
   'view_jobs',
   'view_bookings',
+  'view_calls',
   'assign_job',
   'complete_job',
   'unknown',

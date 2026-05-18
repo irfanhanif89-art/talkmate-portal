@@ -148,15 +148,16 @@ export async function POST(
 function welcomeMessage(): string {
   return (
     `👋 Welcome to TalkMate Command!\n\n` +
-    `I can help you manage your jobs and dispatcher straight from Telegram.\n\n` +
-    `Here's what you can ask me:\n` +
+    `Ask me anything about your calls, jobs, and dispatcher — plain English.\n\n` +
+    `Try:\n` +
+    `• "How many calls today?"\n` +
+    `• "Any missed calls?"\n` +
+    `• "Show today's jobs"\n` +
+    `• "Any bookings?"\n` +
     `• "We're busy for 2 hours"\n` +
     `• "Stop taking jobs" / "Back online"\n` +
-    `• "Show today's jobs"\n` +
     `• "Assign JOB-0042 to Dave"\n` +
-    `• "JOB-0042 is done"\n` +
-    `• "Any bookings?"\n\n` +
-    `Just send a message in plain English — I'll work out the rest.`
+    `• "JOB-0042 is done"`
   )
 }
 

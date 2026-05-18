@@ -34,6 +34,8 @@ export async function executeCommand(
       return viewJobs(clientId, parsed.params, supabase)
     case 'view_bookings':
       return viewBookings(clientId, supabase)
+    case 'view_calls':
+      return viewCalls(clientId, parsed.params, supabase)
     case 'assign_job':
       return assignJob(clientId, parsed.params, supabase)
     case 'complete_job':
@@ -167,6 +169,72 @@ async function viewBookings(clientId: string, supabase: SupabaseClient): Promise
   return `📅 ${bookings.length} pending booking${bookings.length === 1 ? '' : 's'}:\n\n${list}`
 }
 
+// ── view_calls ─────────────────────────────────────────────────────
+
+async function viewCalls(
+  clientId: string,
+  params: Record<string, unknown>,
+  supabase: SupabaseClient,
+): Promise<string> {
+  const filterRaw = String(params.filter ?? 'today').toLowerCase()
+  const filter: 'today' | 'missed' | 'all' =
+    filterRaw === 'missed' ? 'missed' : filterRaw === 'all' ? 'all' : 'today'
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  let query = supabase
+    .from('calls')
+    .select('caller_number, caller_name, outcome, duration_seconds, started_at, ended_reason, summary')
+    .eq('business_id', clientId)
+    .order('started_at', { ascending: false })
+    .limit(10)
+
+  if (filter === 'today' || filter === 'missed') {
+    query = query.gte('started_at', today.toISOString())
+  }
+  if (filter === 'missed') {
+    query = query.in('ended_reason', ['silence-timed-out', 'customer-did-not-answer', 'voicemail'])
+  }
+
+  const { data: calls, error } = await query
+  if (error) return `❌ Couldn't load calls: ${error.message}`
+
+  // Also get total count for today
+  const { count: todayCount } = await supabase
+    .from('calls')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', clientId)
+    .gte('started_at', today.toISOString())
+
+  if (!calls || calls.length === 0) {
+    if (filter === 'missed') return `✅ No missed calls today.`
+    return `📞 No calls today yet.`
+  }
+
+  if (filter === 'today' && calls.length > 0) {
+    const total = todayCount ?? calls.length
+    const missed = calls.filter(c =>
+      c.ended_reason === 'silence-timed-out' || c.ended_reason === 'customer-did-not-answer'
+    ).length
+    const short = calls.filter(c => (c.duration_seconds ?? 0) < 10).length
+    const summary = calls.slice(0, 5).map(c => {
+      const num = c.caller_number ?? 'Unknown'
+      const dur = c.duration_seconds ? `${c.duration_seconds}s` : ''
+      const outcome = c.outcome ?? c.ended_reason ?? ''
+      return `\u2022 ${num}${dur ? ' (' + dur + ')' : ''} — ${outcome}`
+    }).join('\n')
+    return `📞 *${total} call${total === 1 ? '' : 's'} today*${missed > 0 ? ` \u26a0️ ${missed} hung up early` : ''}\n\n${summary}${total > 5 ? `\n\n...and ${total - 5} more.` : ''}`
+  }
+
+  const list = calls.map(c => {
+    const num = c.caller_number ?? 'Unknown'
+    const outcome = c.outcome ?? c.ended_reason ?? ''
+    return `• ${num} — ${outcome}`
+  }).join('\n')
+  return `📞 ${calls.length} call${calls.length === 1 ? '' : 's'}:\n\n${list}`
+}
+
 // ── assign_job ──────────────────────────────────────────────────────────
 
 async function assignJob(
@@ -247,10 +315,11 @@ async function completeJob(
 
 export function helpText(): string {
   return `❓ I didn't quite get that. Here's what I can help with:\n\n` +
-    `• Set wait time: "We're busy for 2 hours"\n` +
-    `• Toggle availability: "Stop taking jobs" / "Back online"\n` +
-    `• View jobs: "Show today's jobs"\n` +
-    `• View bookings: "Any bookings?"\n` +
+    `• Calls: "How many calls today?" / "Any missed calls?"\n` +
+    `• Jobs: "Show today's jobs"\n` +
+    `• Bookings: "Any bookings?"\n` +
+    `• Wait time: "We're busy for 2 hours"\n` +
+    `• Availability: "Stop taking jobs" / "Back online"\n` +
     `• Assign a job: "Assign JOB-0042 to Dave"\n` +
     `• Complete a job: "JOB-0042 is done"`
 }
