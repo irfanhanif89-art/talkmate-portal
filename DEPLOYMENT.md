@@ -1,8 +1,85 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 17B — Audit fixes from Session 17A (2026-05-19)
+
+### No migration required
+
+Code only. All migrations 001-031 already live.
+
+### What changed
+
+| Fix | Files |
+|---|---|
+| **FIX 1** -- `create_booking` Vapi tool now synced to Growth/Pro agents. Handler rewritten against the Session 15 bookings schema. Sets `booking_source = 'agent'`, fires direct Twilio SMS via `/lib/sms.ts` when `scheduler_settings.booking_confirmation_sms = true`, stamps `sms_confirmation_sent` on success. Drops the legacy `MAKE_BOOKING_WEBHOOK` fire-and-forget. | [src/app/api/vapi/sync/route.ts](src/app/api/vapi/sync/route.ts), [src/app/api/admin/vapi/sync/route.ts](src/app/api/admin/vapi/sync/route.ts), [src/app/api/vapi/functions/route.ts](src/app/api/vapi/functions/route.ts) |
+| **FIX 3** -- Every remaining `MAKE_BOOKING_WEBHOOK` call site removed. The booking-confirm endpoint now sends confirmation SMS via `/lib/sms.ts` instead of firing the Make.com webhook. Env var declaration left intact per brief. | [src/app/api/portal/bookings/[id]/confirm/route.ts](src/app/api/portal/bookings/%5Bid%5D/confirm/route.ts), [src/app/api/vapi/functions/route.ts](src/app/api/vapi/functions/route.ts) |
+| **FIX 4** -- `check_caller` now logs every invocation to Vercel function logs with `raw_phone`, `normalised_phone`, `last9`, `vip_match`, `bypass_match`, `account_match`, `contact_match`, `candidates_total`, `result_type`, and `client_id`. Helps diagnose phone-format mismatches that may cause VIPs not to be recognised. | [src/app/api/vapi/functions/route.ts](src/app/api/vapi/functions/route.ts) (inside `checkCaller`) |
+| **FIX 5** -- Five dead Vapi handlers removed (`get_wait_time`, `get_availability` alias, `check_dispatch_availability`, `create_dispatch_job`, `get_job_types`). None of them were ever synced to a Vapi agent and Session 15's scheduler functions superseded them. Removed alongside: `activeDriverIds` helper and `DispatchConfig` interface (unused without those handlers). `VALID_FNS` set + switch dispatch trimmed. ~405 lines deleted. | [src/app/api/vapi/functions/route.ts](src/app/api/vapi/functions/route.ts) |
+
+### FIX 2 -- noop (audit-report error)
+
+The Session 17A report said `/admin/audit-log` 404s because
+`src/app/admin/audit-log/page.tsx` was missing. That was wrong: the page
+already lives at [src/app/(portal)/admin/audit-log/page.tsx](src/app/%28portal%29/admin/audit-log/page.tsx)
+and routes correctly to `/admin/audit-log` thanks to the `(portal)`
+route group. Confirmed in this build's route table: `├ ƒ /admin/audit-log`.
+No code change needed.
+
+### `create_booking` flow now
+
+1. Agent calls `create_booking` with `caller_name`, `caller_phone`,
+   `scheduled_date` (YYYY-MM-DD), `scheduled_time` (HH:MM 24h preferred,
+   AM/PM tolerated), plus optional pickup/dropoff address + contacts,
+   `truck_type`, `rate_type`, `description`, `account_id`, `driver_id`,
+   `call_id`.
+2. Handler combines date + time into ISO `scheduled_start`.
+3. Reads `scheduler_settings` for `default_duration_tilt_minutes` /
+   `default_duration_sideloader_minutes` / `default_duration_minutes` to
+   compute `scheduled_end` (defaults to 60min if no settings row).
+4. Inserts into `bookings` with `booking_source = 'agent'`, `status =
+   'pending'`, all addresses + contacts, truck + rate types, account
+   and driver linkage.
+5. Links the booking back to `calls.booking_id` via `call_id` when
+   provided.
+6. If `scheduler_settings.booking_confirmation_sms = true`, calls
+   `sendSMS(...)` with `templateBookingConfirmation(...)`. On success,
+   updates the booking row with `sms_confirmation_sent = true`. Plan
+   limits / quota enforced inside `sendSMS`.
+7. Returns `{ booking_id, scheduled_start, sms_sent, confirmation_message }`.
+
+### Deliberately unchanged
+
+- **VIP sync architecture** (Session 17A confirmed correct -- brief
+  explicitly said don't change it).
+- `MAKE_CALLBACK_WEBHOOK`, `MAKE_DISPATCH_JOB_WEBHOOK` env var references
+  (the dispatcher-job webhook fire was removed alongside
+  `createDispatchJob` -- the env var itself stays).
+- `MAKE_BOOKING_WEBHOOK` env var declaration stays per brief (no remaining
+  call sites in code).
+
+### Verification
+
+- `npm run build` -- 130 routes, zero TypeScript errors in changed
+  files. `middleware -> proxy` deprecation warning is pre-existing.
+- `/admin/audit-log` registered in the route table.
+- `create_booking` tool will be added to Growth/Pro Vapi agents on the
+  next Sync Agent press. Donna should trigger Sync Agent for GM Towing
+  and Spectrum Towing after deploy to push the new tool live.
+
+### Donna handoff after deployment
+
+1. Confirm Vercel deploy is green.
+2. Press Sync Agent for **GM Towing** and **Spectrum Towing** to push
+   `create_booking` onto their assistants.
+3. Verify the new tool appears in the Vapi dashboard under each
+   assistant's tool list.
+4. Send a test inbound call to confirm `check_caller` logs surface in
+   Vercel function logs with the new structured payload.
 
 ---
 

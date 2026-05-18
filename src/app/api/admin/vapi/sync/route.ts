@@ -149,6 +149,29 @@ const TOOL_DEFS: Record<string, { description: string; properties: Record<string
     },
     required: ['new_date', 'new_time'],
   },
+  // Session 17B -- create_booking exposed to Growth/Pro towing agents.
+  create_booking: {
+    description: 'Create a confirmed booking after the caller has agreed to the time, date, and job details. Call this only after check_availability confirms the slot is available.',
+    properties: {
+      caller_name: { type: 'string', description: 'Full name of the caller' },
+      caller_phone: { type: 'string', description: 'Caller phone number' },
+      pickup_address: { type: 'string', description: 'Full pickup address' },
+      dropoff_address: { type: 'string', description: 'Full dropoff address' },
+      pickup_contact_name: { type: 'string', description: 'Name of person at pickup' },
+      pickup_contact_phone: { type: 'string', description: 'Phone of person at pickup' },
+      dropoff_contact_name: { type: 'string', description: 'Name of person at dropoff' },
+      dropoff_contact_phone: { type: 'string', description: 'Phone of person at dropoff' },
+      truck_type: { type: 'string', enum: ['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader_40ft'], description: 'Truck type required' },
+      rate_type: { type: 'string', enum: ['account', 'retail'], description: 'account for trade clients, retail otherwise' },
+      scheduled_date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+      scheduled_time: { type: 'string', description: 'Time in HH:MM 24-hour format' },
+      description: { type: 'string', description: 'Any additional job notes' },
+      account_id: { type: 'string', description: 'UUID of account if caller is an account client' },
+      driver_id: { type: 'string', description: 'UUID of assigned driver if known' },
+      call_id: { type: 'string', description: 'Vapi call ID for this call' },
+    },
+    required: ['caller_name', 'caller_phone', 'scheduled_date', 'scheduled_time'],
+  },
 }
 
 // Session 15 — VIP bypass + scheduler prompt blocks.
@@ -433,7 +456,8 @@ export async function POST(req: Request) {
   const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
   const baseTools = ['check_caller', 'log_outcome', 'get_team', 'schedule_callback']
   const quoteTools = ['calculate_job_quote', 'log_quote_addon']
-  const schedulerTools = ['check_availability', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking']
+  // Session 17B -- create_booking added so Growth/Pro agents can commit bookings.
+  const schedulerTools = ['check_availability', 'create_booking', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking']
   const ensured = quoteToolsEnabled ? [...baseTools, ...quoteTools, ...schedulerTools] : baseTools
 
   let toolsChanged = false
