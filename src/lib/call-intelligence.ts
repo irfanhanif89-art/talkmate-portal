@@ -23,6 +23,7 @@ export type CallFlagType =
   | 'warm_lead'
   | 'agent_error'
   | 'no_resolution'
+  | 'sms_mismatch'
 
 export type CallActionType = 'callback_suggested' | 'review_transcript'
 
@@ -38,6 +39,14 @@ export interface CallAction {
   context?: string | null
 }
 
+export interface RelatedSms {
+  sms_type: string | null
+  to_phone: string | null
+  message: string
+  status: string | null
+  sent_at: string | null
+}
+
 export interface CallIntelligenceInput {
   transcript: string
   summary: string | null
@@ -47,6 +56,16 @@ export interface CallIntelligenceInput {
   business_name: string
   industry: string | null
   vip_callers: Array<{ phone: string; name: string; vip_bypass: boolean }>
+  // Session 19 — SMS sent in the 10-minute window after the call. Empty
+  // array means no SMS fired; the scorer should return status="no_sms".
+  related_sms: RelatedSms[]
+}
+
+export type SmsVerificationStatus = 'correct' | 'mismatch' | 'no_sms' | 'unverified' | 'error'
+
+export interface SmsVerification {
+  status: SmsVerificationStatus
+  note: string
 }
 
 export interface CallIntelligenceResult {
@@ -57,6 +76,9 @@ export interface CallIntelligenceResult {
   actions: CallAction[]
   should_alert_owner: boolean
   alert_message: string | null
+  // Session 19 — present when SMS verification ran (which is always,
+  // except when the orchestrator surfaces an upstream error).
+  sms_verification: SmsVerification
   prompt_tokens?: number
   completion_tokens?: number
 }
@@ -64,7 +86,17 @@ export interface CallIntelligenceResult {
 const SYSTEM_PROMPT = `You are a call quality supervisor for an AI voice receptionist at an Australian small business.
 Your job is to read call transcripts and identify issues that need the business owner's attention.
 You must return ONLY valid JSON. No other text. No markdown. No explanation.
-Be concise. Be accurate. Do not flag normal successful calls.`
+Be concise. Be accurate. Do not flag normal successful calls.
+
+You will also be given a list of SMS messages sent within 10 minutes of this call ending.
+For each SMS, evaluate whether it was the correct response given the call transcript and outcome.
+
+Rules for sms_verification:
+- If no SMS messages are provided, return status "no_sms".
+- If the transcript is under 30 seconds or incomplete, return status "unverified".
+- Only flag "mismatch" if you are confident the wrong message was sent or the content was materially incorrect.
+- Do not flag mismatches for minor wording differences — only flag if the message type or key content (phone number, address, job details) is wrong.
+- If sms_verification.status is "mismatch", also add an "sms_mismatch" flag to the flags array.`
 
 function last9(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -99,6 +131,14 @@ function buildUserPrompt(input: CallIntelligenceInput): string {
   const outcome = input.outcome ?? 'unknown'
   const duration = input.duration_seconds ?? 0
 
+  const smsBlock = input.related_sms.length === 0
+    ? '(no SMS messages sent in the 10-minute window after this call)'
+    : input.related_sms.map((s, i) => {
+        const at = s.sent_at ? new Date(s.sent_at).toISOString() : 'unknown'
+        const body = (s.message ?? '').replace(/\s+/g, ' ').slice(0, 320)
+        return `${i + 1}. [${s.sms_type ?? 'unknown'}] -> ${s.to_phone ?? 'unknown'} at ${at} (status=${s.status ?? 'unknown'}): "${body}"`
+      }).join('\n')
+
   return [
     `Business: ${input.business_name}`,
     `Industry: ${input.industry ?? 'unspecified'}`,
@@ -110,6 +150,9 @@ function buildUserPrompt(input: CallIntelligenceInput): string {
     '',
     'Transcript:',
     transcript,
+    '',
+    'SMS messages sent in the 10 minutes after this call ended:',
+    smsBlock,
     '',
     'Score this call and return this exact JSON structure:',
     '{',
@@ -123,7 +166,11 @@ function buildUserPrompt(input: CallIntelligenceInput): string {
     '    { "type": <action_type>, "phone": <phone if callback>, "context": <why> }',
     '  ],',
     '  "should_alert_owner": <true|false>,',
-    '  "alert_message": <SMS text under 160 chars, or null>',
+    '  "alert_message": <SMS text under 160 chars, or null>,',
+    '  "sms_verification": {',
+    '    "status": <"correct"|"mismatch"|"no_sms"|"unverified">,',
+    '    "note": <one short sentence — what was correct or what the mismatch was>',
+    '  }',
     '}',
     '',
     'Flag types to use (only include if genuinely present):',
@@ -135,6 +182,7 @@ function buildUserPrompt(input: CallIntelligenceInput): string {
     '- warm_lead: caller expressed interest and is worth calling back',
     '- agent_error: agent gave wrong information, broke character, or failed to handle the call correctly',
     '- no_resolution: call ended without any outcome (no booking, no message, no transfer)',
+    '- sms_mismatch: an SMS was sent whose content or type was materially wrong for this call (must be added when sms_verification.status is "mismatch")',
     '',
     'Action types:',
     '- callback_suggested: owner should call this number back',
@@ -181,11 +229,25 @@ function coerceFlag(raw: unknown): CallFlag | null {
   const type = typeof r.type === 'string' ? r.type : ''
   const allowed: CallFlagType[] = [
     'short_call', 'vip_not_transferred', 'agent_promise', 'caller_frustrated',
-    'missed_lead', 'warm_lead', 'agent_error', 'no_resolution',
+    'missed_lead', 'warm_lead', 'agent_error', 'no_resolution', 'sms_mismatch',
   ]
   if (!(allowed as string[]).includes(type)) return null
   const detail = typeof r.detail === 'string' ? r.detail.slice(0, 400) : ''
   return { type: type as CallFlagType, detail }
+}
+
+function coerceSmsVerification(raw: unknown, hadSms: boolean): SmsVerification {
+  // Default when the model omits the block — surface as unverified so
+  // we never claim "correct" by accident.
+  if (!raw || typeof raw !== 'object') {
+    return { status: hadSms ? 'unverified' : 'no_sms', note: '' }
+  }
+  const r = raw as Record<string, unknown>
+  const status = (r.status === 'correct' || r.status === 'mismatch' || r.status === 'no_sms' || r.status === 'unverified')
+    ? r.status
+    : (hadSms ? 'unverified' : 'no_sms')
+  const note = typeof r.note === 'string' ? r.note.slice(0, 400).trim() : ''
+  return { status, note }
 }
 
 function coerceAction(raw: unknown): CallAction | null {
@@ -200,7 +262,7 @@ function coerceAction(raw: unknown): CallAction | null {
   return action
 }
 
-function coerceResult(parsed: unknown): CallIntelligenceResult {
+function coerceResult(parsed: unknown, hadSms: boolean): CallIntelligenceResult {
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Model output is not an object')
   }
@@ -216,7 +278,7 @@ function coerceResult(parsed: unknown): CallIntelligenceResult {
 
   const summary = typeof p.summary === 'string' ? p.summary.slice(0, 600).trim() : ''
 
-  const flags: CallFlag[] = Array.isArray(p.flags)
+  let flags: CallFlag[] = Array.isArray(p.flags)
     ? (p.flags.map(coerceFlag).filter(Boolean) as CallFlag[])
     : []
 
@@ -229,6 +291,14 @@ function coerceResult(parsed: unknown): CallIntelligenceResult {
     ? p.alert_message.slice(0, 320).trim()
     : null
 
+  const sms_verification = coerceSmsVerification(p.sms_verification, hadSms)
+
+  // Belt-and-braces: if the model reported a mismatch but forgot to add
+  // the sms_mismatch flag, add it ourselves so admin UI is consistent.
+  if (sms_verification.status === 'mismatch' && !flags.some(f => f.type === 'sms_mismatch')) {
+    flags = [...flags, { type: 'sms_mismatch', detail: sms_verification.note || 'AI detected a likely SMS mismatch.' }]
+  }
+
   return {
     score,
     status,
@@ -237,6 +307,7 @@ function coerceResult(parsed: unknown): CallIntelligenceResult {
     actions,
     should_alert_owner,
     alert_message: alert_message || null,
+    sms_verification,
   }
 }
 
@@ -285,7 +356,7 @@ export async function scoreCall(input: CallIntelligenceInput): Promise<CallIntel
   }
 
   const parsed = parseModelJson(text)
-  const result = coerceResult(parsed)
+  const result = coerceResult(parsed, input.related_sms.length > 0)
   return {
     ...result,
     prompt_tokens: data.usage?.input_tokens,

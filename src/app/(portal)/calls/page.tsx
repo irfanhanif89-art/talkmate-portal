@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import CallMessagesSection from '@/components/portal/call-messages-section'
 
 interface CallFlag {
   type: string
@@ -169,8 +170,14 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
           </div>
         )}
 
-        {/* Agent Analysis — Session 18 Call Intelligence */}
-        {(call.intelligence_flags?.length || call.intelligence_actions?.length || call.owner_alerted) && (
+        {/* Agent Analysis — Session 18 Call Intelligence.
+            Session 19: filter out admin-only flags (sms_mismatch) before
+            rendering so clients never see SMS verification commentary. */}
+        {(() => {
+          const clientFlags = (call.intelligence_flags ?? []).filter(f => f.type !== 'sms_mismatch')
+          const showPanel = clientFlags.length > 0 || (call.intelligence_actions?.length ?? 0) > 0 || call.owner_alerted
+          if (!showPanel) return null
+          return (
           <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(245,158,11,0.04)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#F59E0B' }}>Agent Analysis</div>
@@ -179,9 +186,9 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
               )}
             </div>
 
-            {!!call.intelligence_flags?.length && (
+            {clientFlags.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                {call.intelligence_flags.map((f, i) => {
+                {clientFlags.map((f, i) => {
                   const c = flagColor(f.type)
                   const label = FLAG_LABELS[f.type] ?? f.type.replace(/_/g, ' ')
                   return (
@@ -193,9 +200,9 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
               </div>
             )}
 
-            {!!call.intelligence_flags?.length && call.intelligence_flags.some(f => f.detail) && (
+            {clientFlags.length > 0 && clientFlags.some(f => f.detail) && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                {call.intelligence_flags.filter(f => f.detail).map((f, i) => (
+                {clientFlags.filter(f => f.detail).map((f, i) => (
                   <div key={i} style={{ fontSize: 12, color: '#7BAED4', lineHeight: 1.5 }}>
                     <span style={{ color: '#4A7FBB', fontWeight: 600 }}>{FLAG_LABELS[f.type] ?? f.type}:</span> {f.detail}
                   </div>
@@ -232,7 +239,12 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
+
+        {/* Session 19 — Messages sent after this call. Self-fetches; renders
+            nothing when there are no client-visible messages. */}
+        <CallMessagesSection callId={call.id} />
 
         {/* Recording */}
         {call.recording_url && (

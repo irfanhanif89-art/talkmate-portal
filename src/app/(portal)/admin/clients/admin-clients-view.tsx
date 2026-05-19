@@ -251,7 +251,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Industry', 'Status', 'Onboarded', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'SMS / Mo', 'Industry', 'Status', 'Onboarded', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -259,7 +259,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={9} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
                   No clients match this filter.
                 </td>
               </tr>
@@ -294,6 +294,18 @@ export default function AdminClientsView({
                   <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, background: 'rgba(232,98,42,0.12)', color: '#E8622A', fontWeight: 700 }}>
                     {planLabel(b.plan)}
                   </span>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  {(() => {
+                    const cap = b.plan === 'pro' || b.plan === 'professional' ? 500 : b.plan === 'growth' ? 200 : 0
+                    const used = b.sms_used_this_month ?? 0
+                    if (cap === 0) {
+                      return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>0 / —</span>
+                    }
+                    const pct = used / cap
+                    const color = pct >= 0.9 ? '#EF4444' : pct >= 0.75 ? '#F59E0B' : '#7BAED4'
+                    return <span style={{ fontSize: 12, color, fontWeight: pct >= 0.75 ? 700 : 500 }}>{used} / {cap}</span>
+                  })()}
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{industryLabel(b.industry)}</td>
                 <td style={{ padding: '12px 16px' }}>

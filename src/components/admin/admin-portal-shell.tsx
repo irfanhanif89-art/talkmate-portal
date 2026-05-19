@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Phone, FileText, Settings, MessageSquare,
   Lock, Users, PhoneCall, BookOpen,
   UserCheck, Crown, ClipboardList, ExternalLink, ArrowLeft,
-  Tag, MapPin, CalendarDays,
+  Tag, MapPin, CalendarDays, MessageCircle,
 } from 'lucide-react'
 
 interface NavItem {
@@ -29,6 +29,9 @@ const SECTIONS: Section[] = [
       { href: '/quotes', label: 'Quotes', icon: Tag },
       // Session 15 — native scheduler with day + week views.
       { href: '/scheduler', label: 'Scheduler', icon: CalendarDays },
+      // Session 19 — full client SMS log (admin-only view; shows all
+      // status values, raw sms_type, twilio_sid).
+      { href: '/sms-log', label: 'SMS Log', icon: MessageCircle },
     ],
   },
   {

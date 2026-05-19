@@ -13,6 +13,7 @@ import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
 import ReceptionistStats from '@/components/portal/receptionist-stats'
 import AgentQualityCard from '@/components/portal/agent-quality-card'
+import SmsUsageCard from '@/components/portal/sms-usage-card'
 
 interface Call {
   id: string
@@ -305,6 +306,8 @@ export function DashboardClient({
         )}
         {/* Session 18 — Agent Quality (Call Intelligence). Self-fetches. */}
         <AgentQualityCard />
+        {/* Session 19 — SMS This Month. Self-fetches. */}
+        <SmsUsageCard />
       </div>
 
       {/* Contextual upsell banner */}

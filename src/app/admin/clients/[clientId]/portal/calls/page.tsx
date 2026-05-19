@@ -19,6 +19,9 @@ interface CallRow {
   intelligence_summary: string | null
   intelligence_flags: CallFlag[] | null
   owner_alerted: boolean | null
+  // Session 19 — SMS verification result, admin-only surface.
+  sms_verification_status: 'correct' | 'mismatch' | 'no_sms' | 'unverified' | 'error' | null
+  sms_verification_note: string | null
 }
 
 const FLAG_LABELS: Record<string, string> = {
@@ -30,6 +33,18 @@ const FLAG_LABELS: Record<string, string> = {
   warm_lead: 'Warm lead',
   agent_error: 'Agent error',
   no_resolution: 'No resolution',
+  sms_mismatch: 'SMS mismatch',
+}
+
+function smsDot(status: CallRow['sms_verification_status']): { color: string; label: string } {
+  switch (status) {
+    case 'correct':    return { color: '#22C55E', label: 'SMS correct' }
+    case 'mismatch':   return { color: '#EF4444', label: 'SMS mismatch' }
+    case 'no_sms':     return { color: 'rgba(255,255,255,0.25)', label: 'No SMS' }
+    case 'unverified': return { color: 'rgba(255,255,255,0.25)', label: 'Unverified' }
+    case 'error':      return { color: '#F59E0B', label: 'SMS check error' }
+    default:           return { color: 'rgba(255,255,255,0.15)', label: 'Not verified' }
+  }
 }
 
 function dotFor(status: CallRow['intelligence_status']): { color: string; tooltip: string } | null {
@@ -55,7 +70,7 @@ export default async function AdminCallsPage({
   const admin = createAdminClient()
   const { data } = await admin
     .from('calls')
-    .select('id, caller_number, caller_name, duration_seconds, outcome, summary, created_at, intelligence_status, intelligence_score, intelligence_summary, intelligence_flags, owner_alerted')
+    .select('id, caller_number, caller_name, duration_seconds, outcome, summary, created_at, intelligence_status, intelligence_score, intelligence_summary, intelligence_flags, owner_alerted, sms_verification_status, sms_verification_note')
     .eq('business_id', clientId)
     .order('created_at', { ascending: false })
     .limit(100)
@@ -70,7 +85,7 @@ export default async function AdminCallsPage({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['', 'When', 'Caller', 'Phone', 'Duration', 'Outcome', 'Score', 'Summary'].map(h => (
+              {['', 'SMS', 'When', 'Caller', 'Phone', 'Duration', 'Outcome', 'Score', 'Summary'].map(h => (
                 <th key={h} style={{
                   textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700,
                   color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -80,18 +95,28 @@ export default async function AdminCallsPage({
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: '#7BAED4' }}>No calls yet.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 28, textAlign: 'center', color: '#7BAED4' }}>No calls yet.</td></tr>
             )}
             {rows.map((c, i) => {
               const dot = dotFor(c.intelligence_status)
+              const sms = smsDot(c.sms_verification_status)
+              const isMismatch = c.sms_verification_status === 'mismatch'
               const flags = Array.isArray(c.intelligence_flags) ? c.intelligence_flags : []
               const summaryText = c.intelligence_summary ?? c.summary ?? '—'
               return (
-                <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? '#0A1E38' : '#071829', verticalAlign: 'top' }}>
+                <tr key={c.id} style={{
+                  borderTop: '1px solid rgba(255,255,255,0.04)',
+                  background: isMismatch ? 'rgba(239,68,68,0.06)' : (i % 2 === 0 ? '#0A1E38' : '#071829'),
+                  verticalAlign: 'top',
+                }}>
                   <td style={{ padding: '12px 14px', width: 30 }}>
                     {dot ? (
                       <div title={dot.tooltip} style={{ width: 10, height: 10, borderRadius: '50%', background: dot.color, boxShadow: `0 0 0 3px ${dot.color}22` }} />
                     ) : <span style={{ color: 'rgba(255,255,255,0.2)' }}>—</span>}
+                  </td>
+                  <td style={{ padding: '12px 14px', width: 36 }}>
+                    <div title={c.sms_verification_note ?? sms.label}
+                      style={{ width: 10, height: 10, borderRadius: '50%', background: sms.color, boxShadow: `0 0 0 3px ${sms.color}22` }} />
                   </td>
                   <td style={{ padding: '10px 14px', color: '#C8D8EA' }}>{new Date(c.created_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })}</td>
                   <td style={{ padding: '10px 14px', color: 'white' }}>{c.caller_name ?? '—'}</td>
@@ -105,11 +130,29 @@ export default async function AdminCallsPage({
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={summaryText}>{summaryText}</div>
                     {flags.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                        {flags.map((f, j) => (
-                          <span key={j} title={f.detail ?? ''} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(245,158,11,0.14)', color: '#F59E0B', fontWeight: 600 }}>
-                            {FLAG_LABELS[f.type] ?? f.type}
-                          </span>
-                        ))}
+                        {flags.map((f, j) => {
+                          const isSms = f.type === 'sms_mismatch'
+                          return (
+                            <span key={j} title={f.detail ?? ''} style={{
+                              fontSize: 10, padding: '2px 7px', borderRadius: 99, fontWeight: 600,
+                              background: isSms ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.14)',
+                              color: isSms ? '#EF4444' : '#F59E0B',
+                            }}>
+                              {FLAG_LABELS[f.type] ?? f.type}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {/* Session 19 — SMS verification note (admin only) */}
+                    {(c.sms_verification_status === 'mismatch' || c.sms_verification_status === 'error') && c.sms_verification_note && (
+                      <div style={{ fontSize: 11, color: '#EF4444', marginTop: 6, lineHeight: 1.45 }}>
+                        <span style={{ fontWeight: 700 }}>SMS verification:</span> {c.sms_verification_note}
+                      </div>
+                    )}
+                    {c.sms_verification_status === 'correct' && c.sms_verification_note && (
+                      <div style={{ fontSize: 11, color: '#22C55E', marginTop: 6 }} title={c.sms_verification_note}>
+                        ✓ SMS verified
                       </div>
                     )}
                     {c.owner_alerted && (

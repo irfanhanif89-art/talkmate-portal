@@ -30,7 +30,8 @@ export default async function AdminClientsPage() {
       notifications_config,
       services, trade_type,
       trial_start_date, trial_end_date, trial_converted_at,
-      onboarding_complete, onboarding_complete_at
+      onboarding_complete, onboarding_complete_at,
+      sms_used_this_month
     `)
     .order('created_at', { ascending: false })
 

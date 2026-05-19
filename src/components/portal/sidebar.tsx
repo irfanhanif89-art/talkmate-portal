@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getPlan } from '@/lib/plan'
@@ -60,6 +60,20 @@ export default function PortalSidebar(props: Props) {
   const portalRole = props.portalRole ?? 'owner'
   const isOwner = portalRole === 'owner'
   const isManagerOrOwner = portalRole === 'owner' || portalRole === 'manager'
+  const isAdmin = props.userRole === 'admin'
+
+  // Session 19 — fetch failed-SMS count for admin badge. Only kicks in
+  // when the current user is an admin; otherwise the badge stays at 0.
+  const [smsFailures, setSmsFailures] = useState(0)
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    fetch('/api/admin/sms-failures-count')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && typeof d?.count === 'number') setSmsFailures(d.count) })
+      .catch(() => { /* silent */ })
+    return () => { cancelled = true }
+  }, [isAdmin])
 
   async function logout() {
     const supabase = createClient()
@@ -115,6 +129,12 @@ export default function PortalSidebar(props: Props) {
         {
           href: '/contacts', label: 'Contacts', icon: Users, show: true,
           badge: props.contactsTotal && props.contactsTotal > 0 ? { text: String(props.contactsTotal), bg: 'rgba(74,159,232,0.18)', color: '#4A9FE8' } : undefined,
+        },
+        // Session 19 — SMS Activity. Visible on all plans; Starter sees
+        // an upgrade prompt at the destination page.
+        {
+          href: '/sms-activity', label: 'SMS Activity', icon: MessageCircle, show: true,
+          lockTag: !isPaidPlan(props.plan) ? 'GROWTH' : undefined,
         },
         { href: '/contacts/pipeline', label: 'Pipeline', icon: GitBranch, show: !!props.hasPipeline },
         { href: '/catalog', label: 'Services & Menu', icon: FileText, show: true },
@@ -205,8 +225,14 @@ export default function PortalSidebar(props: Props) {
         // lives under "Your Agent" for managers.
         { href: '/settings', label: 'Settings', icon: UserIcon, show: isOwner },
         { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner && isOwner },
-        { href: '/admin', label: 'Admin', icon: Shield, show: props.userRole === 'admin' },
-        { href: '/admin/audit-log', label: 'Audit Log', icon: FileText, show: props.userRole === 'admin' },
+        { href: '/admin', label: 'Admin', icon: Shield, show: isAdmin },
+        { href: '/admin/audit-log', label: 'Audit Log', icon: FileText, show: isAdmin },
+        {
+          href: '/admin/sms-failures', label: 'SMS Failures', icon: MessageCircle, show: isAdmin,
+          badge: smsFailures > 0
+            ? { text: String(smsFailures), bg: 'rgba(239,68,68,0.18)', color: '#EF4444' }
+            : undefined,
+        },
       ],
     },
   ]

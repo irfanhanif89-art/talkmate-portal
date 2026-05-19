@@ -1,8 +1,101 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 19 — SMS Visibility + AI SMS Verification (2026-05-19)
+
+Client-facing SMS visibility (reassuring, no flag/mismatch commentary) +
+full admin SMS supervision (every flag, mismatch, failed delivery
+visible) + Claude now verifies that the SMS we sent matches what the
+call required.
+
+### Brief vs reality
+
+The brief described several pre-existing entities that don't match the
+live schema (it predates Session 18). This implementation uses the real
+column and type names:
+
+| Brief assumed | Actual |
+|---|---|
+| `sms_log.business_id / recipient_phone / message_body / twilio_message_sid / created_at` | `client_id / to_phone / message / twilio_sid / sent_at` (migration 031) |
+| `sms_type` values `intelligence_alert / intelligence_recovery / callback_reminder_sms / dispatch_confirmation` | `call_intelligence_alert / dropped_call_recovery / early_hangup_recovery / missed_lead_recovery` (migration 032) |
+| `intelligence_flags` is `TEXT[]` | `jsonb` array of `{type, detail}` (migration 032) — `sms_mismatch` lands as a regular flag object |
+
+### Migration
+
+Run `supabase/migrations/033_sms_visibility.sql`. Idempotent. Adds:
+
+- `sms_log.call_id` (uuid, references `calls(id)` on delete set null) +
+  partial index on non-null `call_id`. Enables direct call→SMS linkage at
+  send time; the 10-minute time-window join handles historical rows.
+- `calls.sms_verification_status` (text, checked) + `sms_verification_note`
+  (text). Status values: `correct | mismatch | no_sms | unverified | error`.
+- `admin_sms_failures` view — service-role only, surfaces every failed
+  send with the client name joined in.
+- RLS on `sms_log` was already present from migration 031 — leaves it as-is.
+
+### Required env var
+
+`TELEGRAM_ADMIN_CHAT_ID` — Irfan's personal Telegram chat ID. Used by
+`notifyAdminOfSmsFailure()` to route failed-SMS alerts to Irfan only,
+never to clients. Without it the helper silently no-ops; admin UI still
+surfaces failures via the SMS Failures page.
+
+### What changed
+
+| Area | Files |
+|---|---|
+| **SMS label library.** Plain-English `getSmsLabel()` for every sms_type, `ADMIN_ONLY_SMS_TYPES` filter set (currently `call_intelligence_alert`), coarse-grained `SMS_FILTER_BUCKETS` for the activity page filter tabs, AU phone formatter, client vs admin status presenters (client never sees "Failed"). | [src/lib/sms-labels.ts](src/lib/sms-labels.ts) |
+| **AI SMS verification.** `scoreCall()` now accepts a `related_sms` list, the system prompt instructs the model to evaluate each SMS against the transcript and emit a `sms_verification` block, and the result coerces into a validated `{ status, note }`. New `sms_mismatch` flag type (auto-added if the model returns mismatch but forgets the flag). | [src/lib/call-intelligence.ts](src/lib/call-intelligence.ts) |
+| **Orchestrator.** Before scoring, queries `sms_log` in the [call_end, call_end+10min] window, backfills `call_id` on unlinked rows, and passes the list into the scorer. After scoring, persists `sms_verification_status` + `sms_verification_note`. Calls `notifyAdminOfSmsFailure()` (fire-and-forget) when any window SMS has `status='failed'` or `status='rejected'`. | [src/lib/score-call-async.ts](src/lib/score-call-async.ts) |
+| **Admin Telegram helper.** `notifyAdminOfSmsFailure()` sends a single Telegram message to `TELEGRAM_ADMIN_CHAT_ID` summarising the failure. Silent no-op when either env var is unset. Never throws. | [src/lib/notifications.ts](src/lib/notifications.ts) |
+| **Dashboard SMS Usage card.** Self-fetches from `/api/dashboard/sms-usage`. Shows `used / cap` with a progress bar (amber 75%, red 90%) and the next reset date. Starter plan sees "SMS not included" with an upgrade CTA. Card links to `/sms-activity`. | [src/components/portal/sms-usage-card.tsx](src/components/portal/sms-usage-card.tsx), [src/app/api/dashboard/sms-usage/route.ts](src/app/api/dashboard/sms-usage/route.ts), [src/app/(portal)/dashboard/dashboard-client.tsx](src/app/%28portal%29/dashboard/dashboard-client.tsx) |
+| **/sms-activity client page.** Server component reads sms_log for the calling client, strips admin-only types and never surfaces "Failed" status. Client view renders a month selector, filter buckets (All / Booking confirmations / Reminders / Missed call follow-ups / Waitlist / Cancellations), summary stats (total / delivered / pending), and a row-expand for long messages. Starter plan gets a dedicated upgrade page at the same URL — no SMS data shown. | [src/app/(portal)/sms-activity/page.tsx](src/app/%28portal%29/sms-activity/page.tsx), [src/app/(portal)/sms-activity/sms-activity-view.tsx](src/app/%28portal%29/sms-activity/sms-activity-view.tsx) |
+| **Call detail modal — messages section.** `<CallMessagesSection callId>` self-fetches the call's linked messages and any in the 10-min window. Renders nothing when there are no client-visible messages; `call_intelligence_alert` (admin-only) is filtered server-side. Also filters `sms_mismatch` out of the client Agent Analysis flag chips. | [src/components/portal/call-messages-section.tsx](src/components/portal/call-messages-section.tsx), [src/app/api/portal/calls/[id]/messages/route.ts](src/app/api/portal/calls/%5Bid%5D/messages/route.ts), [src/app/(portal)/calls/page.tsx](src/app/%28portal%29/calls/page.tsx) |
+| **Admin client list — SMS column.** New `SMS / Mo` column showing `used / cap` (amber at 75%, red at 90%, `0 / —` for Starter). | [src/app/(portal)/admin/clients/page.tsx](src/app/%28portal%29/admin/clients/page.tsx), [src/app/(portal)/admin/clients/admin-clients-view.tsx](src/app/%28portal%29/admin/clients/admin-clients-view.tsx), [src/app/(portal)/admin/clients/types.ts](src/app/%28portal%29/admin/clients/types.ts) |
+| **Admin SMS Log per client.** New page at `/admin/clients/[clientId]/portal/sms-log` listing the full unfiltered SMS log: plain-English label + raw sms_type, full status (including red Failed rows), Twilio SID, full message body, error message, call link. Linked from the admin impersonation shell. | [src/app/admin/clients/[clientId]/portal/sms-log/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/sms-log/page.tsx), [src/components/admin/admin-portal-shell.tsx](src/components/admin/admin-portal-shell.tsx) |
+| **Admin calls — SMS verification dot + chip.** Admin impersonation calls view adds a dedicated SMS column (green tick / red mismatch / grey no-sms-or-unverified / orange error). `sms_mismatch` rows highlight the row red and display the verification note inline below the summary. `sms_mismatch` flag chip rendered in red (admin only — filtered out of the client modal). | [src/app/admin/clients/[clientId]/portal/calls/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/calls/page.tsx) |
+| **Admin SMS Failures.** New page at `/admin/sms-failures` reads from the `admin_sms_failures` view. Sidebar gets a red badge with the 24h failure count (driven by `/api/admin/sms-failures-count`). | [src/app/(portal)/admin/sms-failures/page.tsx](src/app/%28portal%29/admin/sms-failures/page.tsx), [src/app/api/admin/sms-failures-count/route.ts](src/app/api/admin/sms-failures-count/route.ts), [src/components/portal/sidebar.tsx](src/components/portal/sidebar.tsx) |
+| **SMS Activity sidebar link.** Added under "Your Agent" below Contacts. Visible on all plans; non-paid plans see a `GROWTH` lock tag. Starter plan still reaches the page but lands on the upgrade view. | [src/components/portal/sidebar.tsx](src/components/portal/sidebar.tsx) |
+
+### Client portal rules (enforced in code)
+
+- Never render raw `sms_type` values — always `getSmsLabel()`.
+- Never render `Failed` status — `clientSmsStatus()` collapses failed and
+  rejected sends to `Pending` for client view.
+- Never render `sms_mismatch` flag in client modal — filtered in
+  `/calls/page.tsx`.
+- Never include `call_intelligence_alert` in client SMS lists — filtered
+  in the `/sms-activity` server component and the messages-after-call
+  API route.
+
+### Admin parity (enforced in code)
+
+- `admin_sms_failures` view surfaces every failure with the client name
+  joined in. Service-role only.
+- Admin SMS Log shows raw sms_type alongside the plain label.
+- Admin calls page renders `sms_mismatch` chip in red and shows
+  `sms_verification_note` inline.
+- Telegram alert fires to `TELEGRAM_ADMIN_CHAT_ID` on every failed send
+  during the post-call SMS window.
+
+### Donna handoff after deployment
+
+1. Run `033_sms_visibility.sql` in Supabase SQL editor.
+2. Confirm `sms_log.call_id` and `admin_sms_failures` exist.
+3. Add `TELEGRAM_ADMIN_CHAT_ID` to Vercel (Production, Preview, Development).
+   Get the value from Irfan.
+4. Test: trigger a deliberate Twilio failure (invalid recipient number).
+   Within seconds, Irfan's Telegram chat should receive an alert; the
+   row should appear at `/admin/sms-failures`.
+5. Test client view: log in as a Growth/Pro client; `/sms-activity`
+   should load with the month + filter controls and no "Failed" rows.
+6. Test admin view: open a recent call in `/admin/clients/[id]/portal/calls`
+   and confirm the SMS verification dot + note are visible.
 
 ---
 

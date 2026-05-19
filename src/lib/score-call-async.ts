@@ -18,6 +18,7 @@ import {
   INTELLIGENCE_MODEL,
   type CallFlag,
   type CallIntelligenceResult,
+  type RelatedSms,
 } from '@/lib/call-intelligence'
 import {
   sendSMS,
@@ -27,6 +28,7 @@ import {
   templateMissedLeadRecovery,
   type SmsType,
 } from '@/lib/sms'
+import { notifyAdminOfSmsFailure } from '@/lib/notifications'
 
 interface CallRow {
   id: string
@@ -38,7 +40,19 @@ interface CallRow {
   caller_number: string | null
   outcome: string | null
   started_at: string | null
+  ended_at: string | null
   created_at: string
+}
+
+interface RelatedSmsRow {
+  id: string
+  to_phone: string | null
+  message: string
+  sms_type: string | null
+  status: string | null
+  sent_at: string | null
+  call_id: string | null
+  error_message: string | null
 }
 
 interface BusinessRow {
@@ -181,7 +195,7 @@ export async function scoreCallAsync(
     const [callRes, bizRes, vipRes] = await Promise.all([
       supabase
         .from('calls')
-        .select('id, vapi_call_id, business_id, transcript, summary, duration_seconds, caller_number, outcome, started_at, created_at')
+        .select('id, vapi_call_id, business_id, transcript, summary, duration_seconds, caller_number, outcome, started_at, ended_at, created_at')
         .eq('vapi_call_id', vapiCallId)
         .maybeSingle(),
       supabase
@@ -221,6 +235,31 @@ export async function scoreCallAsync(
       return
     }
 
+    // 2b. Session 19 — pull SMS sent in the 10-minute window after the
+    //     call ended (or after created_at if ended_at isn't set). We pass
+    //     these into the scorer for verification AND backfill call_id on
+    //     any unlinked rows so the client SMS Activity view shows them
+    //     alongside the call.
+    const callEndIso = call.ended_at ?? call.created_at
+    const windowEndIso = new Date(Date.parse(callEndIso) + 10 * 60 * 1000).toISOString()
+    const { data: relatedSmsData } = await supabase
+      .from('sms_log')
+      .select('id, to_phone, message, sms_type, status, sent_at, call_id, error_message')
+      .eq('client_id', businessId)
+      .gte('sent_at', callEndIso)
+      .lte('sent_at', windowEndIso)
+      .order('sent_at', { ascending: true })
+    const relatedSms = (relatedSmsData ?? []) as RelatedSmsRow[]
+
+    // Backfill call_id on any sms_log rows that don't have one yet.
+    const unlinkedIds = relatedSms.filter(s => !s.call_id).map(s => s.id)
+    if (unlinkedIds.length > 0) {
+      await supabase
+        .from('sms_log')
+        .update({ call_id: call.id })
+        .in('id', unlinkedIds)
+    }
+
     // 3. Score
     let result: CallIntelligenceResult
     try {
@@ -239,6 +278,13 @@ export async function scoreCallAsync(
             name: v.name ?? '',
             vip_bypass: !!v.vip_bypass,
           })),
+        related_sms: relatedSms.map<RelatedSms>(s => ({
+          sms_type: s.sms_type,
+          to_phone: s.to_phone,
+          message: s.message,
+          status: s.status,
+          sent_at: s.sent_at,
+        })),
       })
     } catch (e) {
       const msg = (e as Error).message ?? 'scoring failed'
@@ -248,10 +294,28 @@ export async function scoreCallAsync(
         .update({
           intelligence_status: 'error',
           alert_reason: msg.slice(0, 240),
+          sms_verification_status: 'error',
+          sms_verification_note: msg.slice(0, 240),
         })
         .eq('vapi_call_id', vapiCallId)
       await logAttempt(supabase, vapiCallId, businessId, 'failed', msg.slice(0, 400), null, attempt)
       return
+    }
+
+    // 3b. Failed-delivery alert routes to Irfan only via Telegram. Never
+    //     surfaces to the client.
+    const failedSms = relatedSms.filter(s => s.status === 'failed' || s.status === 'rejected')
+    if (failedSms.length > 0) {
+      notifyAdminOfSmsFailure({
+        businessName: business.name,
+        vapiCallId,
+        failedSms: failedSms.map(s => ({
+          to_phone: s.to_phone,
+          message: s.message,
+          sms_type: s.sms_type,
+          error_message: s.error_message,
+        })),
+      }).catch(err => console.error('[score-call-async] admin failure alert error', (err as Error).message))
     }
 
     // 4. Decide alert routing (before persisting so we can stamp
@@ -287,6 +351,10 @@ export async function scoreCallAsync(
         intelligence_scored_at: new Date().toISOString(),
         owner_alerted: ownerAlerted,
         alert_reason: ownerAlerted ? alertReason : null,
+        // Session 19 — SMS verification result. Always written so admin
+        // surfaces never see stale data.
+        sms_verification_status: result.sms_verification.status,
+        sms_verification_note: result.sms_verification.note,
       })
       .eq('vapi_call_id', vapiCallId)
 

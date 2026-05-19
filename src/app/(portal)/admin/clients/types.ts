@@ -45,6 +45,9 @@ export interface AdminBusiness {
     custom: boolean
   }> | null
   trade_type: string | null
+  // Session 19 — SMS usage shown as the "SMS / Mo" column in the admin
+  // client list. Null on rows that pre-date migration 031's counter.
+  sms_used_this_month?: number | null
 }
 
 export interface PartnerOption {
