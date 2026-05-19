@@ -12,6 +12,7 @@ import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
 import ReceptionistStats from '@/components/portal/receptionist-stats'
+import AgentQualityCard from '@/components/portal/agent-quality-card'
 
 interface Call {
   id: string
@@ -302,6 +303,8 @@ export function DashboardClient({
             hintColor="rgba(255,255,255,0.4)"
           />
         )}
+        {/* Session 18 — Agent Quality (Call Intelligence). Self-fetches. */}
+        <AgentQualityCard />
       </div>
 
       {/* Contextual upsell banner */}

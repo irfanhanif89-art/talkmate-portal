@@ -40,12 +40,46 @@ export default async function AdminClientsPage() {
     .eq('is_partner', true)
     .order('name')
 
+  // Session 18 — compute per-business quality summary for the dot
+  // indicator. Last 7d average + count of critical calls today.
+  const day = 24 * 60 * 60 * 1000
+  const cutoff7 = new Date(Date.now() - 7 * day).toISOString()
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+  const todayMs = todayStart.getTime()
+
+  const { data: scoredCalls } = await admin
+    .from('calls')
+    .select('business_id, intelligence_score, intelligence_status, created_at')
+    .gte('created_at', cutoff7)
+    .not('intelligence_status', 'is', null)
+    .limit(5000)
+
+  const qualityByBusiness: Record<string, { avg: number | null; criticalToday: number; count: number }> = {}
+  for (const r of (scoredCalls ?? []) as Array<{
+    business_id: string
+    intelligence_score: number | null
+    intelligence_status: string | null
+    created_at: string
+  }>) {
+    const bucket = qualityByBusiness[r.business_id] ?? { avg: null, criticalToday: 0, count: 0 }
+    if (typeof r.intelligence_score === 'number') {
+      bucket.avg = ((bucket.avg ?? 0) * bucket.count + r.intelligence_score) / (bucket.count + 1)
+      bucket.count++
+    }
+    const t = Date.parse(r.created_at)
+    if (Number.isFinite(t) && t >= todayMs && r.intelligence_status === 'critical') {
+      bucket.criticalToday++
+    }
+    qualityByBusiness[r.business_id] = bucket
+  }
+
   return (
     <div style={{ padding: 28, maxWidth: 1300, margin: '0 auto', color: '#F2F6FB' }}>
       <Link href="/admin" style={{ fontSize: 13, color: '#7BAED4', textDecoration: 'none' }}>← Admin</Link>
       <AdminClientsView
         initialBusinesses={businesses ?? []}
         partners={partners ?? []}
+        qualityByBusiness={qualityByBusiness}
       />
     </div>
   )

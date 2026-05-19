@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/server'
+import { scoreCallAsync } from '@/lib/score-call-async'
 
 interface VapiCall {
   id?: string
@@ -350,6 +351,14 @@ async function handleEndOfCall(
 
   // SMS notification to business owner/escalation number on call end.
   await maybeSendOwnerSms(business, call, msg.analysis?.summary ?? call.summary ?? msg.summary ?? null, phone)
+
+  // Session 18 — fire-and-forget Call Intelligence scoring. Must not
+  // await; the webhook must return quickly so Vapi doesn't retry.
+  // scoreCallAsync swallows its own errors and never throws, but we
+  // still attach a .catch as a defensive belt-and-braces.
+  scoreCallAsync(vapiCallId, business.id).catch(err => {
+    console.error('[vapi-webhook] async scoring failed:', (err as Error).message)
+  })
 
   // Optional Make.com fan-out (kept from the original receiver).
   const makeUrl = process.env.MAKE_WEBHOOK_URL

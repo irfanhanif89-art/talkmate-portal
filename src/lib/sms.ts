@@ -18,7 +18,26 @@ export type SmsType =
   | 'waitlist_expired'
   | 'callback_reminder'
   | 'vip_missed_call'
+  // Session 18 — Call Intelligence + caller recovery. These bypass plan
+  // SMS limits (see sendSMS): owner alerts must always fire, and the
+  // recovery SMS to the caller is a TalkMate-funded save attempt that
+  // shouldn't be charged against the client's monthly quota.
+  | 'call_intelligence_alert'
+  | 'dropped_call_recovery'
+  | 'early_hangup_recovery'
+  | 'missed_lead_recovery'
   | 'other'
+
+// SMS types that bypass plan limits entirely — they always send
+// regardless of plan or sms_used_this_month, and they do NOT increment
+// the counter. Intelligence alerts go to the owner/dispatcher; recovery
+// SMS go to the caller as a save attempt.
+const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
+  'call_intelligence_alert',
+  'dropped_call_recovery',
+  'early_hangup_recovery',
+  'missed_lead_recovery',
+])
 
 export interface SendSMSOptions {
   to: string
@@ -95,42 +114,48 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   }
 
   const supabase = createAdminClient()
+  const bypassPlanLimit = BYPASS_PLAN_LIMIT_TYPES.has(opts.smsType)
 
   // ---- plan + quota check ------------------------------------------
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('plan, sms_used_this_month, sms_reset_at, name')
-    .eq('id', opts.clientId)
-    .maybeSingle()
-  const plan = (biz?.plan as string | null) ?? 'starter'
-  const limit = PLAN_LIMITS[plan] ?? 0
-  if (limit === 0) {
-    await supabase.from('sms_log').insert({
-      client_id: opts.clientId, to_phone: to, message: opts.message,
-      status: 'rejected', sms_type: opts.smsType,
-      booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
-      error_message: 'SMS not available on this plan',
-    })
-    return { success: false, error: 'SMS not available on Starter plan', reason: 'plan_starter' }
-  }
+  // Intelligence alerts and caller-recovery SMS bypass the plan limit
+  // entirely — they always send and do not increment sms_used_this_month.
+  let used = 0
+  if (!bypassPlanLimit) {
+    const { data: biz } = await supabase
+      .from('businesses')
+      .select('plan, sms_used_this_month, sms_reset_at, name')
+      .eq('id', opts.clientId)
+      .maybeSingle()
+    const plan = (biz?.plan as string | null) ?? 'starter'
+    const limit = PLAN_LIMITS[plan] ?? 0
+    if (limit === 0) {
+      await supabase.from('sms_log').insert({
+        client_id: opts.clientId, to_phone: to, message: opts.message,
+        status: 'rejected', sms_type: opts.smsType,
+        booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
+        error_message: 'SMS not available on this plan',
+      })
+      return { success: false, error: 'SMS not available on Starter plan', reason: 'plan_starter' }
+    }
 
-  await ensureMonthlyReset(supabase, opts.clientId, (biz?.sms_reset_at as string | null) ?? null)
+    await ensureMonthlyReset(supabase, opts.clientId, (biz?.sms_reset_at as string | null) ?? null)
 
-  // Re-read counter post-reset so we don't double-count
-  const { data: bizPost } = await supabase
-    .from('businesses')
-    .select('sms_used_this_month')
-    .eq('id', opts.clientId)
-    .maybeSingle()
-  const used = bizPost?.sms_used_this_month ?? 0
-  if (used >= limit) {
-    await supabase.from('sms_log').insert({
-      client_id: opts.clientId, to_phone: to, message: opts.message,
-      status: 'rejected', sms_type: opts.smsType,
-      booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
-      error_message: `Monthly SMS limit reached (${limit})`,
-    })
-    return { success: false, error: `Monthly SMS limit reached (${limit})`, reason: 'plan_quota' }
+    // Re-read counter post-reset so we don't double-count
+    const { data: bizPost } = await supabase
+      .from('businesses')
+      .select('sms_used_this_month')
+      .eq('id', opts.clientId)
+      .maybeSingle()
+    used = bizPost?.sms_used_this_month ?? 0
+    if (used >= limit) {
+      await supabase.from('sms_log').insert({
+        client_id: opts.clientId, to_phone: to, message: opts.message,
+        status: 'rejected', sms_type: opts.smsType,
+        booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
+        error_message: `Monthly SMS limit reached (${limit})`,
+      })
+      return { success: false, error: `Monthly SMS limit reached (${limit})`, reason: 'plan_quota' }
+    }
   }
 
   // ---- send via Twilio REST ----------------------------------------
@@ -180,10 +205,14 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   // Increment counter. We read-then-update rather than RPC to keep the
   // migration footprint small; the race here is acceptable for a single-
   // owner SaaS where quotas are loose bounds, not hard contracts.
-  await supabase
-    .from('businesses')
-    .update({ sms_used_this_month: used + 1 })
-    .eq('id', opts.clientId)
+  // Bypass types (intelligence alerts, recovery SMS) skip the increment
+  // so they don't eat into the client's monthly allowance.
+  if (!bypassPlanLimit) {
+    await supabase
+      .from('businesses')
+      .update({ sms_used_this_month: used + 1 })
+      .eq('id', opts.clientId)
+  }
 
   return { success: true, sid }
 }
@@ -261,4 +290,27 @@ export function templateWaitlistExpired(ctx: SmsTemplateContext): string {
 export function templateVipMissedCall(ctx: SmsTemplateContext): string {
   const summary = (ctx.summary ?? 'No message left.').trim()
   return `VIP call missed: ${ctx.vip_name ?? 'Unknown'} (${ctx.vip_phone ?? ''}) called twice and could not reach you. Message: ${summary}`.trim()
+}
+
+// ────────────────────────── Session 18 recovery ──────────────────────
+// Caller-recovery SMS sent when Call Intelligence flags a dropped call,
+// early hang-up, or missed lead. Sent FROM the TalkMate Twilio number
+// TO the caller — these always send and never charge the client's quota.
+
+export function templateDroppedCallRecovery(ctx: SmsTemplateContext): string {
+  const biz = ctx.business_name ?? 'us'
+  const phone = ctx.business_phone ? ` on ${ctx.business_phone}` : ''
+  return `Hi, this is ${biz}. Looks like we got cut off, sorry about that. Give us a call back${phone} or reply here and we will call you.`
+}
+
+export function templateEarlyHangupRecovery(ctx: SmsTemplateContext): string {
+  const biz = ctx.business_name ?? 'us'
+  const phone = ctx.business_phone ? ` on ${ctx.business_phone}` : ''
+  return `Hi, this is ${biz}. Thanks for calling, we did not want you to miss out. Give us a call back${phone} and we will sort you out.`
+}
+
+export function templateMissedLeadRecovery(ctx: SmsTemplateContext): string {
+  const biz = ctx.business_name ?? 'us'
+  const phone = ctx.business_phone ? ` on ${ctx.business_phone}` : ''
+  return `Hi, this is ${biz}. Thanks for your enquiry earlier. We would love to help, call us back${phone} when you are ready.`
 }

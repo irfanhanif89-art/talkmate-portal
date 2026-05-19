@@ -3,6 +3,18 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+interface CallFlag {
+  type: string
+  detail?: string
+}
+
+interface CallAction {
+  type: string
+  phone?: string | null
+  context?: string | null
+  reason?: string | null
+}
+
 interface Call {
   id: string
   caller_number: string
@@ -14,6 +26,51 @@ interface Call {
   recording_url: string | null
   caller_name: string | null
   summary: string | null
+  // Session 18 — Call Intelligence
+  intelligence_status: 'resolved' | 'review' | 'critical' | 'pending' | 'error' | null
+  intelligence_score: number | null
+  intelligence_summary: string | null
+  intelligence_flags: CallFlag[] | null
+  intelligence_actions: CallAction[] | null
+  owner_alerted: boolean | null
+}
+
+const FLAG_LABELS: Record<string, string> = {
+  short_call: 'Short call',
+  vip_not_transferred: 'VIP not transferred',
+  agent_promise: 'Agent promised follow-up',
+  caller_frustrated: 'Caller frustrated',
+  missed_lead: 'Missed lead',
+  warm_lead: 'Warm lead',
+  agent_error: 'Agent error',
+  no_resolution: 'No resolution',
+}
+
+function flagColor(type: string): { bg: string; fg: string } {
+  switch (type) {
+    case 'vip_not_transferred':
+    case 'agent_error':
+      return { bg: 'rgba(239,68,68,0.14)', fg: '#EF4444' }
+    case 'agent_promise':
+    case 'missed_lead':
+    case 'caller_frustrated':
+      return { bg: 'rgba(245,158,11,0.14)', fg: '#F59E0B' }
+    case 'warm_lead':
+      return { bg: 'rgba(74,159,232,0.14)', fg: '#4A9FE8' }
+    default:
+      return { bg: 'rgba(255,255,255,0.08)', fg: '#7BAED4' }
+  }
+}
+
+function intelligenceDot(status: Call['intelligence_status']): { color: string; tooltip: string } | null {
+  switch (status) {
+    case 'resolved': return { color: '#22C55E', tooltip: 'Resolved — no action needed' }
+    case 'review':   return { color: '#F59E0B', tooltip: 'Worth reviewing' }
+    case 'critical': return { color: '#EF4444', tooltip: 'Needs your attention' }
+    case 'pending':  return { color: 'rgba(255,255,255,0.25)', tooltip: 'Analysing…' }
+    case 'error':    return { color: 'rgba(255,255,255,0.15)', tooltip: 'Scoring failed (will retry)' }
+    default: return null
+  }
 }
 
 function fmt(s: number) {
@@ -102,11 +159,78 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
 
-        {/* Summary */}
-        {call.summary && (
+        {/* Summary — prefer Intelligence summary when present */}
+        {(call.intelligence_summary || call.summary) && (
           <div style={{ padding: '16px 24px', background: 'rgba(74,159,232,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 6 }}>AI Summary</div>
-            <p style={{ fontSize: 14, color: '#7BAED4', lineHeight: 1.6 }}>{call.summary}</p>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 6 }}>
+              {call.intelligence_summary ? 'Agent Summary' : 'AI Summary'}
+            </div>
+            <p style={{ fontSize: 14, color: '#7BAED4', lineHeight: 1.6 }}>{call.intelligence_summary ?? call.summary}</p>
+          </div>
+        )}
+
+        {/* Agent Analysis — Session 18 Call Intelligence */}
+        {(call.intelligence_flags?.length || call.intelligence_actions?.length || call.owner_alerted) && (
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(245,158,11,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#F59E0B' }}>Agent Analysis</div>
+              {typeof call.intelligence_score === 'number' && (
+                <div style={{ fontSize: 12, color: '#7BAED4' }}>Score: <span style={{ color: 'white', fontWeight: 700 }}>{call.intelligence_score}/10</span></div>
+              )}
+            </div>
+
+            {!!call.intelligence_flags?.length && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {call.intelligence_flags.map((f, i) => {
+                  const c = flagColor(f.type)
+                  const label = FLAG_LABELS[f.type] ?? f.type.replace(/_/g, ' ')
+                  return (
+                    <span key={i} title={f.detail ?? ''} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 99, background: c.bg, color: c.fg }}>
+                      {label}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+
+            {!!call.intelligence_flags?.length && call.intelligence_flags.some(f => f.detail) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                {call.intelligence_flags.filter(f => f.detail).map((f, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#7BAED4', lineHeight: 1.5 }}>
+                    <span style={{ color: '#4A7FBB', fontWeight: 600 }}>{FLAG_LABELS[f.type] ?? f.type}:</span> {f.detail}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!!call.intelligence_actions?.length && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: call.owner_alerted ? 12 : 0 }}>
+                {call.intelligence_actions.map((a, i) => {
+                  if (a.type === 'callback_suggested' && a.phone) {
+                    return (
+                      <a key={i} href={`tel:${a.phone}`}
+                        style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, background: '#E8622A', color: 'white', textDecoration: 'none' }}>
+                        Call back {a.phone}
+                      </a>
+                    )
+                  }
+                  if (a.type === 'review_transcript') {
+                    return (
+                      <span key={i} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, background: 'rgba(74,159,232,0.18)', color: '#4A9FE8' }}>
+                        Review transcript below
+                      </span>
+                    )
+                  }
+                  return null
+                })}
+              </div>
+            )}
+
+            {call.owner_alerted && (
+              <div style={{ fontSize: 12, color: '#22C55E', padding: '6px 10px', background: 'rgba(34,197,94,0.08)', borderRadius: 8, display: 'inline-block' }}>
+                ✓ Owner was notified via SMS
+              </div>
+            )}
           </div>
         )}
 
@@ -169,7 +293,7 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
   )
 }
 
-const OUTCOMES = ['All', 'Resolved', 'Transferred', 'Missed']
+const OUTCOMES = ['All', 'Flagged', 'Critical', 'Resolved', 'Transferred', 'Missed']
 
 export default function CallsPage() {
   const supabase = createClient()
@@ -209,6 +333,8 @@ export default function CallsPage() {
   }, [])
 
   const filtered = calls.filter(c => {
+    if (filter === 'Flagged' && c.intelligence_status !== 'review' && c.intelligence_status !== 'critical') return false
+    if (filter === 'Critical' && c.intelligence_status !== 'critical') return false
     if (filter === 'Resolved' && (c.transferred || !c.outcome || c.outcome === 'Missed')) return false
     if (filter === 'Transferred' && !c.transferred) return false
     if (filter === 'Missed' && c.outcome !== 'Missed') return false
@@ -245,8 +371,8 @@ export default function CallsPage() {
 
       {/* Table */}
       <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 90px 80px 120px 36px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {['Caller', 'Date & Time', 'Duration', 'Revenue', 'Outcome', 'Transferred', ''].map(h => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 60px 90px 80px 100px 110px 36px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          {['Caller', 'Date & Time', 'Status', 'Duration', 'Revenue', 'Outcome', 'Transferred', ''].map(h => (
             <div key={h} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: '#4A7FBB' }}>{h}</div>
           ))}
         </div>
@@ -255,7 +381,17 @@ export default function CallsPage() {
           <div style={{ textAlign: 'center', padding: '48px 0', color: '#4A7FBB', fontSize: 14 }}>Loading calls...</div>
         )}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (filter === 'Flagged' || filter === 'Critical') && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>
+              {filter === 'Critical' ? 'No critical calls' : 'No flagged calls'}
+            </h3>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: 0, maxWidth: 360 }}>Your agent is handling everything well.</p>
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && filter !== 'Flagged' && filter !== 'Critical' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E8622A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 16 }}>
               <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
@@ -279,10 +415,11 @@ export default function CallsPage() {
         {filtered.map((call, i) => {
           const badge = outcomeBadge(call.outcome)
           const isExpanded = expandedCallId === call.id
+          const dot = intelligenceDot(call.intelligence_status)
           return (
             <div key={call.id}>
               <div
-                style={{ display: 'grid', gridTemplateColumns: '1fr 140px 100px 90px 80px 120px 36px', gap: 0, padding: '14px 20px', borderBottom: (!isExpanded && i < filtered.length - 1) ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+                style={{ display: 'grid', gridTemplateColumns: '1fr 140px 60px 90px 80px 100px 110px 36px', gap: 0, padding: '14px 20px', borderBottom: (!isExpanded && i < filtered.length - 1) ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 onClick={() => setSelectedCall(call)}
@@ -296,6 +433,13 @@ export default function CallsPage() {
                     <div>{new Date(call.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
                     <div style={{ fontSize: 12, color: '#4A7FBB' }}>{timeAgo(call.created_at)}</div>
                   </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  {dot ? (
+                    <div title={dot.tooltip} style={{ width: 10, height: 10, borderRadius: '50%', background: dot.color, boxShadow: `0 0 0 3px ${dot.color}22` }} />
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>—</span>
+                  )}
                 </div>
                 <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>{fmt(call.duration_seconds)}</div>
                 {/* Revenue column — TODO: link to jobs table when call_id FK is available */}

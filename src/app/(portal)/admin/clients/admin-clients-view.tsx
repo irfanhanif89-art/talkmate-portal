@@ -9,12 +9,35 @@ import {
 import CreateClientModal from './create-client-modal'
 import EditClientModal from './edit-client-modal'
 
+interface QualitySummary {
+  avg: number | null
+  criticalToday: number
+  count: number
+}
+
+function qualityDot(q: QualitySummary | undefined): { color: string; tooltip: string } {
+  if (!q || q.count === 0) {
+    return { color: 'rgba(255,255,255,0.18)', tooltip: 'No scored calls yet' }
+  }
+  if (q.criticalToday > 0) {
+    return { color: '#EF4444', tooltip: `${q.criticalToday} critical today` }
+  }
+  if (q.avg == null) {
+    return { color: 'rgba(255,255,255,0.18)', tooltip: 'No score available' }
+  }
+  if (q.avg >= 8) return { color: '#22C55E', tooltip: `Avg ${q.avg.toFixed(1)}/10 last 7d` }
+  if (q.avg >= 5) return { color: '#F59E0B', tooltip: `Avg ${q.avg.toFixed(1)}/10 last 7d` }
+  return { color: '#EF4444', tooltip: `Avg ${q.avg.toFixed(1)}/10 last 7d` }
+}
+
 export default function AdminClientsView({
   initialBusinesses,
   partners,
+  qualityByBusiness = {},
 }: {
   initialBusinesses: AdminBusiness[]
   partners: PartnerOption[]
+  qualityByBusiness?: Record<string, QualitySummary>
 }) {
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [createOpen, setCreateOpen] = useState(false)
@@ -245,6 +268,13 @@ export default function AdminClientsView({
               <tr key={b.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? '#0A1E38' : '#071829' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'white' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {(() => {
+                      const dot = qualityDot(qualityByBusiness[b.id])
+                      return (
+                        <div title={dot.tooltip}
+                          style={{ width: 9, height: 9, borderRadius: '50%', background: dot.color, flexShrink: 0, boxShadow: `0 0 0 3px ${dot.color}22` }} />
+                      )
+                    })()}
                     <span>{b.name}</span>
                     {b.account_status === 'trial' && (() => {
                       const d = trialDaysRemaining(b.trial_end_date)

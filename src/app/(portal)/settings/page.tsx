@@ -7,6 +7,7 @@ import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service
 import DivertInstructions from '@/components/portal/divert-instructions'
 import ServicesEditor, { type Service } from '@/components/portal/services-editor'
 import SyncAgentButton from '@/components/portal/sync-agent-button'
+import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-settings'
 
 type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
 
@@ -453,6 +454,9 @@ export default function SettingsPage() {
 
             <button onClick={saveBusiness} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Preferences</button>
           </div>
+
+          {/* Session 18 — Call Intelligence alert routing. Self-fetches. */}
+          <IntelligenceAlertSettings />
         </div>
       )}
 

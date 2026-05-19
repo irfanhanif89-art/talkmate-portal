@@ -1,8 +1,114 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 18 — Call Intelligence (2026-05-19)
+
+AI-powered call quality supervisor. Every transcript scored by Claude
+`claude-sonnet-4-6` the moment a call ends. Status dots, flagged filter,
+and Agent Analysis panel surface results in the portal. Owner / dispatcher
+get an SMS alert only when something needs attention. Dropped calls,
+early hang-ups, and missed pricing enquiries trigger an automatic
+caller-recovery SMS from the TalkMate Twilio number.
+
+### Migration
+
+Run `supabase/migrations/032_call_intelligence.sql`. Idempotent — safe to
+re-run. Adds:
+
+- `calls.intelligence_score` (int), `intelligence_status` (text, checked),
+  `intelligence_summary` (text), `intelligence_flags` (jsonb),
+  `intelligence_actions` (jsonb), `intelligence_scored_at` (timestamptz),
+  `owner_alerted` (bool), `alert_reason` (text).
+- Two indexes: `calls_intelligence_retry_idx` (partial, for the cron
+  retry sweep) and `calls_intelligence_status_business_idx` (Flagged filter).
+- `call_intelligence_log` table — one row per scoring attempt
+  (success / failed / skipped) with model, tokens, and error message.
+  RLS: clients see their own rows.
+- `businesses.intelligence_alert_config` (jsonb) — per-client alert
+  routing config: owner / dispatcher toggles + numbers + alert-type flags.
+- `sms_log.sms_type` check constraint extended with four new types:
+  `call_intelligence_alert`, `dropped_call_recovery`,
+  `early_hangup_recovery`, `missed_lead_recovery`.
+
+### Required env var
+
+`ANTHROPIC_API_KEY` — Anthropic API key. Server-side only, no
+`NEXT_PUBLIC_` prefix. Add to Vercel Production, Preview, and Development
+before going live. Without it, scoring fails fast and logs
+`intelligence_status = 'error'`; call save path is unaffected.
+
+### What changed
+
+| Area | Files |
+|---|---|
+| **Scoring service.** `scoreCall()` calls Anthropic Messages API (`claude-sonnet-4-6`, temp 0, max 800 tokens) with the system + user prompts from the brief. Parses + coerces JSON output, clamps score to 1-10, filters flags/actions to known types. Throws on HTTP error or malformed output; never logs the API key. | [src/lib/call-intelligence.ts](src/lib/call-intelligence.ts) |
+| **Orchestration.** `scoreCallAsync()` loads call + business + active VIPs, calls `scoreCall`, persists results to `calls.intelligence_*`, logs to `call_intelligence_log`, fires alert SMS per the per-business routing config, and decides if a caller-recovery SMS should fire. Fully self-contained — catches every error and never throws. | [src/lib/score-call-async.ts](src/lib/score-call-async.ts) |
+| **SMS service.** Added new `SmsType` values and a `BYPASS_PLAN_LIMIT_TYPES` set. Intelligence alerts and recovery SMS skip the plan/quota check and do not increment `sms_used_this_month`. Three new recovery templates: `templateDroppedCallRecovery`, `templateEarlyHangupRecovery`, `templateMissedLeadRecovery`. | [src/lib/sms.ts](src/lib/sms.ts) |
+| **Webhook integration.** After the call save completes successfully, `scoreCallAsync()` is fired without `await` so the webhook returns immediately. Defensive `.catch` attached. | [src/app/api/webhooks/vapi/route.ts](src/app/api/webhooks/vapi/route.ts) |
+| **Retry cron.** `/api/cron/score-pending-calls` runs every 10 minutes (`*/10 * * * *`). Finds up to 10 calls with `intelligence_status` in `('pending','error')`, created within the last 24h, with a non-null transcript — and re-runs `scoreCallAsync`. CRON_SECRET-gated. | [src/app/api/cron/score-pending-calls/route.ts](src/app/api/cron/score-pending-calls/route.ts), [vercel.json](vercel.json) |
+| **Calls page.** New Status column with coloured dot + tooltip, Flagged + Critical filter tabs alongside the existing outcome filters, Agent Analysis panel in the transcript modal (flag chips, action buttons including `tel:` callback, "Owner alerted via SMS" indicator), intelligence summary shown in place of the Vapi summary when present, dedicated empty state for the Flagged filters. | [src/app/(portal)/calls/page.tsx](src/app/%28portal%29/calls/page.tsx) |
+| **Dashboard.** New Agent Quality card alongside the existing stat cards. Shows last-7d average score, trend arrow vs prior 7d, and either "All clear today" or "N flagged today →" linking to `/calls?filter=flagged`. Self-fetches from `/api/dashboard/agent-quality`. | [src/components/portal/agent-quality-card.tsx](src/components/portal/agent-quality-card.tsx), [src/app/api/dashboard/agent-quality/route.ts](src/app/api/dashboard/agent-quality/route.ts), [src/app/(portal)/dashboard/dashboard-client.tsx](src/app/%28portal%29/dashboard/dashboard-client.tsx) |
+| **Settings (client).** "Call Intelligence Alerts" section added to the Notifications tab. Toggles for owner alert + dispatcher alert + per-type flags (warm lead, missed lead, VIP failure, agent promise, dropped call). Owner number pre-fills from `escalation_number`. Self-fetches from `/api/portal/settings/intelligence-alerts` and PATCHes the same. Strict allow-list on writable keys server-side. | [src/components/portal/intelligence-alert-settings.tsx](src/components/portal/intelligence-alert-settings.tsx), [src/app/api/portal/settings/intelligence-alerts/route.ts](src/app/api/portal/settings/intelligence-alerts/route.ts), [src/app/(portal)/settings/page.tsx](src/app/%28portal%29/settings/page.tsx) |
+| **Admin parity.** Admin client list shows a quality indicator dot next to each business name (green ≥8 last 7d, yellow 5-7, red <5 or any critical today, grey for no scored calls yet). Admin impersonation calls view shows the same dots + Agent Analysis chips + per-call score column. Admin impersonation settings page mounts the same `IntelligenceAlertSettings` component pointed at `/api/admin/businesses/[id]/intelligence-alerts` so Irfan can configure alerts on behalf of a client. | [src/app/(portal)/admin/clients/page.tsx](src/app/%28portal%29/admin/clients/page.tsx), [src/app/(portal)/admin/clients/admin-clients-view.tsx](src/app/%28portal%29/admin/clients/admin-clients-view.tsx), [src/app/admin/clients/[clientId]/portal/calls/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/calls/page.tsx), [src/app/admin/clients/[clientId]/portal/settings/page.tsx](src/app/admin/clients/%5BclientId%5D/portal/settings/page.tsx), [src/app/api/admin/businesses/[id]/intelligence-alerts/route.ts](src/app/api/admin/businesses/%5Bid%5D/intelligence-alerts/route.ts) |
+
+### Alert routing rules
+
+`scoreCallAsync()` only sends an alert SMS when ALL of the following hold:
+
+1. The model set `should_alert_owner: true` (system prompt enforces:
+   critical status, or any flag in `{vip_not_transferred, agent_promise,
+   warm_lead, or missed_lead with > 20s caller interaction}`).
+2. At least one of `alert_on_critical`, `alert_on_warm_lead`,
+   `alert_on_missed_lead`, `alert_on_vip_failure`, `alert_on_agent_promise`,
+   `alert_on_dropped_call` matches the actual result.
+3. `alert_owner` is on with a valid owner number, OR `alert_dispatcher`
+   is on with a valid dispatcher number. (Owner number falls back to
+   `escalation_number` if blank.)
+
+The alert SMS body is taken from the model's `alert_message` field
+(< 160 chars by prompt contract). A fallback message is built if the
+model returned null.
+
+### Recovery SMS rules
+
+After scoring + alerting, `maybeSendRecoverySms()` checks the call for
+caller-recovery candidates in priority order:
+
+1. **Missed lead recovery** (`missed_lead_recovery`) — flag includes
+   `missed_lead` AND duration > 45s.
+2. **Early hang-up recovery** (`early_hangup_recovery`) — duration in
+   [10, 45]s AND flag includes `warm_lead` or `missed_lead`.
+3. **Dropped call recovery** (`dropped_call_recovery`) — flag includes
+   `no_resolution`, duration > 15s, outcome not `completed`/`transferred`.
+
+Cooldown: any recovery SMS to a given caller is suppressed if any
+recovery SMS was sent to that same number in the prior 4 hours. Recovery
+SMS bypass plan limits and do not count against the client's monthly
+allowance. `business_phone` for the SMS body uses
+`notifications_config.live_transfer_number` then falls back to
+`escalation_number`.
+
+### Donna handoff after deployment
+
+1. Add `ANTHROPIC_API_KEY` to Vercel Production, Preview, and Development.
+   Without it, scoring sets `intelligence_status='error'` and logs the
+   reason; nothing else breaks.
+2. Run migration `032_call_intelligence.sql` in Supabase SQL editor.
+3. Confirm intelligence columns exist on `calls` and the
+   `call_intelligence_log` table exists.
+4. Make a test call to GM Towing. After it ends, wait 30-60 seconds and
+   reload `/calls` — the row should have a coloured dot and a summary.
+5. Confirm `/api/cron/score-pending-calls` shows in the Vercel Crons
+   dashboard with the `*/10 * * * *` schedule.
+6. Confirm the Agent Quality card appears on `/dashboard`.
+7. Confirm the Call Intelligence Alerts section appears on `/settings`
+   under Notifications, with owner_number pre-filled from the existing
+   escalation number.
 
 ---
 

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/server'
 import AdminPagePlaceholder from '@/components/admin/admin-page-placeholder'
 import SyncAgentButton from '@/components/portal/sync-agent-button'
+import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +47,9 @@ export default async function AdminSettingsPage({
             adminClientId={clientId}
           />
         </div>
+
+        {/* Session 18 — Call Intelligence alert routing for this client. */}
+        <IntelligenceAlertSettings adminClientId={clientId} />
       </div>
       <AdminPagePlaceholder
         clientId={clientId}
