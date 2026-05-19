@@ -1,8 +1,82 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 20 — Admin Go-Live Verification Checklist (2026-05-19)
+
+Admin-only per-client checklist that mixes 12 automated checks (recomputed
+server-side on every read) and 12 manual confirmation items (Irfan ticks
+after physically verifying each step). When every check passes, the
+business is stamped `golive_verified = true` and a green badge appears
+in the admin clients list.
+
+### Brief vs reality
+
+| Brief assumed | Actual |
+|---|---|
+| Admin gate is `user.email === process.env.ADMIN_EMAIL` | Uses `requireAdmin()` from `lib/admin-auth.ts` (checks `users.role === 'admin'` OR super-admin emails: `INTERNAL_ALERT_EMAIL`, `hello@talkmate.com.au`, `irfanhanif89@gmail.com`). No `ADMIN_EMAIL` env var exists. |
+| `businesses.business_name` | `businesses.name` (mapped in the API response so the frontend still sees `business_name`) |
+| `businesses.vapi_phone_number` | No such column. `check_vapi_phone_number` checks `agent_phone_number` (admin-set during onboarding) with `talkmate_number` as fallback. |
+| `intelligence_alert_config.enabled === true` | Session 18 schema uses `alert_owner` + `owner_number`. The check is `alert_owner === true && owner_number is non-empty`. |
+| `calls.intelligence_status === 'scored'` | Session 18 values are `resolved | review | critical | pending | error`. "Scored" means `intelligence_status IN ('resolved', 'review', 'critical')`. |
+| `sms_log.status IN ('delivered', 'sent')` | No `delivered` state in our system; we use `sent`. Check is `status = 'sent'`. |
+
+### Migration
+
+Run `supabase/migrations/034_golive_checklist.sql`. Idempotent. Adds:
+
+- `client_golive_checklist` — one row per business, 12 auto check booleans
+  + 12 manual check booleans + `verified_at` + `verified_by` + `notes` +
+  `unique(business_id)`. No RLS (service-role only). Brief seed runs
+  inline at the bottom of the migration so the row exists for every
+  current business after a single migration apply.
+- `businesses.golive_verified` (boolean, default false) +
+  `businesses.golive_verified_at` (timestamptz). These power the admin
+  list badge so the badge doesn't require a checklist join on every list
+  load.
+
+### What changed
+
+| Area | Files |
+|---|---|
+| **Auto-check engine.** `computeAutoChecks()` reads businesses + counts from calls/bookings/sms_log in parallel and returns a flat `Record<AutoCheckKey, boolean>`. Plain-English remediation hints live alongside the labels so the failed-items box can surface "what to fix" text without inline copy in the page. Starter plan auto-passes `check_intelligence_scored` per brief. | [src/lib/golive-checks.ts](src/lib/golive-checks.ts) |
+| **API.** `GET /api/admin/golive-checklist/[businessId]` recomputes auto checks, upserts them, and returns the full checklist + pass counts + `isFullyVerified`. `PATCH` accepts a strict allow-list of `manual_*` keys + `notes`; after saving, recomputes auto checks and if everything passes, stamps `verified_at` + `verified_by` and flips `businesses.golive_verified`. `POST /reset` clears manual checks + the verified stamp (auto checks recompute on next GET). All three routes gate on `requireAdmin()`. | [src/app/api/admin/golive-checklist/[businessId]/route.ts](src/app/api/admin/golive-checklist/%5BbusinessId%5D/route.ts), [src/app/api/admin/golive-checklist/[businessId]/reset/route.ts](src/app/api/admin/golive-checklist/%5BbusinessId%5D/reset/route.ts) |
+| **Page.** `/admin/clients/[clientId]/golive` is a server component that computes auto checks on render and hands a snapshot to a client component. Two-column grid: automated checks (with red failing-items summary box at the top) on the left, manual tickboxes + notes textarea on the right. Header shows overall badge (Verified / Partially complete / Not verified), progress bar, "Run Auto Checks" (router.refresh), and "Reset Checklist" (confirm dialog). When fully verified, a green banner reports who verified it and when. | [src/app/admin/clients/[clientId]/golive/page.tsx](src/app/admin/clients/%5BclientId%5D/golive/page.tsx), [src/app/admin/clients/[clientId]/golive/golive-view.tsx](src/app/admin/clients/%5BclientId%5D/golive/golive-view.tsx) |
+| **Admin clients list.** New "Go-Live" column with a green "Verified" / red "Not Verified" badge that links to the per-client checklist page. | [src/app/(portal)/admin/clients/page.tsx](src/app/%28portal%29/admin/clients/page.tsx), [src/app/(portal)/admin/clients/admin-clients-view.tsx](src/app/%28portal%29/admin/clients/admin-clients-view.tsx), [src/app/(portal)/admin/clients/types.ts](src/app/%28portal%29/admin/clients/types.ts) |
+| **Admin impersonation sidebar.** New "Go-Live" link in a dedicated Admin section at the bottom. Routes outside the `/portal/*` subtree to the sibling `/admin/clients/[id]/golive` URL. | [src/components/admin/admin-portal-shell.tsx](src/components/admin/admin-portal-shell.tsx) |
+
+### Auto-check logic (12 items)
+
+1. **`check_escalation_number`** — `businesses.escalation_number` matches `/^\+61\d{8,10}$/`.
+2. **`check_notifications_config_match`** — `notifications_config.escalation_number === businesses.escalation_number` (exact string match).
+3. **`check_intelligence_alert_config`** — `intelligence_alert_config.alert_owner === true` AND `owner_number` non-empty string.
+4. **`check_vapi_agent_id`** — non-empty `vapi_agent_id`.
+5. **`check_vapi_phone_number`** — non-empty `agent_phone_number` OR non-empty `talkmate_number`.
+6. **`check_sms_reset_at`** — `sms_reset_at` is not null.
+7. **`check_account_status`** — `account_status === 'active'`.
+8. **`check_plan_set`** — plan in `('starter', 'growth', 'pro', 'professional')`.
+9. **`check_first_call_logged`** — at least one call with `duration_seconds > 10`.
+10. **`check_first_booking_created`** — at least one row in `bookings` for `client_id` (brief correctly notes bookings uses `client_id`).
+11. **`check_first_sms_sent`** — at least one `sms_log` row with `status = 'sent'` (no `delivered` state in our system).
+12. **`check_intelligence_scored`** — at least one call with `intelligence_status IN ('resolved', 'review', 'critical')`. Starter plan auto-passes.
+
+### Donna handoff after deployment
+
+1. Run `034_golive_checklist.sql` in Supabase. The migration already
+   seeds a row for every current business, so step 2 from the brief
+   ("seed existing clients") is unnecessary.
+2. Open `/admin/clients` and confirm the new "Go-Live" column shows
+   "Not Verified" for every business.
+3. Open `/admin/clients/[id]/golive` for GM Towing. Confirm:
+   - The 12 auto checks land with reasonable pass/fail values.
+   - The failing-items summary box explains each failure in plain English.
+   - Ticking a manual check saves instantly and the progress bar updates.
+   - The "Reset Checklist" button clears manual checks and the verified stamp.
+4. No new env vars.
 
 ---
 

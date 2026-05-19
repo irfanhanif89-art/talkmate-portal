@@ -31,7 +31,8 @@ export default async function AdminClientsPage() {
       services, trade_type,
       trial_start_date, trial_end_date, trial_converted_at,
       onboarding_complete, onboarding_complete_at,
-      sms_used_this_month
+      sms_used_this_month,
+      golive_verified, golive_verified_at
     `)
     .order('created_at', { ascending: false })
 

@@ -48,6 +48,10 @@ export interface AdminBusiness {
   // Session 19 — SMS usage shown as the "SMS / Mo" column in the admin
   // client list. Null on rows that pre-date migration 031's counter.
   sms_used_this_month?: number | null
+  // Session 20 — Go-Live verification status (admin only). Set to true
+  // when every auto + manual checklist item passes.
+  golive_verified?: boolean | null
+  golive_verified_at?: string | null
 }
 
 export interface PartnerOption {

@@ -251,7 +251,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'SMS / Mo', 'Industry', 'Status', 'Onboarded', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'SMS / Mo', 'Industry', 'Status', 'Go-Live', 'Onboarded', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -259,7 +259,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={10} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
                   No clients match this filter.
                 </td>
               </tr>
@@ -312,6 +312,18 @@ export default function AdminClientsView({
                   <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700, background: `${statusColor(b.account_status)}22`, color: statusColor(b.account_status) }}>
                     {statusLabel(b.account_status)}
                   </span>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <Link href={`/admin/clients/${b.id}/golive`} style={{ textDecoration: 'none' }}>
+                    <span style={{
+                      fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700,
+                      cursor: 'pointer',
+                      background: b.golive_verified ? 'rgba(34,197,94,0.14)' : 'rgba(239,68,68,0.12)',
+                      color: b.golive_verified ? '#22C55E' : '#EF4444',
+                    }}>
+                      {b.golive_verified ? 'Verified' : 'Not Verified'}
+                    </span>
+                  </Link>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4', textTransform: 'capitalize' as const }}>{b.onboarded_by || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{new Date(b.created_at).toLocaleDateString('en-AU')}</td>

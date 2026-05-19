@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Phone, FileText, Settings, MessageSquare,
   Lock, Users, PhoneCall, BookOpen,
   UserCheck, Crown, ClipboardList, ExternalLink, ArrowLeft,
-  Tag, MapPin, CalendarDays, MessageCircle,
+  Tag, MapPin, CalendarDays, MessageCircle, ShieldCheck,
 } from 'lucide-react'
 
 interface NavItem {
@@ -121,6 +121,26 @@ export default function AdminPortalShell({ clientId, businessName, children }: P
               })}
             </div>
           ))}
+
+          {/* Session 20 — Go-Live verification lives outside /portal/* so
+              it gets its own sidebar entry that routes to a sibling URL. */}
+          <div style={{ marginBottom: 16, marginTop: 4, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 8px', marginBottom: 6 }}>Admin</div>
+            <button
+              onClick={() => router.push(`/admin/clients/${clientId}/golive`)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 10px', borderRadius: 8, marginBottom: 2,
+                background: 'transparent', color: '#C8D8EA',
+                border: 'none', cursor: 'pointer',
+                fontFamily: 'Outfit, sans-serif', fontSize: 13,
+                fontWeight: 500, textAlign: 'left' as const,
+              }}
+            >
+              <ShieldCheck size={15} />
+              <span>Go-Live</span>
+            </button>
+          </div>
         </aside>
         <main style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
           {children}
