@@ -1,8 +1,135 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## SESSION 21 — Sales HQ (2026-05-20)
+
+Full sales rep portal at `/sales/*` with admin management at `/admin/sales-team`.
+Migration `036_sales_hq.sql` adds 6 tables (sales_teams, sales_reps, leads,
+lead_activities, commissions, rep_contracts) plus `is_super_admin()` and
+`current_rep_id()` helper functions, all with RLS enabled.
+
+### What ships
+
+- **Rep portal** (`/sales/*`): dashboard, kanban + list pipeline, lead drawer
+  with activity log + autosave + status changes, won/lost/bad-lead flows,
+  onboard-client flow (after admin approval), clients, commission ledger
+  with CSV export, contract signing (typed-name with IP + UA capture),
+  profile. Commission policy modal on first login (one-time acknowledgement).
+- **Admin** (`/admin/sales-team`): three tabs — Reps (invite, contract upload,
+  deactivate), Leads (approval queue, all-leads with filters + CSV, top-rep
+  leaderboard), Commissions (approve/pay/revoke with CSV).
+- **API**: `/api/sales/*` (gated by `requireSalesRep`), `/api/admin/sales-reps/*`,
+  `/api/admin/leads/[id]/approve`, `/api/admin/commissions/[id]` (gated by
+  `requireAdmin`).
+- **Storage**: `rep-contracts` bucket, private, signed URLs only (1-hour
+  expiry), policy restricts rep reads to their own folder.
+- **Notifications**: Telegram on win submitted, bad lead flagged, contract
+  signed (uses existing `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ADMIN_CHAT_ID`).
+  Resend emails for rep invite, contract ready, contract signed, deal
+  approved, deal rejected, commission revoked, client welcome.
+
+### Commission rates (hardcoded server-side)
+
+| Plan    | Commission |
+|---------|------------|
+| Starter | $299       |
+| Growth  | $349       |
+| Pro     | $399       |
+
+Source: `src/lib/commission.ts`. **Never read from the client request body.**
+14-day clawback rule applies on cancellation — admin can revoke any
+commission with a reason; the rep is emailed automatically.
+
+### Deviations from the original brief
+
+1. **`profiles` → `users`.** Brief specified adding `role` to a `profiles`
+   table. This codebase uses `users` (Migration 001). To avoid colliding
+   with the existing `users.role` values (`owner` / `admin` / `manager` /
+   `staff`), we identify sales reps purely by presence in the `sales_reps`
+   table — no role column required. Admin identification continues to use
+   the existing email allowlist pattern, wrapped in `is_super_admin()`
+   for use inside RLS policies.
+2. **`businesses.owner_id` → `owner_user_id`.** Brief used the wrong column
+   name; the actual column is `owner_user_id` (Migration 001).
+3. **`businesses.account_status` for new clients.** Brief said `pending_setup`;
+   the existing CHECK only allows `active|pending|suspended|cancelled`
+   (extended elsewhere to add `trial|pending_payment|expired`). We use
+   `pending` to stay inside the constraint and signal "not active yet."
+4. **`businesses.onboarded_by`.** Migration 011 limited this to
+   `self|admin|partner`. Migration 036 extends to add `sales_rep`.
+5. **Kanban drag-and-drop is deferred.** The brief requested desktop
+   HTML5 drag to move cards between columns. v1 ships with click-card →
+   open-drawer → status-dropdown, which works on both desktop and mobile
+   identically. Drag-to-move is queued for a follow-up; the dropdown UX
+   is acceptable for v1 and avoids pulling in a drag library.
+6. **CSV lead import is deferred.** Brief mentions `POST /api/admin/leads/import`
+   but the admin UI specs do not include an import button. Punted to a
+   follow-up. Admin can insert leads directly in Supabase for now.
+7. **`sales_lead` role.** Reserved as an allowed value in the brief — not
+   used since we don't store role on users. The team_lead concept can be
+   reintroduced via a `is_team_lead` flag on `sales_reps` when needed.
+
+### Migration to run on preview Supabase
+
+Run `supabase/migrations/036_sales_hq.sql` against the preview project
+`rgifivtzmjvanzqwgadq` (talkmate-preview, ap-southeast-2). It is fully
+idempotent — safe to re-run.
+
+After running:
+- 6 new tables created
+- `rep-contracts` storage bucket created
+- `is_super_admin()` and `current_rep_id()` helper functions installed
+- `businesses_onboarded_by_check` constraint widened to include `sales_rep`
+- Default `sales_teams` row "TalkMate Sales" inserted
+
+### Pre-flight: creating test reps
+
+Sales reps cannot register themselves — admin invites them via
+`/admin/sales-team` → Invite Rep. The flow:
+
+1. Admin clicks Invite Rep, enters name + email + (optional) phone
+2. Backend calls `supabase.auth.admin.inviteUserByEmail()` and inserts
+   into `sales_reps` with `status='active'`
+3. The rep receives Supabase's invite email + a backup Resend invite
+4. On first login, rep is redirected to `/sales/dashboard` and shown the
+   one-time commission policy modal
+5. Admin uploads their contract PDF; rep signs from `/sales/contract`
+   with a typed-name match against their `full_name`
+
+### RLS verification before merge
+
+The brief mandates two test rep accounts to verify data isolation. To
+run:
+
+1. Invite Rep A (test-rep-a@example.com) via the admin UI
+2. Invite Rep B (test-rep-b@example.com)
+3. Insert a sample lead assigned to Rep A
+4. Sign in as Rep B and verify Rep A's lead does not appear in `/sales/leads`
+5. Try hitting `/api/sales/leads/<rep-a-lead-id>` as Rep B — must return 404
+6. Try `POST /api/admin/sales-reps/invite` as Rep B — must return 403
+7. Confirm signed contract URLs expire after 1 hour
+8. Deactivate Rep A from the admin UI and confirm Rep A cannot sign in
+
+### Environment variables
+
+No new env vars required for the build to compile — all existing keys
+are reused:
+- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ADMIN_CHAT_ID` (already in use for SMS alerts)
+- `RESEND_API_KEY` (already in use)
+- `INTERNAL_ALERT_EMAIL` (already in use, defaults to hello@talkmate.com.au)
+- `SUPABASE_SERVICE_ROLE_KEY` (already in use)
+- `NEXT_PUBLIC_PORTAL_URL` (optional; defaults to https://app.talkmate.com.au)
+
+### Branch + push
+
+Built on `feature/session-21-sales-hq` (branched from `dev`, which was
+created from `main` per the brief). Donna merges to `dev` first for
+preview review, then to `main` for production rollout.
 
 ---
 
