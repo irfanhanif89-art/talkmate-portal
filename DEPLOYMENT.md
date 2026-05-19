@@ -1,8 +1,97 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
+
+---
+
+## HOTFIX 035 — sms_used_this_month counter not incrementing (2026-05-19)
+
+### Symptom
+
+GM Towing had one `sms_log` row with `sms_type='other'`, `status='sent'`,
+sent 2026-05-16. But `businesses.sms_used_this_month` was still 0. The
+`'other'` type is NOT in `BYPASS_PLAN_LIMIT_TYPES`, so the counter
+should have incremented.
+
+### Root cause
+
+The read-then-update pattern at the bottom of `sendSMS()` was
+swallowing the `.update()` error silently:
+
+```ts
+await supabase
+  .from('businesses')
+  .update({ sms_used_this_month: used + 1 })
+  .eq('id', opts.clientId)
+```
+
+No `error` check, no logging. Combined with `used = bizPost?.sms_used_this_month ?? 0`
+treating null as 0, the counter could stay stuck at 0 indefinitely. None
+of the four Supabase mutations inside `sendSMS` (rejected-log, failed-log,
+sent-log, counter increment) checked their `error` return — every single
+one could fail silently.
+
+### Migration 035 (idempotent)
+
+`supabase/migrations/035_sms_counter_fix.sql`:
+
+1. **`increment_sms_used(p_client_id uuid)` RPC** — atomic, server-side
+   `COALESCE(sms_used_this_month, 0) + 1` increment with self-healing
+   null. Returns the new value (null if no row matched). Granted to
+   service_role only.
+2. **Backfill `sms_reset_at` where null** — set to the start of the
+   current month so `ensureMonthlyReset()` doesn't double-reset.
+3. **Backfill `sms_used_this_month`** — recount from `sms_log` for every
+   business, including only `status='sent'` rows of non-bypass types
+   sent since the business's `sms_reset_at`. Bypass types
+   (`call_intelligence_alert`, `dropped_call_recovery`, `early_hangup_recovery`,
+   `missed_lead_recovery`) are explicitly excluded — they correctly skip
+   the counter and must not be backfilled into it.
+
+### Code changes
+
+`src/lib/sms.ts`:
+
+- Replaced the read-then-update at the end of `sendSMS()` with
+  `supabase.rpc('increment_sms_used', { p_client_id: opts.clientId })`.
+  Single round trip, atomic, no race window, null source rows self-heal
+  via the RPC's `COALESCE`.
+- Added `console.error` on every Supabase mutation: the four `sms_log`
+  inserts (rejected/plan, rejected/quota, failed, sent), the
+  `ensureMonthlyReset` counter zero, and the new RPC call.
+- The post-reset `bizPost` read now also logs on error and uses a
+  stricter `typeof rawUsed === 'number'` check so a null source field
+  never silently becomes `0`.
+- Bypass logic (`BYPASS_PLAN_LIMIT_TYPES` for `call_intelligence_alert`,
+  `dropped_call_recovery`, `early_hangup_recovery`, `missed_lead_recovery`)
+  is unchanged. Those types still skip both the quota check AND the
+  counter increment.
+
+### Donna handoff after deployment
+
+1. Run `035_sms_counter_fix.sql` in Supabase. The backfill is the same
+   query above; it's safe to re-run.
+2. Spot-check the backfill:
+   ```sql
+   select b.name, b.plan, b.sms_used_this_month, b.sms_reset_at,
+          (select count(*) from sms_log s
+            where s.client_id = b.id
+              and s.status = 'sent'
+              and s.sent_at >= b.sms_reset_at
+              and s.sms_type not in (
+                'call_intelligence_alert','dropped_call_recovery',
+                'early_hangup_recovery','missed_lead_recovery'
+              )) as recounted
+   from businesses b
+   order by b.created_at desc;
+   ```
+   `sms_used_this_month` should equal `recounted` for every row after
+   the migration.
+3. Trigger a test SMS to GM Towing through `/api/portal/sms/send`. The
+   counter should now increment by exactly 1 and the Vercel function
+   logs should be clean (no `[sms]` error lines).
 
 ---
 
