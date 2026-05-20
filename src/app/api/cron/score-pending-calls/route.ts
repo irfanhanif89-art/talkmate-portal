@@ -8,13 +8,36 @@ import { scoreCallAsync } from '@/lib/score-call-async'
 // without a scoring result (transient Anthropic errors, late
 // transcripts, cold-start hiccups) and rescores them. Bounded to recent
 // calls so we don't keep re-scoring stale ones forever.
+//
+// Session 22 (fix-scoring-prompt) — also picks up a small batch of
+// false-negative candidates: calls already scored in the last 7 days
+// at <=4/10 whose only flag was 'short_call'. Those were mostly
+// scored low because the supervisor model misread the standard
+// greeting + recording notice as wrong. The corrected SYSTEM_PROMPT
+// in call-intelligence.ts won't repeat that mistake, so resetting
+// them to pending lets this cron rescore them with the new prompt.
+// Note: the brief references intelligence_status = 'scored', but the
+// actual values stored are 'resolved' | 'review' | 'critical' (plus
+// 'pending' | 'error'). "Scored" here means any non-pending,
+// non-error status.
 
 const BATCH_LIMIT = 10
 const LOOKBACK_HOURS = 24
 
+// False-negative rescore knobs (kept small so a stuck row can't
+// hog the budget — the admin one-shot endpoint can do bigger sweeps).
+const FALSE_NEG_LOOKBACK_DAYS = 7
+const FALSE_NEG_MAX_SCORE = 4
+const FALSE_NEG_BATCH = 5
+
 interface PendingCallRow {
   vapi_call_id: string | null
   business_id: string
+}
+
+interface FalseNegRow {
+  id: string
+  intelligence_flags: unknown
 }
 
 export async function GET(request: Request) {
@@ -24,6 +47,49 @@ export async function GET(request: Request) {
   const supabase = createAdminClient()
   const cutoff = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
 
+  // ── Step 1: reset false-negative candidates back to 'pending' so
+  //           the normal pending sweep below picks them up.
+  const falseNegCutoff = new Date(
+    Date.now() - FALSE_NEG_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString()
+
+  let falseNegResetCount = 0
+  try {
+    const { data: candidates } = await supabase
+      .from('calls')
+      .select('id, intelligence_flags')
+      .in('intelligence_status', ['resolved', 'review', 'critical'])
+      .lte('intelligence_score', FALSE_NEG_MAX_SCORE)
+      .gte('intelligence_scored_at', falseNegCutoff)
+      .not('vapi_call_id', 'is', null)
+      .not('transcript', 'is', null)
+      .limit(FALSE_NEG_BATCH * 4) // grab extra so the filter below has room
+
+    const onlyShortCall = (candidates ?? []).filter((row: FalseNegRow) => {
+      const flags = Array.isArray(row.intelligence_flags) ? row.intelligence_flags : []
+      if (flags.length !== 1) return false
+      const first = flags[0] as { type?: string } | null
+      return first?.type === 'short_call'
+    }).slice(0, FALSE_NEG_BATCH)
+
+    if (onlyShortCall.length > 0) {
+      const ids = onlyShortCall.map(r => r.id)
+      const { error: resetErr } = await supabase
+        .from('calls')
+        .update({ intelligence_status: 'pending' })
+        .in('id', ids)
+      if (resetErr) {
+        console.error('[score-pending-calls] false-neg reset failed', resetErr.message)
+      } else {
+        falseNegResetCount = ids.length
+      }
+    }
+  } catch (e) {
+    // Don't let the false-neg sweep break the primary pending sweep.
+    console.error('[score-pending-calls] false-neg sweep error', (e as Error).message)
+  }
+
+  // ── Step 2: rescore everything currently 'pending' or 'error'.
   const { data, error } = await supabase
     .from('calls')
     .select('vapi_call_id, business_id')
@@ -41,7 +107,7 @@ export async function GET(request: Request) {
 
   const rows = (data ?? []) as PendingCallRow[]
   if (rows.length === 0) {
-    return NextResponse.json({ ok: true, attempted: 0 })
+    return NextResponse.json({ ok: true, attempted: 0, false_neg_reset: falseNegResetCount })
   }
 
   // Run sequentially to keep load on Anthropic (and our wallet) bounded.
@@ -53,5 +119,5 @@ export async function GET(request: Request) {
     await scoreCallAsync(row.vapi_call_id, row.business_id, 2)
   }
 
-  return NextResponse.json({ ok: true, attempted })
+  return NextResponse.json({ ok: true, attempted, false_neg_reset: falseNegResetCount })
 }

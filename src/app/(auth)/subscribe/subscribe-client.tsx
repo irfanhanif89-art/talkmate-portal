@@ -23,8 +23,11 @@ const Logo = () => (
 
 type Plan = {
   name: string
-  price: number
-  planKey: string
+  monthly: number
+  annual: number
+  annual_savings: number
+  setup_fee: number
+  planKey: 'starter' | 'growth' | 'pro'
   description: string
   features: string[]
   highlight: boolean
@@ -35,7 +38,7 @@ type Plan = {
 const PLANS: Plan[] = [
   {
     name: 'Starter',
-    price: 299,
+    monthly: 299, annual: 2990, annual_savings: 598, setup_fee: 299,
     planKey: 'starter',
     description: 'For single-location businesses that want to stop missing calls.',
     features: [
@@ -53,7 +56,7 @@ const PLANS: Plan[] = [
   },
   {
     name: 'Growth',
-    price: 499,
+    monthly: 499, annual: 4990, annual_savings: 998, setup_fee: 349,
     planKey: 'growth',
     description: 'For businesses ready to go further.',
     features: [
@@ -71,7 +74,7 @@ const PLANS: Plan[] = [
   },
   {
     name: 'Pro',
-    price: 799,
+    monthly: 799, annual: 7990, annual_savings: 1598, setup_fee: 399,
     planKey: 'pro',
     description: 'Built for multi-location and high-volume operators.',
     features: [
@@ -87,7 +90,7 @@ const PLANS: Plan[] = [
   },
 ]
 
-const GUARANTEES = ['No setup fees', '14-day money-back guarantee', 'No lock-in contracts', 'Cancel anytime']
+const GUARANTEES = ['Setup included', '14-day money-back guarantee', 'No lock-in contracts', 'Cancel anytime']
 
 const PLAN_LABELS: Record<string, string> = {
   starter: 'Starter — $299/month',
@@ -215,6 +218,7 @@ function GenericPricingView() {
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
 
   const handleChoosePlan = async (planKey: string) => {
     setLoading(true)
@@ -225,7 +229,7 @@ function GenericPricingView() {
       const res = await fetch('/api/stripe/embedded-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planKey }),
+        body: JSON.stringify({ planKey, billingCycle }),
       })
 
       if (!res.ok) {
@@ -266,9 +270,45 @@ function GenericPricingView() {
       <h1 style={{ fontSize: 28, fontWeight: 800, color: 'white', marginBottom: 8, textAlign: 'center' }}>
         Choose your plan
       </h1>
-      <p style={{ fontSize: 15, color: '#4A7FBB', marginBottom: 40, textAlign: 'center' }}>
-        14-day money-back guarantee · No setup fees · Cancel anytime
+      <p style={{ fontSize: 15, color: '#4A7FBB', marginBottom: 22, textAlign: 'center' }}>
+        14-day money-back guarantee · Setup included · Cancel anytime
       </p>
+
+      {/* Billing cycle toggle */}
+      <div style={{
+        display: 'inline-flex', gap: 4, padding: 4, borderRadius: 99,
+        background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)',
+        marginBottom: 30,
+      }}>
+        {(['monthly', 'annual'] as const).map(c => {
+          const active = billingCycle === c
+          return (
+            <button
+              key={c}
+              onClick={() => setBillingCycle(c)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '9px 18px', borderRadius: 99, border: 'none', cursor: 'pointer',
+                background: active ? '#E8622A' : 'transparent',
+                color: active ? 'white' : '#7BAED4',
+                fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
+                textTransform: 'capitalize',
+              }}
+            >
+              {c}
+              {c === 'annual' && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, letterSpacing: '0.08em',
+                  padding: '2px 7px', borderRadius: 99,
+                  background: active ? 'rgba(255,255,255,0.18)' : 'rgba(34,197,94,0.18)',
+                  color: active ? 'white' : '#22C55E',
+                  border: `1px solid ${active ? 'rgba(255,255,255,0.25)' : 'rgba(34,197,94,0.35)'}`,
+                }}>2 MONTHS FREE</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
 
       {error && (
         <div style={{
@@ -329,9 +369,28 @@ function GenericPricingView() {
                   <div style={{ fontSize: 12, color: '#4A7FBB', lineHeight: 1.4 }}>{plan.description}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 16 }}>
-                  <span style={{ fontSize: 30, fontWeight: 800, color: 'white' }}>${plan.price}</span>
-                  <span style={{ fontSize: 12, color: '#4A7FBB' }}>/mo</span>
+                  <span style={{ fontSize: 30, fontWeight: 800, color: 'white' }}>
+                    ${billingCycle === 'annual'
+                      ? plan.annual.toLocaleString('en-AU')
+                      : plan.monthly}
+                  </span>
+                  <span style={{ fontSize: 12, color: '#4A7FBB' }}>
+                    /{billingCycle === 'annual' ? 'yr' : 'mo'}
+                  </span>
                 </div>
+              </div>
+
+              {billingCycle === 'annual' && (
+                <div style={{
+                  display: 'inline-block', padding: '3px 9px', borderRadius: 99,
+                  background: 'rgba(34,197,94,0.12)', color: '#22C55E',
+                  border: '1px solid rgba(34,197,94,0.35)',
+                  fontSize: 11, fontWeight: 800, marginBottom: 10,
+                }}>Save ${plan.annual_savings.toLocaleString('en-AU')}</div>
+              )}
+
+              <div style={{ fontSize: 11, color: '#4A7FBB', marginBottom: 12 }}>
+                One-off setup fee: ${plan.setup_fee}
               </div>
 
               <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 12 }} />

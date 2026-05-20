@@ -117,17 +117,23 @@ export default function BillingPage() {
   const [signupAt, setSignupAt] = useState<string | null>(null)
   const [businessName, setBusinessName] = useState('')
   const [stripeSummary, setStripeSummary] = useState<StripeSummary | null>(null)
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [setupFeeAmount, setSetupFeeAmount] = useState<number | null>(null)
+  const [setupFeeWaived, setSetupFeeWaived] = useState<boolean>(false)
   const weeklyPositiveCalls = Math.round(7 * 0.72 * 5) // ~25
 
   useEffect(() => {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id, plan, signup_at, name').eq('owner_user_id', user.id).single()
+      const { data: biz } = await supabase.from('businesses').select('id, plan, signup_at, name, billing_cycle, setup_fee_amount, setup_fee_waived').eq('owner_user_id', user.id).single()
       if (!biz) return
       setPlan(biz.plan ?? 'starter')
       setSignupAt(biz.signup_at)
       setBusinessName(biz.name)
+      setBillingCycle(biz.billing_cycle === 'annual' ? 'annual' : 'monthly')
+      setSetupFeeAmount(biz.setup_fee_amount == null ? null : Number(biz.setup_fee_amount))
+      setSetupFeeWaived(biz.setup_fee_waived === true)
 
       const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
       const { data: calls } = await supabase.from('calls').select('outcome').eq('business_id', biz.id).gte('created_at', startOfMonth.toISOString())
@@ -245,6 +251,26 @@ export default function BillingPage() {
               : <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E' }}>Active</span>}
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>${planConfig.monthlyPrice}<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
+              background: billingCycle === 'annual' ? 'rgba(34,197,94,0.12)' : 'rgba(123,174,212,0.12)',
+              color: billingCycle === 'annual' ? '#22C55E' : '#7BAED4',
+              border: `1px solid ${billingCycle === 'annual' ? 'rgba(34,197,94,0.35)' : 'rgba(123,174,212,0.3)'}`,
+              letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+            }}>{billingCycle === 'annual' ? 'Annual billing' : 'Monthly billing'}</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
+              background: setupFeeWaived ? 'rgba(148,163,184,0.18)' : 'rgba(74,159,232,0.12)',
+              color: setupFeeWaived ? '#94A3B8' : '#4A9FE8',
+              border: `1px solid ${setupFeeWaived ? 'rgba(148,163,184,0.35)' : 'rgba(74,159,232,0.3)'}`,
+              letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+            }}>{setupFeeWaived
+              ? 'Setup fee: waived'
+              : setupFeeAmount != null
+                ? `Setup fee: paid $${setupFeeAmount}`
+                : 'Setup fee: included'}</span>
+          </div>
           <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>
             {willEndAt
               ? alreadyCancelled

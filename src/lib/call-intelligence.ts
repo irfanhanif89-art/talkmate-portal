@@ -88,6 +88,25 @@ Your job is to read call transcripts and identify issues that need the business 
 You must return ONLY valid JSON. No other text. No markdown. No explanation.
 Be concise. Be accurate. Do not flag normal successful calls.
 
+KNOWN CORRECT BEHAVIOURS — NEVER FLAG THESE AS ERRORS:
+
+The following behaviours are intentional and correct for this agent. Do not flag them, do not reduce the score for them, do not include them in flags or actions:
+
+1. Opening line: The agent's correct opening is to answer with the business name and offer help, then immediately add the recording notice. Example: "GM Towing, how can I help? Just so you know, this call may be recorded." This is correct. Never flag this as wrong.
+
+2. Silent caller handling: If a caller connects but no audio is received, the agent saying "I can't hear anyone, feel free to call back" and ending the call is correct and intentional. This is a telephony/network issue on the caller's end, not an agent error. Score these calls as handled correctly, not as errors.
+
+3. Recording notice placement: The agent adds the recording notice immediately after the greeting on every call. This is mandatory and correct. Never flag it as out of place or unnecessary.
+
+4. Account question: Asking "Do you have an account with us?" is the correct and mandatory first qualifying question after the greeting. This is intentional.
+
+SCORING CALIBRATION:
+
+- A call where the agent greeted correctly, handled a silent caller correctly, and ended politely should score 7-8/10 minimum, not 2-5/10.
+- Only reduce scores for genuine agent failures: wrong information given, missed safety checks, failed to collect required details, broke character, disclosed confidential information, or gave a price to an account customer.
+- Short calls (under 20 seconds) where the caller disconnected immediately are not agent failures. Score based on what the agent actually did, not on the outcome being incomplete.
+- "This response was wrong" should only be flagged when the agent's response was genuinely incorrect, harmful, or a policy violation, not when it was simply brief or the call ended early.
+
 You will also be given a list of SMS messages sent within 10 minutes of this call ending.
 For each SMS, evaluate whether it was the correct response given the call transcript and outcome.
 
@@ -95,8 +114,14 @@ Rules for sms_verification:
 - If no SMS messages are provided, return status "no_sms".
 - If the transcript is under 30 seconds or incomplete, return status "unverified".
 - Only flag "mismatch" if you are confident the wrong message was sent or the content was materially incorrect.
-- Do not flag mismatches for minor wording differences — only flag if the message type or key content (phone number, address, job details) is wrong.
-- If sms_verification.status is "mismatch", also add an "sms_mismatch" flag to the flags array.`
+- Do not flag mismatches for minor wording differences, only flag if the message type or key content (phone number, address, job details) is wrong.
+- If sms_verification.status is "mismatch", also add an "sms_mismatch" flag to the flags array.
+
+SMS VERIFICATION CALIBRATION:
+
+- If a call lasted under 15 seconds and no booking was created, it is expected and correct that no SMS fired. Do not flag this as sms_mismatch or no_sms error.
+- Only flag sms_mismatch if a booking was clearly created during the call but no confirmation SMS was sent, OR if the wrong type of SMS was sent relative to the call outcome.
+- Recovery SMS (missed_lead_recovery, dropped_call_recovery) firing after a short call with no resolution is correct behaviour. Do not flag this as a mismatch.`
 
 function last9(phone: string | null | undefined): string | null {
   if (!phone) return null
