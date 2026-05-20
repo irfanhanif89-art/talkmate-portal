@@ -52,17 +52,28 @@ export default function CommissionPolicyModal() {
           Please read this before you start submitting deals. Once you agree, you'll have access to your pipeline, commission tracker, and onboarding tools.
         </p>
 
-        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 18, marginBottom: 18 }}>
+        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 18, marginBottom: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
-            Commission rates
+            Monthly close
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <RateCard plan="Starter" amount={299} />
             <RateCard plan="Growth"  amount={349} />
             <RateCard plan="Pro"     amount={399} />
           </div>
+        </div>
+
+        <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 12, padding: 18, marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#22C55E', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+            Annual close (client pays 12 months upfront)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <RateCard plan="Starter" amount={373.75} accent="#22C55E" />
+            <RateCard plan="Growth"  amount={473.75} accent="#22C55E" />
+            <RateCard plan="Pro"     amount={598.75} accent="#22C55E" />
+          </div>
           <p style={{ fontSize: 12, color: '#7BAED4', marginTop: 10, marginBottom: 0 }}>
-            One-time payment per closed deal.
+            Base commission plus 2.5% of annual contract value. One-off payment per closed deal.
           </p>
         </div>
 
@@ -73,6 +84,10 @@ export default function CommissionPolicyModal() {
         <PolicyRow
           title="Clawback"
           body="If a client cancels within 14 days of account creation (TalkMate's money-back guarantee window), the commission is fully revoked regardless of payment status."
+        />
+        <PolicyRow
+          title="Push annual"
+          body="The fastest way to increase your commission is to offer clients the annual plan. They save 2 months. You earn more. Everyone wins."
         />
         <PolicyRow
           title="Disputes"
@@ -122,7 +137,7 @@ export default function CommissionPolicyModal() {
   )
 }
 
-function RateCard({ plan, amount }: { plan: string; amount: number }) {
+function RateCard({ plan, amount, accent = '#E8622A' }: { plan: string; amount: number; accent?: string }) {
   return (
     <div style={{
       background: '#061322', border: '1px solid rgba(255,255,255,0.08)',
@@ -131,7 +146,7 @@ function RateCard({ plan, amount }: { plan: string; amount: number }) {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
         {plan}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: '#E8622A', letterSpacing: '-0.5px' }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: accent, letterSpacing: '-0.5px' }}>
         ${amount}
       </div>
     </div>

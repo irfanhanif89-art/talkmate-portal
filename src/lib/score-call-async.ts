@@ -28,7 +28,7 @@ import {
   templateMissedLeadRecovery,
   type SmsType,
 } from '@/lib/sms'
-import { notifyAdminOfSmsFailure } from '@/lib/notifications'
+import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue } from '@/lib/notifications'
 
 interface CallRow {
   id: string
@@ -363,6 +363,44 @@ export async function scoreCallAsync(
     // 6. Caller recovery SMS — runs after scoring/alerting so the call
     //    row already reflects the intelligence outcome.
     await maybeSendRecoverySms(supabase, call, business, result)
+
+    // 7. Admin quality alert (Session 22B). Operator gets a Telegram
+    //    ping for genuinely worrying calls. Trigger:
+    //      duration >= 10s
+    //      AND (score < 5 OR any critical flag OR sms verification mismatch)
+    //      AND flags aren't only the "too noisy" ones (short_call /
+    //          no_resolution by themselves don't warrant a ping).
+    //
+    //    Fire-and-forget — notifyAdminOfQualityIssue already swallows
+    //    its own errors, so this can't break the scoring flow.
+    const CRITICAL_FLAG_TYPES = new Set([
+      'agent_error', 'sms_mismatch', 'missed_lead', 'dropped_call', 'wrong_info',
+    ])
+    const NOISY_FLAG_TYPES = new Set(['short_call', 'no_resolution'])
+
+    const flagTypes = result.flags.map(f => f.type)
+    const hasCriticalFlag = flagTypes.some(t => CRITICAL_FLAG_TYPES.has(t))
+    const isSmsMismatch = result.sms_verification.status === 'mismatch'
+    const onlyNoisyFlags = flagTypes.length > 0 && flagTypes.every(t => NOISY_FLAG_TYPES.has(t))
+    const duration = call.duration_seconds ?? 0
+
+    const shouldAdminAlert =
+      duration >= 10
+      && (result.score < 5 || hasCriticalFlag || isSmsMismatch)
+      && !onlyNoisyFlags
+
+    if (shouldAdminAlert) {
+      notifyAdminOfQualityIssue({
+        businessName: business.name ?? 'TalkMate client',
+        businessId: business.id,
+        callerPhone: call.caller_number ?? 'Unknown',
+        score: result.score,
+        flags: flagTypes,
+        summary: result.summary,
+        vapiCallId,
+        callId: call.id,
+      }).catch(err => console.error('[score-call-async] admin quality alert error', (err as Error).message))
+    }
   } catch (e) {
     // Never let an unexpected throw escape — webhook caller does not
     // await us and there's no upstream to handle it.

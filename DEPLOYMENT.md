@@ -1,6 +1,6 @@
 # TalkMate Portal — Deployment Handoff
 
-**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management)
+**Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management) + Session 22 (Pricing overhaul — setup fees, annual billing, commission bonus, website + portal + Sales HQ)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
 
@@ -143,6 +143,263 @@ src/app/(portal)/admin/sales-scripts/scripts-view.tsx
 ### npm dependency
 
 `pdf-lib@^1.17.1` added to `package.json`.
+
+---
+
+## SESSION 22B — Admin Quality Alerts (2026-05-20)
+
+Admin (Irfan) now gets a Telegram ping the moment a call is scored as
+worrying, and a daily digest every morning. Closes the internal quality
+loop without exposing anything to clients.
+
+### What ships
+
+- **`src/lib/notifications.ts`** — new `notifyAdminOfQualityIssue()`.
+  Fires a formatted Telegram message via `TELEGRAM_BOT_TOKEN` to
+  `TELEGRAM_ADMIN_CHAT_ID`. Markdown-formatted with score emoji, flag
+  chips, caller, summary, and a link to the admin calls view for that
+  client. Wrapped in try/catch — never throws. Silent no-op when
+  Telegram env vars are missing.
+- **`src/lib/score-call-async.ts`** — wired in immediately after the
+  intelligence persistence step. Trigger logic:
+  - Fire when `duration >= 10s` AND (`score < 5` OR a critical flag is
+    present OR `sms_verification.status === 'mismatch'`)
+  - Suppress when the only flags are noisy ones (`short_call`,
+    `no_resolution`)
+  - Suppress when duration is under 10 seconds (silent caller / test
+    call territory — Session 22 hotfix already handles those)
+  - Critical flag set: `agent_error`, `sms_mismatch`, `missed_lead`,
+    `dropped_call`, `wrong_info`
+- **`src/app/api/cron/daily-quality-digest/route.ts`** — new endpoint.
+  Pulls yesterday's scored calls (AEST day boundary), rolls them up by
+  client, and posts one of three digest messages:
+  - Empty day: "All quiet yesterday — no calls scored."
+  - All scored 7+: "All clear — N calls scored, all above 7/10."
+  - Otherwise: count, average, flagged count, per-client breakdown,
+    lowest-scoring call with a portal link.
+- **`vercel.json`** — `daily-quality-digest` registered at
+  `0 22 * * *` (22:00 UTC = 08:00 AEST in Brisbane, no DST). Note:
+  the brief asked for `0 8 * * *` but Vercel crons run in UTC, which
+  would fire at 6pm AEST. Used `0 22 * * *` for the intended morning
+  delivery.
+
+### Required env vars (Vercel — all three environments)
+
+| Var                       | Where               |
+|---------------------------|---------------------|
+| `TELEGRAM_BOT_TOKEN`      | Production, Preview, Development |
+| `TELEGRAM_ADMIN_CHAT_ID`  | Production, Preview, Development |
+| `CRON_SECRET`             | Already set — used by all cron routes |
+
+If either Telegram var is missing the alerts silently no-op (no error
+in logs, no broken scoring).
+
+### Behaviour summary
+
+- Quality alerts fire within ~60 seconds of a flagged call ending
+  (the Vapi webhook kicks off scoring; once the Anthropic call
+  returns, persistence + notify happen synchronously inside
+  `scoreCallAsync`).
+- Daily digest fires at 08:00 AEST. Confirm the cron appears in the
+  Vercel dashboard after first deploy.
+- Threshold for alerts: `score < 5 OR critical flag OR sms_mismatch`
+  AND `duration >= 10s` AND not noisy-flags-only.
+- Brief referenced a portal link at `/admin/clients/{id}/calls` but
+  the actual route is `/admin/clients/{id}/portal/calls`. Both the
+  per-call alert and the daily digest use the real path.
+
+### Testing
+
+1. Trigger a low-scoring call (or use the new
+   `POST /api/admin/rescore-calls` endpoint with a low `max_score`).
+2. Wait up to 10 minutes for the cron to rescore (immediate if the
+   Vapi webhook scores it on first finish).
+3. Confirm a Telegram message arrives at `TELEGRAM_ADMIN_CHAT_ID`.
+4. Click the "Review transcript" link — should land on
+   `/admin/clients/{businessId}/portal/calls`.
+
+---
+
+## HOTFIX (2026-05-20) — Call Intelligence scoring false-negatives
+
+The Anthropic supervisor model was flagging the standard GM Towing
+greeting ("GM Towing, how can I help? Just so you know, this call may
+be recorded.") as a wrong-response, dragging legitimate calls down to
+2–5/10 even when the agent behaved correctly. Same problem on silent
+caller hang-ups and short calls where the caller dropped immediately.
+
+### What changed
+
+- **`src/lib/call-intelligence.ts`** — SYSTEM_PROMPT extended with two
+  new calibration sections inserted before the existing rules:
+  1. *KNOWN CORRECT BEHAVIOURS* — the greeting line, silent-caller
+     handling, recording notice placement, and the mandatory account
+     question are now explicitly listed as correct.
+  2. *SMS VERIFICATION CALIBRATION* — under-15-second calls with no
+     booking shouldn't be flagged as `sms_mismatch`; recovery SMS on
+     short calls is correct behaviour.
+- **`src/app/api/cron/score-pending-calls/route.ts`** — now also
+  resets up to 5 false-negative candidates per tick (status in
+  resolved/review/critical, score ≤ 4, scored within last 7 days,
+  exactly one flag of type `short_call`) back to `intelligence_status
+  = 'pending'` so the existing sweep rescores them with the new
+  prompt. Response now includes `{ false_neg_reset: N }`.
+- **`src/app/api/admin/rescore-calls/route.ts`** — new one-shot
+  endpoint for ad-hoc rescores. Admin only (`requireAdmin`). Body:
+  `{ days_back?: number, max_score?: number }` (defaults 7 and 4,
+  bounds 1–90 and 1–10). Hard cap of 500 rows per call. Returns
+  `{ reset_count, days_back, max_score }`. Calls reset go back through
+  the regular cron — next tick is at most 10 minutes away
+  (`vercel.json`).
+
+Note: the brief refers to `intelligence_status = 'scored'`, but the
+actual column stores `'pending' | 'error' | 'resolved' | 'review' |
+'critical'`. "Scored" in this codebase means any of resolved/review/
+critical; both new code paths use that interpretation.
+
+### Manual step Donna must take
+
+The GM Towing Vapi system prompt needs a small refresh to smooth the
+account-question flow. That's a Vapi API change, not a portal code
+change — see the separate Vapi brief.
+
+### Build status
+
+`npm run build` passes with zero TypeScript errors on
+`feature/session-22-pricing`.
+
+---
+
+## SESSION 22 — Pricing Overhaul (2026-05-20)
+
+Adds setup fees, annual billing, and a 2.5% annual commission bonus across the
+website, client portal, admin, and Sales HQ. Migration `037_pricing_overhaul.sql`
+adds `billing_cycle`, `setup_fee_waived`, `setup_fee_amount` to `businesses`,
+`won_billing_cycle` to `leads`, and `bonus_amount` to `commissions`. All
+additive — safe to re-run.
+
+### Pricing reference (hardcoded server-side)
+
+| Plan    | Monthly | Annual (10mo) | Annual savings | Setup fee | Monthly commission | Annual bonus | Annual total |
+|---------|---------|---------------|----------------|-----------|--------------------|--------------|---------------|
+| Starter | $299/mo | $2,990/yr     | $598           | $299      | $299               | $74.75       | $373.75       |
+| Growth  | $499/mo | $4,990/yr     | $998           | $349      | $349               | $124.75      | $473.75       |
+| Pro     | $799/mo | $7,990/yr     | $1,598         | $399      | $399               | $199.75      | $598.75       |
+
+Annual bonus = annual price × 2.5%. Source of truth: `src/lib/commission.ts`
+(COMMISSION_MAP) and `src/lib/pricing.ts` (PRICING). Never read commission or
+price amounts from the client request body.
+
+### What ships (portal)
+
+- **Sales HQ Won modal**: live commission breakdown — base + bonus + total
+  updates as plan and billing cycle change. Bonus only shows when annual.
+- **`/api/sales/leads/[id]/won`**: accepts `billing_cycle`, computes bonus
+  server-side from COMMISSION_MAP, inserts `commissions.bonus_amount` and
+  records `leads.won_billing_cycle`.
+- **`/sales/commissions` ledger**: Total column shows base + bonus breakdown,
+  Billing pill (Monthly/Annual), CSV export includes base/bonus/total columns.
+- **`/sales/commission-policy` modal (first login)**: Updated to show both
+  monthly and annual rate cards plus "push annual" line.
+- **`/admin/sales-team` Commissions tab**: Billing column, Total column with
+  base+bonus breakdown, CSV export columns updated.
+- **Admin Create Client modal**: Billing cycle toggle (monthly/annual) and
+  setup fee waiver checkbox. Waiver is admin-only — written through the
+  `requireAdmin()`-gated `/api/admin/clients/create` route. Sales reps have
+  no path to call it.
+- **Admin Clients list**: Two new columns — Billing (Monthly/Annual pill),
+  Setup Fee ($ amount or "Waived").
+- **`/subscribe`**: Monthly/Annual toggle above plan cards with "2 MONTHS
+  FREE" badge. Each plan card shows the right price, savings badge in green
+  when annual, and the one-off setup fee.
+- **`/api/stripe/embedded-checkout`**: Accepts `billingCycle`, switches to
+  the annual price ID when annual, and always appends the setup fee as a
+  second line item unless `businesses.setup_fee_waived = true`. Saves the
+  chosen cycle on the business row immediately so the dashboard reflects it.
+- **Client `/billing` page**: Plan card now shows a Billing pill (Monthly
+  vs. Annual) and a Setup Fee pill (paid amount, waived, or included).
+
+### What ships (website)
+
+- **PricingCards rewritten as a client component**: monthly/annual toggle,
+  annual view shows the annual price prominently with savings badge and
+  sparkle accent, "Best Value" badge on the Most Popular plan when annual,
+  setup fee line under each price, subtle scale-up animation on toggle.
+- **Setup fee explainer**: low-key grey card below cards explaining what
+  the setup fee covers.
+- **Annual upsell pill**: replaces the old "No setup fees on any plan. Ever."
+  pill with "2 months free on annual plans".
+- **Trust signals** changed: `No setup fees` → `Setup included`,
+  `No lock-in` → `No lock-in contracts`.
+- **Copy cleanup**: removed every "no setup fees" / "no setup fee" reference
+  across `Hero.tsx`, `app/layout.tsx` (meta), `app/receptionist/[slug]/page.tsx`,
+  `app/faq/page.tsx`, `app/pricing/page.tsx`, `app/terms/page.tsx`
+  (clause 3.3 fully rewritten), and `app/blog/data/posts.ts`.
+
+### Stripe products Donna must create
+
+Six new Stripe products are required before the toggle is functional in
+production. Until they exist the embedded checkout will return a clear
+"Stripe price ID for X annual is not configured" error.
+
+Three **subscription** prices (one per plan, billed yearly):
+
+| Plan    | Price        | Env var                            |
+|---------|--------------|------------------------------------|
+| Starter | $2,990 AUD/y | `STRIPE_STARTER_ANNUAL_PRICE_ID`   |
+| Growth  | $4,990 AUD/y | `STRIPE_GROWTH_ANNUAL_PRICE_ID`    |
+| Pro     | $7,990 AUD/y | `STRIPE_PRO_ANNUAL_PRICE_ID`       |
+
+Three **one-off** setup fee prices (one per plan):
+
+| Plan    | Setup fee    | Env var                            |
+|---------|--------------|------------------------------------|
+| Starter | $299 AUD     | `STRIPE_STARTER_SETUP_PRICE_ID`    |
+| Growth  | $349 AUD     | `STRIPE_GROWTH_SETUP_PRICE_ID`     |
+| Pro     | $399 AUD     | `STRIPE_PRO_SETUP_PRICE_ID`        |
+
+Add all six to Vercel env (preview + production). Existing monthly env
+vars (`STRIPE_PRICE_STARTER`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_PROFESSIONAL`)
+remain in use.
+
+### Migration to run
+
+Run `supabase/migrations/037_pricing_overhaul.sql` on preview Supabase
+(`rgifivtzmjvanzqwgadq`) before testing. Production run after merge to main.
+
+After running:
+- `businesses` gains `billing_cycle` (CHECK monthly/annual, default monthly),
+  `setup_fee_waived` (default false), `setup_fee_amount`
+- `leads` gains `won_billing_cycle` (CHECK monthly/annual)
+- `commissions` gains `bonus_amount` (default 0)
+- `idx_businesses_billing_cycle` index created
+
+### Deviations / notes
+
+- The existing `/api/stripe/create-checkout-session` route was NOT updated.
+  It's a legacy duplicate of `/api/stripe/embedded-checkout` and isn't called
+  by the current subscribe flow. Update only if you bring it back into use.
+- The `/api/admin/clients/create` route's existing per-plan price object
+  (created at admin-create-client time) still bills monthly. The route writes
+  the chosen `billing_cycle` to `businesses` so the value is correct in the
+  database; the actual annual payment switch happens through the embedded
+  checkout when the client later subscribes. If you want admin-created clients
+  to start on an annual payment link, that's a follow-up — wire the route to
+  use `STRIPE_*_ANNUAL_PRICE_ID` when `billing_cycle === 'annual'`.
+- The `/signup` page (self-serve trial path) was NOT updated with a billing
+  cycle toggle. Trial signups don't pay at signup time so the cycle is
+  irrelevant until they convert. They land on `/subscribe` which has the
+  toggle. If you want it earlier in the funnel, add it to `/signup`.
+- Setup fee waiver is **admin only**. The waiver checkbox is in the admin
+  client-create modal, and `/api/admin/clients/create` is gated by
+  `requireAdmin()`. There is no path for a sales rep or self-serve signup
+  to set `setup_fee_waived = true`.
+
+### Build status
+
+Both repos: `npm run build` passes with zero TypeScript errors.
+Pre-existing `/icon` prerender error on website is unrelated to this session
+(verified by stashing changes and rebuilding).
 
 ---
 

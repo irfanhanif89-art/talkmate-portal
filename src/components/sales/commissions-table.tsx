@@ -7,7 +7,10 @@ export interface CommissionRow {
   id: string
   business_name: string
   plan: string
-  amount: number
+  base: number
+  bonus: number
+  total: number
+  billing_cycle: 'monthly' | 'annual'
   status: 'pending' | 'approved' | 'paid' | 'revoked'
   created_at: string
   paid_at: string | null
@@ -24,13 +27,16 @@ const STATUS_STYLES: Record<CommissionRow['status'], { label: string; bg: string
 
 export default function CommissionsTable({ rows, repName }: { rows: CommissionRow[]; repName: string }) {
   function downloadCsv() {
-    const headers = ['Business', 'Plan', 'Amount', 'Status', 'Created', 'Paid', 'Reference', 'Revoke reason']
+    const headers = ['Business', 'Plan', 'Billing', 'Base', 'Bonus', 'Total', 'Status', 'Created', 'Paid', 'Reference', 'Revoke reason']
     const lines = [headers.join(',')]
     for (const r of rows) {
       lines.push([
         csvCell(r.business_name),
         r.plan,
-        r.amount.toFixed(2),
+        r.billing_cycle,
+        r.base.toFixed(2),
+        r.bonus.toFixed(2),
+        r.total.toFixed(2),
         r.status,
         r.created_at,
         r.paid_at ?? '',
@@ -71,12 +77,13 @@ export default function CommissionsTable({ rows, repName }: { rows: CommissionRo
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 720 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
             <thead>
               <tr style={{ color: '#4A7FBB', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 <th style={th}>Business</th>
                 <th style={th}>Plan</th>
-                <th style={th}>Amount</th>
+                <th style={th}>Billing</th>
+                <th style={th}>Total</th>
                 <th style={th}>Status</th>
                 <th style={th}>Created</th>
                 <th style={th}>Reference</th>
@@ -85,11 +92,22 @@ export default function CommissionsTable({ rows, repName }: { rows: CommissionRo
             <tbody>
               {rows.map(r => {
                 const sty = STATUS_STYLES[r.status]
+                const isAnnual = r.billing_cycle === 'annual'
                 return (
                   <tr key={r.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <td style={td}><strong style={{ color: 'white' }}>{r.business_name}</strong></td>
                     <td style={{ ...td, color: '#7BAED4', textTransform: 'capitalize' }}>{r.plan}</td>
-                    <td style={{ ...td, color: '#E8622A', fontWeight: 700 }}>{formatCurrency(r.amount)}</td>
+                    <td style={td}>
+                      <BillingPill annual={isAnnual} />
+                    </td>
+                    <td style={{ ...td }}>
+                      <div style={{ color: '#E8622A', fontWeight: 700 }}>{formatCurrency(r.total)}</div>
+                      {r.bonus > 0 && (
+                        <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>
+                          ${r.base} base <span style={{ color: '#22c55e', fontWeight: 600 }}>+ ${r.bonus.toFixed(2)} annual bonus</span>
+                        </div>
+                      )}
+                    </td>
                     <td style={td}>
                       <span style={{
                         display: 'inline-block', padding: '3px 9px', borderRadius: 99,
@@ -110,6 +128,18 @@ export default function CommissionsTable({ rows, repName }: { rows: CommissionRo
         </div>
       )}
     </div>
+  )
+}
+
+function BillingPill({ annual }: { annual: boolean }) {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '3px 9px', borderRadius: 99,
+      background: annual ? 'rgba(34,197,94,0.15)' : 'rgba(123,174,212,0.12)',
+      color: annual ? '#22c55e' : '#7BAED4',
+      border: `1px solid ${annual ? 'rgba(34,197,94,0.35)' : 'rgba(123,174,212,0.3)'}`,
+      fontSize: 11, fontWeight: 700,
+    }}>{annual ? 'Annual' : 'Monthly'}</span>
   )
 }
 

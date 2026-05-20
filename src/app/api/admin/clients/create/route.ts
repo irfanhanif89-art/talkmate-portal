@@ -50,6 +50,15 @@ export async function POST(req: Request) {
   const initial_note = body.initial_note ? String(body.initial_note).trim() : null
   const send_welcome_email = body.send_welcome_email !== false
 
+  // Session 22: billing cycle + setup fee waiver. Waiver is admin-only;
+  // this endpoint already requires admin via requireAdmin() above, so
+  // accepting it directly here is fine. Reps don't have a path to call
+  // this route.
+  const billing_cycle: 'monthly' | 'annual' = body.billing_cycle === 'annual' ? 'annual' : 'monthly'
+  const setup_fee_waived = body.setup_fee_waived === true
+  const SETUP_FEE_MAP: Record<'starter' | 'growth' | 'pro', number> = { starter: 299, growth: 349, pro: 399 }
+  const setup_fee_amount = setup_fee_waived ? 0 : SETUP_FEE_MAP[plan]
+
   // Extended onboarding fields
   const receptionist_name = body.receptionist_name ? String(body.receptionist_name).trim() : null
   const voice_id = body.voice_id ? String(body.voice_id).trim() : null
@@ -152,6 +161,9 @@ export async function POST(req: Request) {
     welcome_email_sent: false,
     onboarding_completed: false,
     referred_by: referred_by || null,
+    billing_cycle,
+    setup_fee_waived,
+    setup_fee_amount,
     // Persist all onboarding answers so the View/Edit modal Agent Setup tab
     // can render values without a second insert, and the provisioner can
     // use them when building the Vapi assistant.
