@@ -50,7 +50,10 @@ export interface AdminCommissionRow {
   rep_name: string
   business_name: string
   plan: string
-  amount: number
+  base: number
+  bonus: number
+  total: number
+  billing_cycle: 'monthly' | 'annual'
   status: 'pending' | 'approved' | 'paid' | 'revoked'
   created_at: string
   paid_at: string | null
@@ -448,11 +451,12 @@ function CommissionsPane({ commissions, onApprove, onMarkPaid, onRevoke }: {
   })
 
   function exportCsv() {
-    const headers = ['Rep', 'Business', 'Plan', 'Amount', 'Status', 'Created', 'Paid', 'Reference', 'Revoke reason']
+    const headers = ['Rep', 'Business', 'Plan', 'Billing', 'Base', 'Bonus', 'Total', 'Status', 'Created', 'Paid', 'Reference', 'Revoke reason']
     const lines = [headers.join(',')]
     for (const c of filtered) {
       lines.push([
-        csv(c.rep_name), csv(c.business_name), c.plan, c.amount.toFixed(2),
+        csv(c.rep_name), csv(c.business_name), c.plan, c.billing_cycle,
+        c.base.toFixed(2), c.bonus.toFixed(2), c.total.toFixed(2),
         c.status, c.created_at, c.paid_at ?? '',
         csv(c.payment_reference ?? ''), csv(c.revoke_reason ?? ''),
       ].join(','))
@@ -491,18 +495,37 @@ function CommissionsPane({ commissions, onApprove, onMarkPaid, onRevoke }: {
                 <th style={th}>Rep</th>
                 <th style={th}>Business</th>
                 <th style={th}>Plan</th>
-                <th style={th}>Amount</th>
+                <th style={th}>Billing</th>
+                <th style={th}>Total</th>
                 <th style={th}>Status</th>
                 <th style={th}>Created</th>
                 <th style={{ ...th, textAlign: 'right' }}>Actions</th>
               </tr></thead>
               <tbody>
-                {filtered.map(c => (
+                {filtered.map(c => {
+                  const isAnnual = c.billing_cycle === 'annual'
+                  return (
                   <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <td style={td}><strong style={{ color: 'white' }}>{c.rep_name}</strong></td>
                     <td style={{ ...td, color: '#7BAED4' }}>{c.business_name}</td>
                     <td style={{ ...td, color: '#7BAED4', textTransform: 'capitalize' }}>{c.plan}</td>
-                    <td style={{ ...td, color: '#E8622A', fontWeight: 700 }}>{formatCurrency(c.amount)}</td>
+                    <td style={td}>
+                      <span style={{
+                        display: 'inline-block', padding: '3px 9px', borderRadius: 99,
+                        background: isAnnual ? 'rgba(34,197,94,0.15)' : 'rgba(123,174,212,0.12)',
+                        color: isAnnual ? '#22c55e' : '#7BAED4',
+                        border: `1px solid ${isAnnual ? 'rgba(34,197,94,0.35)' : 'rgba(123,174,212,0.3)'}`,
+                        fontSize: 11, fontWeight: 700,
+                      }}>{isAnnual ? 'Annual' : 'Monthly'}</span>
+                    </td>
+                    <td style={td}>
+                      <div style={{ color: '#E8622A', fontWeight: 700 }}>{formatCurrency(c.total)}</div>
+                      {c.bonus > 0 && (
+                        <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>
+                          ${c.base} base <span style={{ color: '#22c55e', fontWeight: 600 }}>+ ${c.bonus.toFixed(2)} annual bonus</span>
+                        </div>
+                      )}
+                    </td>
                     <td style={td}>
                       <CommissionPill status={c.status} />
                       {c.status === 'paid' && c.payment_reference && (
@@ -525,7 +548,7 @@ function CommissionsPane({ commissions, onApprove, onMarkPaid, onRevoke }: {
                       )}
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>

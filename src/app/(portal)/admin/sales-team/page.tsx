@@ -30,7 +30,7 @@ export default async function AdminSalesTeamPage() {
       .select('id, business_name, contact_name, phone, email, industry, status, approval_status, won_plan, won_at, business_id, created_at, assigned_to, approval_notes')
       .order('created_at', { ascending: false }),
     admin.from('commissions')
-      .select('id, rep_id, lead_id, business_id, plan, commission_amount, status, created_at, paid_at, payment_reference, revoke_reason, leads(business_name)')
+      .select('id, rep_id, lead_id, business_id, plan, commission_amount, bonus_amount, status, created_at, paid_at, payment_reference, revoke_reason, leads(business_name, won_billing_cycle)')
       .order('created_at', { ascending: false }),
     admin.from('rep_contracts')
       .select('id, rep_id, document_name, status, sent_at, signed_at')
@@ -52,7 +52,8 @@ export default async function AdminSalesTeamPage() {
   const commByRep = new Map<string, number>()
   for (const c of commissions ?? []) {
     if (c.rep_id && (c.status === 'approved' || c.status === 'paid')) {
-      commByRep.set(c.rep_id, (commByRep.get(c.rep_id) ?? 0) + Number(c.commission_amount ?? 0))
+      const total = Number(c.commission_amount ?? 0) + Number(c.bonus_amount ?? 0)
+      commByRep.set(c.rep_id, (commByRep.get(c.rep_id) ?? 0) + total)
     }
   }
 
@@ -102,17 +103,22 @@ export default async function AdminSalesTeamPage() {
   }))
 
   const commissionRows: AdminCommissionRow[] = (commissions ?? []).map(c => {
-    const leadsField = c.leads as { business_name?: string } | Array<{ business_name?: string }> | null
-    const business_name = Array.isArray(leadsField)
-      ? leadsField[0]?.business_name ?? '—'
-      : leadsField?.business_name ?? '—'
+    const leadsField = c.leads as { business_name?: string; won_billing_cycle?: string } | Array<{ business_name?: string; won_billing_cycle?: string }> | null
+    const leadObj = Array.isArray(leadsField) ? leadsField[0] : leadsField
+    const business_name = leadObj?.business_name ?? '—'
+    const billing_cycle = (leadObj?.won_billing_cycle === 'annual' ? 'annual' : 'monthly') as 'monthly' | 'annual'
+    const base = Number(c.commission_amount ?? 0)
+    const bonus = Number(c.bonus_amount ?? 0)
     return {
       id: c.id,
       rep_id: c.rep_id,
       rep_name: repNameById.get(c.rep_id) ?? 'Unknown rep',
       business_name,
       plan: c.plan,
-      amount: Number(c.commission_amount ?? 0),
+      base,
+      bonus,
+      total: base + bonus,
+      billing_cycle,
       status: c.status as AdminCommissionRow['status'],
       created_at: c.created_at,
       paid_at: c.paid_at,

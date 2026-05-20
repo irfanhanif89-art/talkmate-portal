@@ -1,12 +1,9 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-
-const PLAN_PRICE_MAP: Record<string, string | undefined> = {
-  starter: process.env.STRIPE_PRICE_STARTER,
-  growth: process.env.STRIPE_PRICE_GROWTH,
-  pro: process.env.STRIPE_PRICE_PROFESSIONAL,
-}
+import {
+  getRecurringPriceId, getSetupPriceId, isBillingCycle, isPricingPlan,
+} from '@/lib/pricing'
 
 export async function POST(request: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -25,20 +22,32 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}))
-  const planKey: string = ((body as Record<string, string>).planKey ?? '').toLowerCase()
-  const priceId = PLAN_PRICE_MAP[planKey]
+  const rawPlan = String((body as Record<string, string>).planKey ?? '').toLowerCase()
+  const planKey = isPricingPlan(rawPlan) ? rawPlan : null
+  // Default to monthly if cycle missing or unknown.
+  const billingCycle = isBillingCycle((body as Record<string, string>).billingCycle)
+    ? (body as Record<string, string>).billingCycle as 'monthly' | 'annual'
+    : 'monthly'
 
-  if (!priceId) {
+  if (!planKey) {
+    return NextResponse.json({ error: 'planKey must be starter, growth, or pro' }, { status: 400 })
+  }
+
+  const recurringPriceId = getRecurringPriceId(planKey, billingCycle)
+  if (!recurringPriceId) {
+    const envVar = billingCycle === 'annual'
+      ? `STRIPE_${planKey.toUpperCase()}_ANNUAL_PRICE_ID`
+      : `STRIPE_PRICE_${planKey.toUpperCase()}`
     return NextResponse.json(
-      { error: `Price ID for plan "${planKey}" is not configured. Set STRIPE_PRICE_${planKey.toUpperCase()} in your environment.` },
-      { status: 400 }
+      { error: `Stripe price ID for ${planKey} ${billingCycle} is not configured. Set ${envVar}.` },
+      { status: 500 }
     )
   }
 
-  // Find business using admin client (bypasses RLS); user may have multiple, take the first
+  // Find business — needed for setup-fee waiver lookup.
   const { data: biz } = await admin
     .from('businesses')
-    .select('id, stripe_customer_id')
+    .select('id, stripe_customer_id, setup_fee_waived')
     .eq('owner_user_id', user.id)
     .limit(1)
     .maybeSingle()
@@ -61,13 +70,37 @@ export async function POST(request: NextRequest) {
       .eq('id', biz.id)
   }
 
+  // Persist the chosen cycle on the business row now so the dashboard
+  // can show the right state even before Stripe's webhook fires.
+  await admin
+    .from('businesses')
+    .update({ billing_cycle: billingCycle })
+    .eq('id', biz.id)
+
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
+
+  // Build line items: recurring subscription + (optional) one-off setup fee.
+  // Setup fee is skipped when the admin has flagged setup_fee_waived = true.
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+    { price: recurringPriceId, quantity: 1 },
+  ]
+
+  const setupPriceId = getSetupPriceId(planKey)
+  if (!biz.setup_fee_waived && setupPriceId) {
+    lineItems.push({ price: setupPriceId, quantity: 1 })
+  }
 
   const session = await stripe.checkout.sessions.create({
     ui_mode: 'embedded_page',
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: lineItems,
+    metadata: {
+      business_id: biz.id,
+      plan: planKey,
+      billing_cycle: billingCycle,
+      setup_fee_charged: biz.setup_fee_waived ? 'false' : (setupPriceId ? 'true' : 'unconfigured'),
+    },
     return_url: `${appUrl}/dashboard?checkout=success`,
   })
 
