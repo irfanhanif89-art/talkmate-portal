@@ -68,11 +68,7 @@ DROP POLICY IF EXISTS "sales_teams_admin_all" ON sales_teams;
 CREATE POLICY "sales_teams_admin_all" ON sales_teams
   FOR ALL USING (is_super_admin());
 
-DROP POLICY IF EXISTS "sales_teams_rep_select" ON sales_teams;
-CREATE POLICY "sales_teams_rep_select" ON sales_teams
-  FOR SELECT USING (
-    id IN (SELECT team_id FROM sales_reps WHERE user_id = auth.uid())
-  );
+-- sales_teams_rep_select moved to section 2b (needs sales_reps to exist first)
 
 INSERT INTO sales_teams (name)
 SELECT 'TalkMate Sales'
@@ -116,8 +112,16 @@ CREATE POLICY "sales_reps_admin_all" ON sales_reps
   FOR ALL USING (is_super_admin());
 
 -- =============================================
--- 2b. current_rep_id() — defined here because it references sales_reps
+-- 2b. Objects that reference sales_reps (policies + function)
 -- =============================================
+
+-- sales_teams_rep_select policy deferred here because it subqueries sales_reps
+DROP POLICY IF EXISTS "sales_teams_rep_select" ON sales_teams;
+CREATE POLICY "sales_teams_rep_select" ON sales_teams
+  FOR SELECT USING (
+    id IN (SELECT team_id FROM sales_reps WHERE user_id = auth.uid())
+  );
+
 CREATE OR REPLACE FUNCTION current_rep_id()
 RETURNS UUID
 LANGUAGE sql
