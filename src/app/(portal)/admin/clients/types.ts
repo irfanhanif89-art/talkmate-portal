@@ -52,6 +52,10 @@ export interface AdminBusiness {
   // when every auto + manual checklist item passes.
   golive_verified?: boolean | null
   golive_verified_at?: string | null
+  // Session 22 — billing cycle + setup fee tracking
+  billing_cycle?: 'monthly' | 'annual' | null
+  setup_fee_waived?: boolean | null
+  setup_fee_amount?: number | null
 }
 
 export interface PartnerOption {

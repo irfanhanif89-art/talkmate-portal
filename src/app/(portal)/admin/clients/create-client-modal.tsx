@@ -113,6 +113,8 @@ export default function CreateClientModal({
   // ── Section 2: Plan ──────────────────────────────────────────────────────
   const [plan, setPlan] = useState<'starter' | 'growth' | 'pro'>('growth')
   const [startAsTrial, setStartAsTrial] = useState(false)
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [setupFeeWaived, setSetupFeeWaived] = useState(false)
 
   // ── Section 3: Services summary ──────────────────────────────────────────
   const [servicesSummary, setServicesSummary] = useState('')
@@ -233,6 +235,8 @@ export default function CreateClientModal({
           website: website || undefined,
           abn: abn || undefined,
           plan,
+          billing_cycle: billingCycle,
+          setup_fee_waived: setupFeeWaived,
           agent_answer_phrase: answerPhrase,
           services_summary: servicesSummary,
           after_hours_instruction: afterHours,
@@ -497,6 +501,72 @@ export default function CreateClientModal({
             </button>
           )
         })}
+      </div>
+
+      {/* Billing setup — cycle + setup fee waiver */}
+      <div style={{
+        background: '#071829', border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 12, padding: 16, marginBottom: 22,
+      }}>
+        <p style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0, marginBottom: 10 }}>
+          Billing setup
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: 'white', fontWeight: 600 }}>Billing cycle</span>
+          <div style={{ display: 'inline-flex', gap: 4, padding: 3, borderRadius: 99, background: '#061322', border: '1px solid rgba(255,255,255,0.08)' }}>
+            {(['monthly', 'annual'] as const).map(c => {
+              const active = billingCycle === c
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setBillingCycle(c)}
+                  style={{
+                    padding: '7px 14px', borderRadius: 99, border: 'none', cursor: 'pointer',
+                    background: active ? '#E8622A' : 'transparent',
+                    color: active ? 'white' : '#7BAED4',
+                    fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 700,
+                    textTransform: 'capitalize',
+                  }}
+                >{c}</button>
+              )
+            })}
+          </div>
+          {billingCycle === 'annual' && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
+              background: 'rgba(34,197,94,0.12)', color: '#22C55E',
+              border: '1px solid rgba(34,197,94,0.35)',
+            }}>2 months free</span>
+          )}
+        </div>
+
+        <div style={{ fontSize: 13, color: 'white', fontWeight: 600, marginBottom: 6 }}>
+          Setup fee: <span style={{ color: '#E8622A', fontWeight: 700 }}>
+            ${plan === 'starter' ? 299 : plan === 'growth' ? 349 : 399}
+          </span>
+        </div>
+
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: 10, borderRadius: 9, cursor: 'pointer',
+          background: setupFeeWaived ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.03)',
+          border: `1px solid ${setupFeeWaived ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.06)'}`,
+        }}>
+          <input
+            type="checkbox"
+            checked={setupFeeWaived}
+            onChange={e => setSetupFeeWaived(e.target.checked)}
+            style={{ marginTop: 3, width: 14, height: 14, accentColor: '#22C55E' }}
+          />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'white' }}>Waive setup fee for this client</div>
+            <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>
+              Admin only. Sales reps cannot waive setup fees. No setup line item is added to Stripe checkout.
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* ── SECTION 3: Services summary ─────────────────────────────────── */}
