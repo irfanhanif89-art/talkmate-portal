@@ -6,6 +6,146 @@
 
 ---
 
+## SESSION 23 — Contractor Agreement Flow (2026-05-20)
+
+End-to-end contractor onboarding lifecycle: admin invites a sales contractor,
+the contractor signs the agreement electronically via a public link, a populated
+PDF is generated server-side, stored in a private Supabase Storage bucket, and
+emailed back through Make.com. Admin sees the contractor in a new
+`/admin/contractors` tab, with full commission tracking, script acknowledgement
+history, and termination flow. Sales scripts are version-controlled in a new
+`/admin/sales-scripts` tab with single-active enforcement.
+
+### Branch
+Pushed to `feature/session-23-contractor-flow` (branched from `dev`). Vercel
+will auto-build a preview on push.
+
+### What ships
+
+- **Migration 038** (`supabase/migrations/038_contractor_agreement_flow.sql`):
+  5 new tables (`contractors`, `contractor_agreements`, `sales_scripts`,
+  `script_acknowledgements`, `contractor_commissions`) plus indexes,
+  `update_updated_at_column` re-creation (idempotent), and the
+  `enforce_single_active_script` trigger so only one script can ever be active.
+- **PDF generator** (`src/lib/generate-contractor-pdf.ts`): uses `pdf-lib` to
+  load `/public/templates/contractor-agreement-template.pdf` if present, or
+  fall back to a self-contained inline agreement. Always appends a signature
+  page with the contractor's name, signed-at timestamp, IP, ABN, and script
+  acknowledgement record.
+- **Commission rate table** (`src/lib/contractor-commission.ts`): hardcoded
+  server-side so commission amounts are never trusted from client input.
+- **Webhook helpers** (`src/lib/contractor-webhooks.ts`): best-effort POSTs to
+  the two Make.com scenarios - missing env vars or 5xx responses log a warning
+  but never block the API response.
+- **Public onboarding** (`/contractor-onboarding/[token]`): a 5-step flow
+  (welcome -> review agreement with scroll-to-bottom gate -> details -> sign
+  with required checkboxes -> confirmation). Sits at the app root so it is
+  outside portal auth and accessible without login.
+- **Public onboarding APIs** (`/api/contractor-onboarding/[token]/*`): verify
+  token, save details, sign (generates + uploads PDF + creates agreement and
+  acknowledgement rows).
+- **Admin Contractors UI** (`/admin/contractors`): list with status badges and
+  earned-commission rollup; detail page with profile, agreement status, script
+  acknowledgements, commissions sub-table with status transitions, and a
+  Danger Zone terminate flow.
+- **Admin Sales Scripts UI** (`/admin/sales-scripts`): list with active/draft/
+  superseded badges, editor modal for new versions, viewer modal, activate
+  confirmation that warns the previous active version will be deactivated.
+- **Admin APIs** (`/api/contractors/*`, `/api/sales-scripts/*`,
+  `/api/contractor-commissions/*`): all gated by `requireAdmin()` and using
+  the service role key (no RLS passthrough for contractor data, since the
+  contractors themselves never authenticate against the portal).
+
+### Manual steps before the flow works end-to-end
+
+1. **Run migration 038** on preview (`rgifivtzmjvanzqwgadq`), verify the 5
+   tables and 4 triggers, then run it on production.
+2. **Create Supabase Storage bucket** named `contractor-agreements` on both
+   preview and production. Set it to **private** (not public) - the API
+   creates 365-day signed URLs for delivery.
+3. **Upload the PDF template** to `/public/templates/contractor-agreement-template.pdf`.
+   Source DOCX is `TalkMate_Sales_Contractor_Agreement_v2.docx`. Irfan to
+   convert and commit. Until this lands the flow still works (fallback inline
+   PDF generation).
+4. **Build the two Make.com scenarios** (Donna):
+   - **Scenario A: Contractor Invite Email** - webhook trigger, Resend
+     branded email with `invite_url` CTA, link expires in 7 days.
+   - **Scenario B: Contractor Signed PDF Delivery** - webhook trigger, HTTP
+     GET to download the signed PDF, Resend to contractor with PDF attached,
+     Resend copy to `irfanhanif89@gmail.com` with `[NEW CONTRACTOR SIGNED]`
+     subject prefix.
+5. **Add Vercel env vars** once Make.com URLs exist:
+   - `CONTRACTOR_AGREEMENT_WEBHOOK_URL` (Scenario A)
+   - `CONTRACTOR_SIGNED_PDF_WEBHOOK_URL` (Scenario B)
+   - `NEXT_PUBLIC_APP_URL` should already be `https://app.talkmate.com.au` -
+     verify, since it powers the invite link generation.
+
+### Decisions made during the build
+
+- **Admin route placement.** The brief specified Sales HQ
+  (`/sales-hq/contractors`), but the existing portal puts admin tooling
+  under `/admin/*` (`/admin/sales-team`, `/admin/clients`, etc.). To stay
+  consistent with the live IA, the contractor and scripts admin UIs live at
+  `/admin/contractors` and `/admin/sales-scripts`. Both are linked from the
+  admin landing nav.
+- **PDF template fallback.** If the template PDF is missing, the build does
+  not fail and the signing flow still produces a meaningful signed PDF
+  (self-contained inline agreement plus signature page). Once the branded
+  template is uploaded, future signings will use it transparently.
+- **Status lifecycle.** Contractors go `invited` -> `agreement_sent` on
+  invite -> `active` on sign. `signed` is reserved as an intermediate value
+  but the sign endpoint jumps straight to `active` since the PDF is already
+  generated and stored.
+- **Script editing.** Activated scripts cannot be edited via PATCH - admins
+  must create a new version. This preserves the audit trail of what
+  contractors actually acknowledged.
+- **Commission amounts.** Hardcoded server-side in `contractor-commission.ts`.
+  The Add Commission modal previews the amount but the server always recomputes
+  from plan + billing cycle so a tampered request body cannot inflate payouts.
+- **Storage URL strategy.** The DB stores the storage *path*, not a URL.
+  Signed URLs are minted on demand: 365 days for the Scenario B email payload,
+  24 hours for the admin "View signed PDF" button.
+
+### Files added
+
+```
+supabase/migrations/038_contractor_agreement_flow.sql
+src/lib/generate-contractor-pdf.ts
+src/lib/contractor-commission.ts
+src/lib/contractor-webhooks.ts
+src/app/contractor-onboarding/[token]/page.tsx
+src/app/contractor-onboarding/[token]/onboarding-client.tsx
+src/app/api/contractor-onboarding/[token]/route.ts
+src/app/api/contractor-onboarding/[token]/save-details/route.ts
+src/app/api/contractor-onboarding/[token]/sign/route.ts
+src/app/api/contractors/route.ts
+src/app/api/contractors/invite/route.ts
+src/app/api/contractors/[id]/route.ts
+src/app/api/contractors/[id]/terminate/route.ts
+src/app/api/sales-scripts/route.ts
+src/app/api/sales-scripts/active/route.ts
+src/app/api/sales-scripts/[id]/route.ts
+src/app/api/sales-scripts/[id]/activate/route.ts
+src/app/api/sales-scripts/[id]/acknowledge/route.ts
+src/app/api/contractor-commissions/route.ts
+src/app/api/contractor-commissions/[id]/clear/route.ts
+src/app/api/contractor-commissions/[id]/clawback/route.ts
+src/app/api/contractor-commissions/[id]/paid/route.ts
+src/app/(portal)/admin/contractors/page.tsx
+src/app/(portal)/admin/contractors/contractors-view.tsx
+src/app/(portal)/admin/contractors/invite-contractor-modal.tsx
+src/app/(portal)/admin/contractors/[id]/page.tsx
+src/app/(portal)/admin/contractors/[id]/contractor-detail-view.tsx
+src/app/(portal)/admin/sales-scripts/page.tsx
+src/app/(portal)/admin/sales-scripts/scripts-view.tsx
+```
+
+### npm dependency
+
+`pdf-lib@^1.17.1` added to `package.json`.
+
+---
+
 ## SESSION 21 — Sales HQ (2026-05-20)
 
 Full sales rep portal at `/sales/*` with admin management at `/admin/sales-team`.
