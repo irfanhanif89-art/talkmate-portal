@@ -50,18 +50,7 @@ AS $$
   );
 $$;
 
-CREATE OR REPLACE FUNCTION current_rep_id()
-RETURNS UUID
-LANGUAGE sql
-SECURITY DEFINER
-STABLE
-SET search_path = public
-AS $$
-  SELECT id FROM sales_reps
-   WHERE user_id = auth.uid()
-     AND status = 'active'
-   LIMIT 1;
-$$;
+-- current_rep_id() defined after sales_reps table (section 2b below)
 
 -- =============================================
 -- 1. Teams
@@ -125,6 +114,22 @@ CREATE POLICY "sales_reps_self_update" ON sales_reps
 DROP POLICY IF EXISTS "sales_reps_admin_all" ON sales_reps;
 CREATE POLICY "sales_reps_admin_all" ON sales_reps
   FOR ALL USING (is_super_admin());
+
+-- =============================================
+-- 2b. current_rep_id() — defined here because it references sales_reps
+-- =============================================
+CREATE OR REPLACE FUNCTION current_rep_id()
+RETURNS UUID
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT id FROM sales_reps
+   WHERE user_id = auth.uid()
+     AND status = 'active'
+   LIMIT 1;
+$$;
 
 -- =============================================
 -- 3. Leads
