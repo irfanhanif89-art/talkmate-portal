@@ -279,24 +279,32 @@ async function handleEndOfCall(
 
   // Upsert keyed on vapi_call_id. The .select() returns the row id so
   // we can FK from the secondary tables (jobs/appointments/orders).
+
+  // Build the upsert payload. Only include started_at if we actually have it —
+  // Vapi does not send startedAt in end-of-call-report webhooks, and omitting it
+  // here preserves the value set by the earlier call.started event.
+  const upsertPayload: Record<string, unknown> = {
+    vapi_call_id: vapiCallId,
+    business_id: business.id,
+    ended_at: endedAt,
+    duration_seconds: durationSeconds,
+    ended_reason: endedReason,
+    transcript,
+    summary,
+    recording_url: recordingUrl || null,
+    outcome,
+    transferred,
+    caller_number: phone,
+    caller_name: callerName,
+  }
+  if (startedAt) {
+    upsertPayload.started_at = startedAt
+  }
+
   const { data: callRow, error: callErr } = await supabase
     .from('calls')
-    .upsert({
-      vapi_call_id: vapiCallId,
-      business_id: business.id,
-      started_at: startedAt,
-      ended_at: endedAt,
-      duration_seconds: durationSeconds,
-      ended_reason: endedReason,
-      transcript,
-      summary,
-      recording_url: recordingUrl || null,
-      outcome,
-      transferred,
-      caller_number: phone,
-      caller_name: callerName,
-    }, { onConflict: 'vapi_call_id' })
-    .select('id')
+    .upsert(upsertPayload, { onConflict: 'vapi_call_id' })
+    .select('id, started_at')
     .single()
 
   if (callErr || !callRow) {
@@ -304,6 +312,18 @@ async function handleEndOfCall(
     return
   }
   const callRowId = callRow.id as string
+
+  // If Vapi didn't send startedAt in the webhook, read back the DB's started_at
+  // (set by the earlier call.started event) and compute the real duration.
+  if (!startedAt && callRow.started_at) {
+    const realDuration = computeDuration(callRow.started_at as string, endedAt)
+    if (realDuration > 0) {
+      await supabase
+        .from('calls')
+        .update({ duration_seconds: realDuration })
+        .eq('id', callRowId)
+    }
+  }
 
   // Contacts — upsert on (client_id, phone). Increment call_count and
   // refresh last_seen. The contacts table uses `client_id` (migration
