@@ -143,6 +143,7 @@ export default async function AdminPage() {
         {[
           { href: '/admin/clients', label: 'Clients', badge: pendingClientCount },
           { href: '/admin/clients/overview', label: 'Client Overview' },
+          { href: '/admin/sales-team', label: 'Sales Team' },
           { href: '/admin/partners', label: 'Partners' },
           { href: '/admin/white-label', label: 'White Label' },
           { href: '/admin/make-setup', label: 'Make.com Setup' },

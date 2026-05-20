@@ -93,10 +93,13 @@ async function ensureMonthlyReset(
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const last = resetAt ? new Date(resetAt) : new Date(0)
   if (last.getTime() < startOfMonth.getTime()) {
-    await supabase
+    const { error } = await supabase
       .from('businesses')
       .update({ sms_used_this_month: 0, sms_reset_at: startOfMonth.toISOString() })
       .eq('id', clientId)
+    if (error) {
+      console.error('[sms] ensureMonthlyReset update failed', { clientId, error: error.message })
+    }
   }
 }
 
@@ -129,31 +132,39 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
     const plan = (biz?.plan as string | null) ?? 'starter'
     const limit = PLAN_LIMITS[plan] ?? 0
     if (limit === 0) {
-      await supabase.from('sms_log').insert({
+      const { error: logErr } = await supabase.from('sms_log').insert({
         client_id: opts.clientId, to_phone: to, message: opts.message,
         status: 'rejected', sms_type: opts.smsType,
         booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
         error_message: 'SMS not available on this plan',
       })
+      if (logErr) console.error('[sms] sms_log insert (rejected, plan) failed', { clientId: opts.clientId, error: logErr.message })
       return { success: false, error: 'SMS not available on Starter plan', reason: 'plan_starter' }
     }
 
     await ensureMonthlyReset(supabase, opts.clientId, (biz?.sms_reset_at as string | null) ?? null)
 
-    // Re-read counter post-reset so we don't double-count
-    const { data: bizPost } = await supabase
+    // Re-read counter post-reset so we don't double-count. Defensive
+    // null coalesce: migration 031's default is 0 but pre-031 rows or a
+    // bad UPDATE could still leave it null.
+    const { data: bizPost, error: bizPostErr } = await supabase
       .from('businesses')
       .select('sms_used_this_month')
       .eq('id', opts.clientId)
       .maybeSingle()
-    used = bizPost?.sms_used_this_month ?? 0
+    if (bizPostErr) {
+      console.error('[sms] sms_used_this_month re-read failed', { clientId: opts.clientId, error: bizPostErr.message })
+    }
+    const rawUsed = (bizPost as { sms_used_this_month?: number | null } | null)?.sms_used_this_month
+    used = typeof rawUsed === 'number' ? rawUsed : 0
     if (used >= limit) {
-      await supabase.from('sms_log').insert({
+      const { error: logErr } = await supabase.from('sms_log').insert({
         client_id: opts.clientId, to_phone: to, message: opts.message,
         status: 'rejected', sms_type: opts.smsType,
         booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
         error_message: `Monthly SMS limit reached (${limit})`,
       })
+      if (logErr) console.error('[sms] sms_log insert (rejected, quota) failed', { clientId: opts.clientId, error: logErr.message })
       return { success: false, error: `Monthly SMS limit reached (${limit})`, reason: 'plan_quota' }
     }
   }
@@ -187,31 +198,48 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   }
 
   if (twilioError) {
-    await supabase.from('sms_log').insert({
+    const { error: logErr } = await supabase.from('sms_log').insert({
       client_id: opts.clientId, to_phone: to, message: opts.message,
       status: 'failed', sms_type: opts.smsType,
       booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
       error_message: twilioError,
     })
+    if (logErr) console.error('[sms] sms_log insert (failed) failed', { clientId: opts.clientId, error: logErr.message })
     return { success: false, error: twilioError, reason: 'twilio_error' }
   }
 
-  await supabase.from('sms_log').insert({
+  const { error: sentLogErr } = await supabase.from('sms_log').insert({
     client_id: opts.clientId, to_phone: to, message: opts.message,
     twilio_sid: sid ?? null, status: 'sent', sms_type: opts.smsType,
     booking_id: opts.bookingId ?? null, waitlist_id: opts.waitlistId ?? null,
   })
+  if (sentLogErr) {
+    console.error('[sms] sms_log insert (sent) failed', {
+      clientId: opts.clientId, smsType: opts.smsType, sid, error: sentLogErr.message,
+    })
+  }
 
-  // Increment counter. We read-then-update rather than RPC to keep the
-  // migration footprint small; the race here is acceptable for a single-
-  // owner SaaS where quotas are loose bounds, not hard contracts.
+  // Increment counter via an atomic Postgres RPC. The earlier read-then-
+  // update pattern silently lost increments (Session 20 hotfix: GM Towing's
+  // 'other' SMS landed in sms_log but the counter stayed at 0). The RPC
+  // does COALESCE(sms_used_this_month, 0) + 1 in a single statement, so
+  // null source rows self-heal and there's no race window.
   // Bypass types (intelligence alerts, recovery SMS) skip the increment
   // so they don't eat into the client's monthly allowance.
   if (!bypassPlanLimit) {
-    await supabase
-      .from('businesses')
-      .update({ sms_used_this_month: used + 1 })
-      .eq('id', opts.clientId)
+    const { data: newUsed, error: rpcErr } = await supabase
+      .rpc('increment_sms_used', { p_client_id: opts.clientId })
+    if (rpcErr) {
+      console.error('[sms] increment_sms_used RPC failed', {
+        clientId: opts.clientId, smsType: opts.smsType, sid, error: rpcErr.message,
+      })
+    } else if (newUsed == null) {
+      // RPC returned NULL — business row didn't match. Logged so we can
+      // chase down the orphan; the SMS still succeeded.
+      console.warn('[sms] increment_sms_used returned null', {
+        clientId: opts.clientId, smsType: opts.smsType, sid,
+      })
+    }
   }
 
   return { success: true, sid }

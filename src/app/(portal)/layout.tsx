@@ -8,6 +8,7 @@ import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
 import TrialBanner, { TrialExpiredOverlay } from '@/components/portal/trial-banner'
 import PendingPaymentBanner from '@/components/portal/pending-payment-banner'
+import AdminTopbar from '@/components/admin/admin-topbar'
 
 const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 
@@ -17,10 +18,12 @@ export default async function PortalLayout({ children }: { children: React.React
   if (!user) redirect('/login')
 
   // Super-admin bypass — hello@talkmate.com.au has no business record.
-  // Render a minimal shell so /admin pages work without a business context.
+  // Render a minimal shell with a topbar (logo + logout) so /admin
+  // pages have visible chrome without a full sidebar.
   if (user.email && ADMIN_EMAILS.includes(user.email)) {
     return (
       <div className="min-h-screen bg-background text-foreground">
+        <AdminTopbar userEmail={user.email} />
         {children}
       </div>
     )

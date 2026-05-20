@@ -106,12 +106,14 @@ export async function middleware(request: NextRequest) {
     '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
     '/settings', '/billing', '/admin', '/onboarding', '/contacts',
     '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
+    '/sales',
   ]
 
   const authOnlyPaths = ['/subscribe', '/accept-terms']
   const guestOnlyPaths = ['/login', '/register', '/verify-email']
 
   const isAdminApprove = path.startsWith('/admin/approve')
+  const isSalesPath = path.startsWith('/sales')
   const isProtected = protectedPaths.some(p => path.startsWith(p))
   const isAuthOnly = authOnlyPaths.some(p => path.startsWith(p))
   const isGuestOnly = guestOnlyPaths.includes(path)
@@ -130,14 +132,40 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isGuestOnly) {
-    // Always redirect to /dashboard - no async DB calls, no loop risk.
-    // Dashboard and protected routes handle subscription + TOS gates from there.
+    // Sales reps land on /sales/dashboard; everyone else on /dashboard.
+    // Admins were handled earlier. We do the lookup here (not at every
+    // request) because guest-only paths are hit infrequently.
+    const repRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/sales_reps?user_id=eq.${user.id}&select=id,status&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    ).catch(() => null)
+    const repData = (await repRes?.json().catch(() => [])) as { status: string }[]
+    if (Array.isArray(repData) && repData[0]?.status === 'active') {
+      return redirect('/sales/dashboard')
+    }
     return redirect('/dashboard')
   }
 
   // /admin paths bypass subscription check (admin/approve already did this)
   // /admin/view-as is a transitional signout page - always allow through
   if (path.startsWith('/admin')) {
+    return supabaseResponse
+  }
+
+  // /sales paths — confirm the user has an active sales_reps row.
+  // Admin email allowlist already short-circuited above (admins go to
+  // /admin), so reaching here means a non-admin user. The page-level
+  // SalesRepContext re-checks rep status + policy acknowledgement.
+  if (isSalesPath && user) {
+    const repRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/sales_reps?user_id=eq.${user.id}&select=id,status&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    ).catch(() => null)
+    const repData = (await repRes?.json().catch(() => [])) as { id: string; status: string }[]
+    const activeRep = Array.isArray(repData) && repData[0]?.status === 'active'
+    if (!activeRep) {
+      return redirect('/dashboard')
+    }
     return supabaseResponse
   }
 
