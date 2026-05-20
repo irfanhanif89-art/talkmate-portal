@@ -6,6 +6,80 @@
 
 ---
 
+## SESSION 22B — Admin Quality Alerts (2026-05-20)
+
+Admin (Irfan) now gets a Telegram ping the moment a call is scored as
+worrying, and a daily digest every morning. Closes the internal quality
+loop without exposing anything to clients.
+
+### What ships
+
+- **`src/lib/notifications.ts`** — new `notifyAdminOfQualityIssue()`.
+  Fires a formatted Telegram message via `TELEGRAM_BOT_TOKEN` to
+  `TELEGRAM_ADMIN_CHAT_ID`. Markdown-formatted with score emoji, flag
+  chips, caller, summary, and a link to the admin calls view for that
+  client. Wrapped in try/catch — never throws. Silent no-op when
+  Telegram env vars are missing.
+- **`src/lib/score-call-async.ts`** — wired in immediately after the
+  intelligence persistence step. Trigger logic:
+  - Fire when `duration >= 10s` AND (`score < 5` OR a critical flag is
+    present OR `sms_verification.status === 'mismatch'`)
+  - Suppress when the only flags are noisy ones (`short_call`,
+    `no_resolution`)
+  - Suppress when duration is under 10 seconds (silent caller / test
+    call territory — Session 22 hotfix already handles those)
+  - Critical flag set: `agent_error`, `sms_mismatch`, `missed_lead`,
+    `dropped_call`, `wrong_info`
+- **`src/app/api/cron/daily-quality-digest/route.ts`** — new endpoint.
+  Pulls yesterday's scored calls (AEST day boundary), rolls them up by
+  client, and posts one of three digest messages:
+  - Empty day: "All quiet yesterday — no calls scored."
+  - All scored 7+: "All clear — N calls scored, all above 7/10."
+  - Otherwise: count, average, flagged count, per-client breakdown,
+    lowest-scoring call with a portal link.
+- **`vercel.json`** — `daily-quality-digest` registered at
+  `0 22 * * *` (22:00 UTC = 08:00 AEST in Brisbane, no DST). Note:
+  the brief asked for `0 8 * * *` but Vercel crons run in UTC, which
+  would fire at 6pm AEST. Used `0 22 * * *` for the intended morning
+  delivery.
+
+### Required env vars (Vercel — all three environments)
+
+| Var                       | Where               |
+|---------------------------|---------------------|
+| `TELEGRAM_BOT_TOKEN`      | Production, Preview, Development |
+| `TELEGRAM_ADMIN_CHAT_ID`  | Production, Preview, Development |
+| `CRON_SECRET`             | Already set — used by all cron routes |
+
+If either Telegram var is missing the alerts silently no-op (no error
+in logs, no broken scoring).
+
+### Behaviour summary
+
+- Quality alerts fire within ~60 seconds of a flagged call ending
+  (the Vapi webhook kicks off scoring; once the Anthropic call
+  returns, persistence + notify happen synchronously inside
+  `scoreCallAsync`).
+- Daily digest fires at 08:00 AEST. Confirm the cron appears in the
+  Vercel dashboard after first deploy.
+- Threshold for alerts: `score < 5 OR critical flag OR sms_mismatch`
+  AND `duration >= 10s` AND not noisy-flags-only.
+- Brief referenced a portal link at `/admin/clients/{id}/calls` but
+  the actual route is `/admin/clients/{id}/portal/calls`. Both the
+  per-call alert and the daily digest use the real path.
+
+### Testing
+
+1. Trigger a low-scoring call (or use the new
+   `POST /api/admin/rescore-calls` endpoint with a low `max_score`).
+2. Wait up to 10 minutes for the cron to rescore (immediate if the
+   Vapi webhook scores it on first finish).
+3. Confirm a Telegram message arrives at `TELEGRAM_ADMIN_CHAT_ID`.
+4. Click the "Review transcript" link — should land on
+   `/admin/clients/{businessId}/portal/calls`.
+
+---
+
 ## HOTFIX (2026-05-20) — Call Intelligence scoring false-negatives
 
 The Anthropic supervisor model was flagging the standard GM Towing
