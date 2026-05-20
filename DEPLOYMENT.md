@@ -6,6 +6,56 @@
 
 ---
 
+## HOTFIX (2026-05-20) — Call Intelligence scoring false-negatives
+
+The Anthropic supervisor model was flagging the standard GM Towing
+greeting ("GM Towing, how can I help? Just so you know, this call may
+be recorded.") as a wrong-response, dragging legitimate calls down to
+2–5/10 even when the agent behaved correctly. Same problem on silent
+caller hang-ups and short calls where the caller dropped immediately.
+
+### What changed
+
+- **`src/lib/call-intelligence.ts`** — SYSTEM_PROMPT extended with two
+  new calibration sections inserted before the existing rules:
+  1. *KNOWN CORRECT BEHAVIOURS* — the greeting line, silent-caller
+     handling, recording notice placement, and the mandatory account
+     question are now explicitly listed as correct.
+  2. *SMS VERIFICATION CALIBRATION* — under-15-second calls with no
+     booking shouldn't be flagged as `sms_mismatch`; recovery SMS on
+     short calls is correct behaviour.
+- **`src/app/api/cron/score-pending-calls/route.ts`** — now also
+  resets up to 5 false-negative candidates per tick (status in
+  resolved/review/critical, score ≤ 4, scored within last 7 days,
+  exactly one flag of type `short_call`) back to `intelligence_status
+  = 'pending'` so the existing sweep rescores them with the new
+  prompt. Response now includes `{ false_neg_reset: N }`.
+- **`src/app/api/admin/rescore-calls/route.ts`** — new one-shot
+  endpoint for ad-hoc rescores. Admin only (`requireAdmin`). Body:
+  `{ days_back?: number, max_score?: number }` (defaults 7 and 4,
+  bounds 1–90 and 1–10). Hard cap of 500 rows per call. Returns
+  `{ reset_count, days_back, max_score }`. Calls reset go back through
+  the regular cron — next tick is at most 10 minutes away
+  (`vercel.json`).
+
+Note: the brief refers to `intelligence_status = 'scored'`, but the
+actual column stores `'pending' | 'error' | 'resolved' | 'review' |
+'critical'`. "Scored" in this codebase means any of resolved/review/
+critical; both new code paths use that interpretation.
+
+### Manual step Donna must take
+
+The GM Towing Vapi system prompt needs a small refresh to smooth the
+account-question flow. That's a Vapi API change, not a portal code
+change — see the separate Vapi brief.
+
+### Build status
+
+`npm run build` passes with zero TypeScript errors on
+`feature/session-22-pricing`.
+
+---
+
 ## SESSION 22 — Pricing Overhaul (2026-05-20)
 
 Adds setup fees, annual billing, and a 2.5% annual commission bonus across the
