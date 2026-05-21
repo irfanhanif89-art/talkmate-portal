@@ -80,6 +80,12 @@ export async function notifyContractSigned(opts: {
   await sendTelegram(tgMessage)
 }
 
+// Generic admin alert for ad-hoc internal failures (e.g. rep portal
+// provisioning fallout) — fire-and-forget, never throws.
+export async function notifyAdminAlert(message: string) {
+  await sendTelegram(message)
+}
+
 // =============================================
 // Email templates
 // =============================================

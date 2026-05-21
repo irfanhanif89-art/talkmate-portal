@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { generateContractorAgreementPdf, formatAgreementDate } from '@/lib/generate-contractor-pdf'
 import { postSignedPdfDelivery } from '@/lib/contractor-webhooks'
+import { notifyAdminAlert } from '@/lib/sales-notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -161,6 +162,99 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
         },
         { onConflict: 'contractor_id,script_id' }
       )
+  }
+
+  // Auto-provision sales rep portal access (Session 25). Best-effort —
+  // failures are logged + alerted but never block the signing response.
+  // The contractor is already marked active above; this only adds portal
+  // access on top.
+  const fullName = `${contractor.first_name} ${contractor.last_name}`.trim()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
+  try {
+    let authUserId: string | null = null
+
+    const inviteRes = await admin.auth.admin.inviteUserByEmail(contractor.email, {
+      data: { full_name: fullName, role: 'sales_rep' },
+      redirectTo: `${appUrl.replace(/\/$/, '')}/sales/dashboard`,
+    })
+
+    if (inviteRes.error) {
+      // Most common case: auth user already exists (e.g. legacy manual
+      // rep with same email). Look them up so we can still link.
+      const list = await admin.auth.admin.listUsers()
+      const existing = list.data?.users?.find(
+        u => (u.email ?? '').toLowerCase() === contractor.email.toLowerCase(),
+      )
+      if (existing) {
+        authUserId = existing.id
+      } else {
+        throw new Error(`inviteUserByEmail failed: ${inviteRes.error.message}`)
+      }
+    } else {
+      authUserId = inviteRes.data.user?.id ?? null
+    }
+
+    if (!authUserId) {
+      throw new Error('No auth user id returned from invite')
+    }
+
+    // Upsert sales_reps row keyed on user_id (UNIQUE constraint).
+    // If a legacy row already exists for this user, link the contractor
+    // to it instead of inserting a duplicate.
+    const { data: existingRep } = await admin
+      .from('sales_reps')
+      .select('id')
+      .eq('user_id', authUserId)
+      .maybeSingle()
+
+    let repId: string | null = existingRep?.id ?? null
+
+    if (!repId) {
+      const { data: insertedRep, error: repError } = await admin
+        .from('sales_reps')
+        .insert({
+          user_id: authUserId,
+          full_name: fullName,
+          email: contractor.email,
+          status: 'active',
+          contractor_id: contractor.id,
+          onboarded_via: 'contractor_flow',
+          is_legacy: false,
+          contract_signed_at: signed_at_iso,
+        })
+        .select('id')
+        .single()
+      if (repError || !insertedRep) {
+        throw new Error(`sales_reps insert failed: ${repError?.message ?? 'no row'}`)
+      }
+      repId = insertedRep.id
+    } else {
+      // Link the existing rep row to this contractor.
+      await admin
+        .from('sales_reps')
+        .update({
+          contractor_id: contractor.id,
+          onboarded_via: 'contractor_flow',
+          contract_signed_at: signed_at_iso,
+        })
+        .eq('id', repId)
+    }
+
+    await admin
+      .from('contractors')
+      .update({
+        sales_rep_id: repId,
+        portal_invited_at: new Date().toISOString(),
+        portal_access_email: contractor.email,
+      })
+      .eq('id', contractor.id)
+  } catch (provisionErr) {
+    const msg = provisionErr instanceof Error ? provisionErr.message : String(provisionErr)
+    console.error('[contractor-sign] rep portal provisioning failed', msg)
+    notifyAdminAlert(
+      `⚠️ Rep portal provisioning failed for ${fullName} (${contractor.email}). ` +
+      `Contractor is active but needs manual portal access. Check logs. (${msg})`,
+    ).catch(() => {})
   }
 
   // Fire the signed-PDF webhook (best-effort).
