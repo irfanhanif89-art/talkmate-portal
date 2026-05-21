@@ -1,16 +1,28 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/admin-auth'
+import { computeAutoChecks } from '@/lib/golive-checks'
+import { sendAdminTelegram } from '@/lib/notifications'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 // TELEGRAM_ADMIN_CHAT_ID must be set in Vercel env vars. No source fallback.
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID
 
+// Session 28 (H8): required manual checks before an agent can be
+// approved without an override. Pulled from MANUAL_CHECK_KEYS in
+// /lib/golive-checks.ts — keep this list in sync with that file.
+const REQUIRED_MANUAL_CHECKS = [
+  'manual_vapi_functions_registered',
+  'manual_test_call_made',
+  'manual_sms_delivered_to_owner',
+] as const
+
 export async function POST(req: NextRequest) {
-  // Must be admin - check auth header or admin session
-  const authHeader = req.headers.get('x-admin-key')
-  if (!process.env.ADMIN_SECRET_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (authHeader !== process.env.ADMIN_SECRET_KEY) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Session 28 (H8): switch from ADMIN_SECRET_KEY header to the
+  // standard admin gate used by every other /api/admin/* route.
+  const auth = await requireAdmin()
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   if (!RESEND_API_KEY || !TELEGRAM_BOT_TOKEN) {
     console.error('[approve-agent] Missing RESEND_API_KEY or TELEGRAM_BOT_TOKEN env vars')
@@ -30,6 +42,42 @@ export async function POST(req: NextRequest) {
 
   if (!business) return NextResponse.json({ error: 'Business not found' }, { status: 404 })
   if (!business.vapi_agent_id) return NextResponse.json({ error: 'No agent on this business' }, { status: 400 })
+
+  // Session 28 (H8) — gate on the go-live checklist.
+  // Run automated checks server-side. Then read the manual checklist
+  // row and require the three operational items (functions
+  // registered, test call made, owner SMS verified) before approval.
+  // ?override=true short-circuits the gate but fires a Telegram alert
+  // so we know an emergency approval went out.
+  const { result: autoChecks } = await computeAutoChecks(supabase, businessId)
+  const { data: checklist } = await supabase
+    .from('client_golive_checklist')
+    .select('*')
+    .eq('business_id', businessId)
+    .maybeSingle()
+
+  const failingChecks: string[] = []
+  for (const [key, value] of Object.entries(autoChecks)) {
+    if (value === false) failingChecks.push(key)
+  }
+  for (const check of REQUIRED_MANUAL_CHECKS) {
+    if (!checklist?.[check]) failingChecks.push(check)
+  }
+
+  const override = req.nextUrl.searchParams.get('override') === 'true'
+  if (failingChecks.length > 0 && !override) {
+    return NextResponse.json({
+      error: 'Go-live checklist incomplete',
+      failing_checks: failingChecks,
+      hint: 'Add ?override=true to bypass (Telegram alert will fire)',
+    }, { status: 400 })
+  }
+
+  if (failingChecks.length > 0 && override) {
+    await sendAdminTelegram(
+      `⚠️ Go-live override used for ${business.name}. Failing checks: ${failingChecks.join(', ')}`,
+    ).catch(() => {})
+  }
 
   const { data: owner } = await supabase
     .from('users')

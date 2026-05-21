@@ -42,10 +42,17 @@ export const AGENT_CONFIG_STANDARD = {
     endpointing: 500,
   },
   tools: {
-    // These tool names must be present in every production agent
-    required: ['check_caller', 'create_booking', 'schedule_callback', 'log_outcome'],
-    // These are required for towing agents specifically
-    requiredForTowing: ['calculate_job_quote', 'check_availability', 'transferCall'],
+    // Required on every plan (Starter, Growth, Pro). These are the
+    // core call-handling tools — VIP lookup, callback request,
+    // outcome logging, team transfer routing.
+    required: ['check_caller', 'log_outcome', 'schedule_callback', 'get_team'],
+    // Required for Growth and Pro only (booking-capable plans).
+    // Session 28 (H10): create_booking moved out of `required` so
+    // Starter agents don't fail validation for missing it — Starter
+    // intentionally has no booking tools.
+    requiredForBookings: ['check_availability', 'create_booking', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking'],
+    // Required for Growth and Pro only (quoting-capable plans).
+    requiredForQuoting: ['calculate_job_quote', 'log_quote_addon'],
   },
   serverUrl: 'https://app.talkmate.com.au/api/vapi/functions',
 } as const
@@ -88,6 +95,16 @@ export const ISSUE_DEFINITIONS: Record<string, { severity: IssueSeverity; messag
   MISSING_CHECK_CALLER:     { severity: 'warning',  message: 'check_caller tool not registered — no VIP lookup or caller history' },
   MISSING_SCHEDULE_CALLBACK:{ severity: 'warning',  message: 'schedule_callback tool not registered — callback requests cannot be logged' },
   MISSING_LOG_OUTCOME:      { severity: 'warning',  message: 'log_outcome tool not registered — call outcomes not logged' },
+  // Session 28 (H11): codes for the remaining tools so the
+  // plan-aware validator can surface every missing tool with a
+  // pre-defined message (no template-string code generation).
+  MISSING_GET_TEAM:           { severity: 'warning',  message: 'get_team tool not registered — agent cannot route callers to specific team members' },
+  MISSING_CHECK_AVAILABILITY: { severity: 'critical', message: 'check_availability tool not registered — agent cannot verify booking slots before committing' },
+  MISSING_ADD_TO_WAITLIST:    { severity: 'warning',  message: 'add_to_waitlist tool not registered — callers cannot be queued when fully booked' },
+  MISSING_CANCEL_BOOKING:     { severity: 'warning',  message: 'cancel_booking tool not registered — callers cannot cancel through the agent' },
+  MISSING_RESCHEDULE_BOOKING: { severity: 'warning',  message: 'reschedule_booking tool not registered — callers cannot reschedule through the agent' },
+  MISSING_CALCULATE_JOB_QUOTE:{ severity: 'warning',  message: 'calculate_job_quote tool not registered — quoting unavailable on a Growth/Pro plan' },
+  MISSING_LOG_QUOTE_ADDON:    { severity: 'warning',  message: 'log_quote_addon tool not registered — add-ons cannot be appended to a quote' },
   WRONG_TRANSCRIBER_MODEL:  { severity: 'warning',  message: 'Transcriber model is not Deepgram nova-3' },
   WRONG_TRANSCRIBER_LANG:   { severity: 'warning',  message: 'Transcriber language is not en-AU' },
   WRONG_ENDPOINTING:        { severity: 'warning',  message: 'Transcriber endpointing is not 500ms' },

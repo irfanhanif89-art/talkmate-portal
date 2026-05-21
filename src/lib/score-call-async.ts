@@ -374,8 +374,9 @@ export async function scoreCallAsync(
     //
     //    Fire-and-forget — notifyAdminOfQualityIssue already swallows
     //    its own errors, so this can't break the scoring flow.
+    // dropped_call and wrong_info removed — not in CallFlagType union, stripped by coerceFlag
     const CRITICAL_FLAG_TYPES = new Set([
-      'agent_error', 'sms_mismatch', 'missed_lead', 'dropped_call', 'wrong_info',
+      'agent_error', 'sms_mismatch', 'missed_lead',
     ])
     const NOISY_FLAG_TYPES = new Set(['short_call', 'no_resolution'])
 
@@ -460,9 +461,25 @@ export async function scoreCallAsync(
   } catch (e) {
     // Never let an unexpected throw escape — webhook caller does not
     // await us and there's no upstream to handle it.
-    console.error('[score-call-async] unexpected error', {
-      vapiCallId, error: (e as Error).message,
-    })
+    //
+    // Session 28 (H14): also stamp intelligence_status='error' so the
+    // retry cron can pick this row up. Previously a throw before the
+    // status was written left the row stuck at its initial state and
+    // invisible to the recovery sweep.
+    const msg = (e as Error).message ?? 'unexpected error'
+    console.error('[score-call-async] unexpected error', { vapiCallId, error: msg })
+    try {
+      const adminClient = createAdminClient()
+      await adminClient
+        .from('calls')
+        .update({
+          intelligence_status: 'error',
+          alert_reason: msg.slice(0, 240),
+        })
+        .eq('vapi_call_id', vapiCallId)
+    } catch (innerErr) {
+      console.error('[score-call-async] failed to mark error status', (innerErr as Error).message)
+    }
   }
 }
 
