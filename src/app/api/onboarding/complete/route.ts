@@ -116,19 +116,24 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     }
   }
 
-  // Notify Irfan on Telegram — agent ready to preview
-  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
-  const TELEGRAM_CHAT_ID = '7809273812'
+  // Notify Irfan on Telegram — agent ready to preview.
+  // Env vars must be set in Vercel; no source fallback.
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+  const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID
   const approveUrl = `${process.env.NEXT_PUBLIC_APP_URL}/admin/approve?businessId=${business.id}`
   const telegramMsg = `🎙️ *New agent ready for review*\n\n*Client:* ${business.name}\n*Type:* ${business.business_type}\n*Email:* ${user.email}\n\n*Preview number:* ${PREVIEW_NUMBER}\nCall it now to hear the agent.\n\n[✅ Approve & Go Live](${approveUrl})`
-  try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: telegramMsg, parse_mode: 'Markdown' }),
-    })
-  } catch (e) {
-    console.error('Telegram notify failed:', e)
+  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: telegramMsg, parse_mode: 'Markdown' }),
+      })
+    } catch (e) {
+      console.error('Telegram notify failed:', e)
+    }
+  } else {
+    console.error('[onboarding/complete] TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID missing — skipping notify')
   }
 
   const twilioNumber = null // Will be provisioned on approval
@@ -178,15 +183,18 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     })
   } catch {}
 
-  // Notify Irfan (admin)
-  try {
-    await getResend()?.emails.send({
-      from: 'Talkmate <hello@talkmate.com.au>',
-      to: 'irfanhanif89@gmail.com',
-      subject: `🆕 New client live: ${business.name}`,
-      html: `<p>New client onboarded: <strong>${business.name}</strong> (${business.business_type})<br>Email: ${user.email}<br>Vapi Agent: ${vapiAgentId || 'Creation failed'}<br>Phone Number: ${twilioNumber || 'Not provisioned'}</p>`,
-    })
-  } catch {}
+  // Notify Irfan (admin). ADMIN_EMAIL or INTERNAL_ALERT_EMAIL must be set in Vercel.
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.INTERNAL_ALERT_EMAIL
+  if (adminEmail) {
+    try {
+      await getResend()?.emails.send({
+        from: 'Talkmate <hello@talkmate.com.au>',
+        to: adminEmail,
+        subject: `🆕 New client live: ${business.name}`,
+        html: `<p>New client onboarded: <strong>${business.name}</strong> (${business.business_type})<br>Email: ${user.email}<br>Vapi Agent: ${vapiAgentId || 'Creation failed'}<br>Phone Number: ${twilioNumber || 'Not provisioned'}</p>`,
+      })
+    } catch {}
+  }
 
   return NextResponse.json({ success: true, vapiAgentId })
 }

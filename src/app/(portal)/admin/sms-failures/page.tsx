@@ -27,10 +27,11 @@ export default async function AdminSmsFailuresPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
   const { data: userProfile } = await supabase.from('users').select('role').eq('id', user.id).single()
+  // Set ADMIN_EMAIL in Vercel environment variables
   const isSuperAdmin =
     user.email === process.env.INTERNAL_ALERT_EMAIL ||
-    user.email === 'hello@talkmate.com.au' ||
-    user.email === 'irfanhanif89@gmail.com'
+    user.email === process.env.ADMIN_EMAIL ||
+    user.email === 'hello@talkmate.com.au'
   if (userProfile?.role !== 'admin' && !isSuperAdmin) redirect('/dashboard')
 
   const admin = createAdminClient()

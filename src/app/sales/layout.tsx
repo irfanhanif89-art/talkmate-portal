@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import SalesShell from '@/components/sales/sales-shell'
 import type { SalesRepRow } from '@/lib/sales-auth'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function SalesLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()

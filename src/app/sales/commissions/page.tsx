@@ -15,7 +15,7 @@ export default async function SalesCommissionsPage() {
     .from('commissions')
     .select(`
       id, plan, commission_amount, bonus_amount, status, created_at, paid_at,
-      payment_reference, revoke_reason,
+      payment_reference, revoke_reason, clawback_period_ends_at,
       leads(business_name, won_billing_cycle)
     `)
     .eq('rep_id', auth.rep.id)
@@ -41,6 +41,7 @@ export default async function SalesCommissionsPage() {
       paid_at: c.paid_at,
       payment_reference: c.payment_reference,
       revoke_reason: c.revoke_reason,
+      clawback_period_ends_at: c.clawback_period_ends_at ?? null,
     }
   })
 

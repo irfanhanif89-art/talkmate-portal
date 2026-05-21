@@ -67,6 +67,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Create the pending commission row. Amounts are server-side from
   // the COMMISSION_MAP — never trust client input.
+  //
+  // Session 27 (H23) — stamp clawback_period_ends_at = won_at + 14d so the
+  // admin approve gate (in /api/admin/commissions/[id]) can reject premature
+  // approvals. Migration 042 backfills this for every pre-existing row.
+  const clawbackEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
   const { error: commErr } = await admin.from('commissions').insert({
     rep_id: auth.rep.id,
     lead_id: id,
@@ -75,6 +80,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     bonus_amount: bonusAmount,
     policy_version: COMMISSION_POLICY_VERSION,
     status: 'pending',
+    clawback_period_ends_at: clawbackEndsAt,
   })
   if (commErr) {
     return NextResponse.json({ ok: false, error: `Commission creation failed: ${commErr.message}` }, { status: 500 })

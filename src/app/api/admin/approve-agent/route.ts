@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '7809273812'
+// TELEGRAM_ADMIN_CHAT_ID must be set in Vercel env vars. No source fallback.
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID
 
 export async function POST(req: NextRequest) {
   // Must be admin - check auth header or admin session

@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function Home() {
   const supabase = await createClient()

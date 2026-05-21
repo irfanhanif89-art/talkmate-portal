@@ -9,7 +9,8 @@ import ImpersonationBanner from '@/components/portal/impersonation-banner'
 import TrialBanner, { TrialExpiredOverlay } from '@/components/portal/trial-banner'
 import PendingPaymentBanner from '@/components/portal/pending-payment-banner'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()

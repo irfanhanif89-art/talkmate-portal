@@ -11,7 +11,8 @@ import ContractorDetailView, {
 export const metadata: Metadata = { title: 'Contractor' }
 export const dynamic = 'force-dynamic'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 const STORAGE_BUCKET = 'contractor-agreements'
 
 export default async function ContractorDetailPage({ params }: { params: Promise<{ id: string }> }) {

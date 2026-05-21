@@ -39,6 +39,32 @@ async function shouldBlockPortalAccess(userId: string): Promise<boolean> {
   }
 }
 
+// Session 27 (H29) — self-serve users land at /dashboard after signup but the
+// wizard is at /onboarding. Push them to /onboarding until onboarding_complete
+// flips true.
+//
+// Only fires for self-serve account statuses (trial / pending_payment /
+// pending) — active/expired/cancelled/suspended are out of scope. Returns the
+// FIRST business row's state; this is fine because the redirect target is the
+// same regardless of which row we look at.
+async function shouldRedirectToOnboarding(userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/businesses?owner_user_id=eq.${userId}&select=onboarding_complete,account_status&limit=5`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    )
+    const data: { onboarding_complete: boolean | null; account_status: string | null }[] = await res.json()
+    if (!Array.isArray(data) || data.length === 0) return false
+    // If ANY business row is fully onboarded, the user is past this gate.
+    if (data.some(r => r.onboarding_complete === true)) return false
+    // If their highest-priority row is in a self-serve setup state, send them.
+    const SELF_SERVE_STATUSES = new Set(['trial', 'pending_payment', 'pending'])
+    return data.some(r => SELF_SERVE_STATUSES.has((r.account_status ?? '').toLowerCase()))
+  } catch {
+    return false
+  }
+}
+
 async function needsAdminTosGate(userId: string): Promise<boolean> {
   try {
     const bizRes = await fetch(
@@ -62,10 +88,17 @@ async function needsAdminTosGate(userId: string): Promise<boolean> {
   }
 }
 
-// Super-admin emails - bypass all subscription and ToS checks
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Super-admin emails - bypass all subscription and ToS checks.
+// Set ADMIN_EMAIL in Vercel environment variables to add a personal super-admin.
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export async function middleware(request: NextRequest) {
+  // Public white-label preview — short-circuit before any auth lookup so
+  // anonymous prospects (e.g. Proxima demos for Monique) can reach the page.
+  if (request.nextUrl.pathname.startsWith('/wl-preview')) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -105,7 +138,7 @@ export async function middleware(request: NextRequest) {
   const protectedPaths = [
     '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
     '/settings', '/billing', '/admin', '/onboarding', '/contacts',
-    '/jobs', '/command-centre', '/wl-preview', '/refer-and-earn',
+    '/jobs', '/command-centre', '/refer-and-earn',
     '/sales',
   ]
 
@@ -187,6 +220,25 @@ export async function middleware(request: NextRequest) {
     if (blocked) {
       if (path.startsWith('/subscribe')) return supabaseResponse
       return redirect('/subscribe')
+    }
+  }
+
+  // Session 27 (H29) — push self-serve users with incomplete onboarding to
+  // the wizard. Exempt: /onboarding itself, /admin (admins return early
+  // above; staff land here only via /sales which also returns early),
+  // /accept-terms (legal flow), /subscribe (payment recovery), and the
+  // legacy /admin/approve path.
+  if (
+    user &&
+    isProtected &&
+    !path.startsWith('/onboarding') &&
+    !path.startsWith('/accept-terms') &&
+    !path.startsWith('/subscribe') &&
+    !isAdminApprove
+  ) {
+    const needsOnboarding = await shouldRedirectToOnboarding(user.id)
+    if (needsOnboarding) {
+      return redirect('/onboarding')
     }
   }
 

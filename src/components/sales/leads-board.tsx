@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { LayoutGrid, List as ListIcon, Search, Phone } from 'lucide-react'
+import { LayoutGrid, List as ListIcon, Search, Phone, Plus } from 'lucide-react'
 import {
   LEAD_STATUS_COLUMNS, LEAD_STATUS_STYLES,
   type LeadStatus, daysSince, timeAgo,
 } from '@/lib/sales-format'
 import LeadDrawer from './lead-drawer'
+import AddLeadModal from './add-lead-modal'
 
 export interface LeadRow {
   id: string
@@ -47,6 +48,7 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
   const [filterStatus, setFilterStatus] = useState<'all' | LeadStatus>('all')
   const [filterIndustry, setFilterIndustry] = useState<string>('all')
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
+  const [addLeadOpen, setAddLeadOpen] = useState(false)
 
   // Persist view choice in localStorage
   useEffect(() => {
@@ -110,24 +112,38 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
           </p>
         </div>
 
-        {/* View toggle */}
-        <div style={{ display: 'flex', background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 3 }}>
-          {(['kanban', 'list'] as ViewMode[]).map(m => (
-            <button
-              key={m}
-              onClick={() => setView(m)}
-              style={{
-                padding: '7px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                background: view === m ? '#E8622A' : 'transparent',
-                color: view === m ? 'white' : '#7BAED4',
-                fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 700,
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              {m === 'kanban' ? <LayoutGrid size={13} /> : <ListIcon size={13} />}
-              {m === 'kanban' ? 'Pipeline' : 'List'}
-            </button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setAddLeadOpen(true)}
+            style={{
+              padding: '9px 16px', borderRadius: 9, cursor: 'pointer',
+              background: '#E8622A', color: 'white', border: 'none',
+              fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Plus size={14} /> Add Lead
+          </button>
+
+          {/* View toggle */}
+          <div style={{ display: 'flex', background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 3 }}>
+            {(['kanban', 'list'] as ViewMode[]).map(m => (
+              <button
+                key={m}
+                onClick={() => setView(m)}
+                style={{
+                  padding: '7px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  background: view === m ? '#E8622A' : 'transparent',
+                  color: view === m ? 'white' : '#7BAED4',
+                  fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {m === 'kanban' ? <LayoutGrid size={13} /> : <ListIcon size={13} />}
+                {m === 'kanban' ? 'Pipeline' : 'List'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -172,9 +188,23 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
           padding: 40, borderRadius: 12, background: '#0A1E38',
           border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center',
         }}>
-          <p style={{ fontSize: 14, color: '#7BAED4', margin: 0 }}>
-            No leads assigned yet. Leads are assigned by your manager. Check back soon.
+          <p style={{ fontSize: 14, color: 'white', margin: 0, marginBottom: 6, fontWeight: 600 }}>
+            No leads yet.
           </p>
+          <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginBottom: 18 }}>
+            Start building your pipeline by adding your first lead.
+          </p>
+          <button
+            onClick={() => setAddLeadOpen(true)}
+            style={{
+              padding: '10px 18px', borderRadius: 9, cursor: 'pointer',
+              background: '#E8622A', color: 'white', border: 'none',
+              fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <Plus size={14} /> Add Your First Lead
+          </button>
         </div>
       ) : view === 'kanban' ? (
         <KanbanView grouped={grouped} onSelect={setSelectedLeadId} />
@@ -189,6 +219,13 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
           onClose={() => setSelectedLeadId(null)}
           onUpdated={patchLead}
           onRemoved={removeLead}
+        />
+      )}
+
+      {addLeadOpen && (
+        <AddLeadModal
+          onClose={() => setAddLeadOpen(false)}
+          onCreated={(lead) => setLeads(prev => [lead, ...prev])}
         />
       )}
     </div>

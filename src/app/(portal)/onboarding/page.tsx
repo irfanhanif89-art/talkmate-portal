@@ -10,6 +10,15 @@ import { INDUSTRY_LIBRARY, type ServiceItem, type FAQItem } from '@/lib/industry
 import { ONBOARDING_VIDEOS } from '@/lib/onboardingVideos'
 import { Plus, Trash2, Check, ChevronLeft, ChevronRight, Play, X, MessageCircle } from 'lucide-react'
 import LegalAcceptanceForm from '@/components/portal/legal-acceptance-form'
+import { loadStripe } from '@stripe/stripe-js'
+import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js'
+
+// Session 27 (H1) — Stripe Elements is loaded once at module scope. Same
+// publishable key as /subscribe; safe to ship in client bundle.
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+  'pk_live_51NbbW7CzrOLgF5MUozZxFYByT5Pd71yoSnv4aVcPb9c0uRRyvD36q5jvijBNk3tJ9iEXnp1PVCveDhE1fjKGJba00zFkyvFpQ'
+)
 
 // ── Custom Toggle (no base-ui) ──────────────────────────────────────────────
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -159,6 +168,11 @@ export default function OnboardingPage() {
   const [tcSubmitting, setTcSubmitting] = useState(false)
   const [tcError, setTcError] = useState<string | null>(null)
   const [payProcessing, setPayProcessing] = useState(false)
+  // Session 27 (H1) — real Stripe embedded checkout on step 9.
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [paymentPolling, setPaymentPolling] = useState(false)
   const [urlInput, setUrlInput] = useState('')
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [videoOpen, setVideoOpen] = useState(false)
@@ -403,6 +417,94 @@ export default function OnboardingPage() {
       setStep(12)
     }
   }, [currentStep, skipPaymentStep, skipCommandStep, setStep])
+
+  // Session 27 (H1) — when entering step 9 (Payment), create a Stripe
+  // embedded-checkout session and pull the clientSecret. Custom return_url
+  // brings the user back to /onboarding?paid=1 so the next effect can pick
+  // up the redirect and advance after polling the webhook result.
+  useEffect(() => {
+    if (currentStep !== 9 || skipPaymentStep) return
+    if (paymentClientSecret || paymentLoading) return
+    // If the URL says ?paid=1, we're back from Stripe — don't re-create a
+    // checkout session, just poll.
+    if (typeof window !== 'undefined' && window.location.search.includes('paid=1')) return
+
+    let cancelled = false
+    setPaymentLoading(true)
+    setPaymentError(null)
+    ;(async () => {
+      try {
+        const res = await fetch('/api/stripe/embedded-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planKey: (bizPlan ?? 'starter').toLowerCase(),
+            billingCycle: 'monthly',
+            // Session 27 (H1) — bring users back to the wizard, not /dashboard.
+            returnUrl: '/onboarding?paid=1',
+          }),
+        })
+        const data = await res.json()
+        if (cancelled) return
+        if (!res.ok || !data.clientSecret) {
+          setPaymentError(data.error ?? 'Could not start payment. Please try again.')
+        } else {
+          setPaymentClientSecret(data.clientSecret as string)
+        }
+      } catch (err) {
+        if (!cancelled) setPaymentError((err as Error).message)
+      } finally {
+        if (!cancelled) setPaymentLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [currentStep, skipPaymentStep, bizPlan, paymentClientSecret, paymentLoading])
+
+  // Session 27 (H1) — on return from Stripe (`?paid=1`), poll the server
+  // every 2s for up to 30s waiting for the checkout.session.completed
+  // webhook to flip account_status to 'active'. The webhook is the source
+  // of truth; the redirect alone never advances the wizard.
+  useEffect(() => {
+    if (currentStep !== 9) return
+    if (typeof window === 'undefined') return
+    if (!window.location.search.includes('paid=1')) return
+    if (paymentPolling) return
+
+    setPaymentPolling(true)
+    let attempts = 0
+    const maxAttempts = 15 // 15 × 2s = 30s
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const poll = async () => {
+      attempts += 1
+      try {
+        const res = await fetch('/api/onboarding/payment-status', { cache: 'no-store' })
+        const data = await res.json()
+        if (data?.paid) {
+          // Webhook landed — clean the URL and advance to step 10.
+          if (window.history.replaceState) {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('paid')
+            window.history.replaceState({}, '', url.toString())
+          }
+          setPaymentPolling(false)
+          setStep(10)
+          window.scrollTo(0, 0)
+          return
+        }
+      } catch {
+        // Swallow and keep trying.
+      }
+      if (attempts < maxAttempts) {
+        timer = setTimeout(poll, 2000)
+      } else {
+        // Keep polling at a slower cadence so we eventually catch up.
+        timer = setTimeout(poll, 5000)
+      }
+    }
+    poll()
+    return () => { if (timer) clearTimeout(timer) }
+  }, [currentStep, paymentPolling, setStep])
 
   async function goLive() {
     setLoading(true); await save()
@@ -1014,15 +1116,13 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* STEP 9: Payment */}
+          {/* STEP 9: Payment — Session 27 (H1) wired to real Stripe embedded checkout. */}
           {currentStep === 9 && (() => {
-            // Show the actual plan's monthly price — no setup fees on
-            // any plan, ever. The line item and the total are both
-            // driven from the plan config so Growth / Pro clients see
-            // their real numbers instead of a hardcoded Starter $299.
             const planCfg = getPlan(bizPlan)
             const monthlyPrice = planCfg.monthlyPrice
-            const totalToday = monthlyPrice
+            const isReturningFromStripe = typeof window !== 'undefined'
+              && window.location.search.includes('paid=1')
+
             return (
             <div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'white', marginBottom: 6 }}>💳 Set Up Payment</h2>
@@ -1037,41 +1137,69 @@ export default function OnboardingPage() {
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800 }}>
                   <span style={{ color: 'white' }}>Total due today</span>
-                  <span style={{ color: '#E8622A' }}>${totalToday}.00 AUD</span>
+                  <span style={{ color: '#E8622A' }}>${monthlyPrice}.00 AUD</span>
                 </div>
-                <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>Then ${monthlyPrice}/month. No setup fee. Cancel anytime with 30 days notice.</div>
+                <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 8 }}>Then ${monthlyPrice}/month. Cancel anytime with 30 days notice.</div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={lbl}>Cardholder Name</label>
-                  <input type="text" placeholder="John Smith" style={inp} />
-                </div>
-                <div>
-                  <label style={lbl}>Card Number</label>
-                  <input type="text" placeholder="1234 5678 9012 3456" maxLength={19} style={inp} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label style={lbl}>Expiry</label>
-                    <input type="text" placeholder="MM / YY" maxLength={7} style={inp} />
+              {/* Returning from Stripe — poll for webhook confirmation. */}
+              {isReturningFromStripe && (
+                <div style={{
+                  background: '#071829',
+                  border: '1px solid rgba(34,197,94,0.25)',
+                  borderRadius: 12, padding: 20, textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>✅</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 6 }}>
+                    Payment received — finishing setup…
                   </div>
-                  <div>
-                    <label style={lbl}>CVV</label>
-                    <input type="text" placeholder="•••" maxLength={4} style={inp} />
+                  <div style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.6 }}>
+                    Confirming your subscription with Stripe. This usually takes a few seconds.
                   </div>
+                  <div style={{ display: 'inline-block', marginTop: 14, width: 22, height: 22, border: '3px solid rgba(232,98,42,0.25)', borderTopColor: '#E8622A', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                 </div>
-              </div>
+              )}
+
+              {/* Error state with retry. */}
+              {!isReturningFromStripe && paymentError && (
+                <div style={{
+                  background: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 12, padding: 16, marginBottom: 16,
+                  color: '#EF4444', fontSize: 13,
+                }}>
+                  {paymentError}
+                  <button
+                    onClick={() => { setPaymentError(null); setPaymentClientSecret(null) }}
+                    style={{
+                      display: 'block', marginTop: 10, padding: '8px 14px',
+                      background: '#E8622A', color: 'white', border: 'none', borderRadius: 8,
+                      fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >Retry</button>
+                </div>
+              )}
+
+              {/* Loading initial clientSecret. */}
+              {!isReturningFromStripe && !paymentClientSecret && !paymentError && (
+                <div style={{ padding: 28, textAlign: 'center', color: '#7BAED4', fontSize: 13 }}>
+                  Loading secure payment form…
+                </div>
+              )}
+
+              {/* Real Stripe embedded checkout. */}
+              {!isReturningFromStripe && paymentClientSecret && (
+                <div style={{ borderRadius: 12, overflow: 'hidden', background: 'white' }}>
+                  <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret: paymentClientSecret }}>
+                    <EmbeddedCheckout />
+                  </EmbeddedCheckoutProvider>
+                </div>
+              )}
 
               <div style={{ marginTop: 16, padding: '12px 16px', background: '#071829', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#4A7FBB' }}>
                 🔒 <span>Secured by <strong style={{ color: 'white' }}>Stripe</strong>. Your card details are never stored by Talkmate.</span>
               </div>
-
-              <button onClick={() => { setPayProcessing(true); setTimeout(() => { setPayProcessing(false); setStep(10) }, 2000) }}
-                disabled={payProcessing}
-                style={{ width: '100%', marginTop: 20, padding: 16, background: '#E8622A', color: 'white', border: 'none', borderRadius: 12, fontFamily: 'Outfit,sans-serif', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-                {payProcessing ? '⚡ Processing payment...' : `Pay $${totalToday} & Activate My AI Agent →`}
-              </button>
             </div>
             )
           })()}

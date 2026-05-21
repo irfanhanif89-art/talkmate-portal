@@ -56,7 +56,10 @@ export default function AuditLogPage() {
       if (!user) { router.push('/login'); return }
       const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
       const isAdmin = profile?.role === 'admin'
-      const isSuperAdmin = user.email === 'hello@talkmate.com.au' || user.email === 'irfanhanif89@gmail.com'
+      // Set ADMIN_EMAIL/INTERNAL_ALERT_EMAIL in Vercel environment variables.
+      // This is client-side so we only check 'hello@' literal here; the
+      // /api/admin/audit-log route enforces the full allowlist server-side.
+      const isSuperAdmin = user.email === 'hello@talkmate.com.au'
       if (!isAdmin && !isSuperAdmin) { router.push('/dashboard'); return }
       setAuthChecked(true)
     })()

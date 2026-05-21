@@ -61,6 +61,9 @@ export interface AdminCommissionRow {
   paid_at: string | null
   payment_reference: string | null
   revoke_reason: string | null
+  // Session 27 (H23) — null on rows created before migration 042 backfill.
+  // The PATCH endpoint still computes from created_at as a fallback.
+  clawback_period_ends_at: string | null
 }
 
 interface Props {
@@ -575,11 +578,46 @@ function CommissionsPane({ commissions, onApprove, onMarkPaid, onRevoke }: {
                         <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{c.revoke_reason}</div>
                       )}
                     </td>
-                    <td style={{ ...td, color: '#7BAED4' }}>{formatDateTime(c.created_at)}</td>
+                    <td style={{ ...td, color: '#7BAED4' }}>
+                      {formatDateTime(c.created_at)}
+                      {/* Session 27 (H23) — show clawback end date for any
+                          row that hasn't been approved yet. */}
+                      {c.status === 'pending' && (() => {
+                        const clawbackEnds = c.clawback_period_ends_at
+                          ? new Date(c.clawback_period_ends_at)
+                          : new Date(new Date(c.created_at).getTime() + 14 * 24 * 60 * 60 * 1000)
+                        const isLocked = Date.now() < clawbackEnds.getTime()
+                        return (
+                          <div style={{ fontSize: 10, marginTop: 4, color: isLocked ? '#f59e0b' : '#22c55e', fontWeight: 600 }}>
+                            {isLocked ? '🔒 Clawback ends ' : '✓ Clawback cleared '}
+                            {clawbackEnds.toLocaleDateString('en-AU')}
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>
-                      {c.status === 'pending' && (
-                        <button onClick={() => onApprove(c.id)} style={{ ...ghostBtn, color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' }}>Approve</button>
-                      )}
+                      {c.status === 'pending' && (() => {
+                        const clawbackEnds = c.clawback_period_ends_at
+                          ? new Date(c.clawback_period_ends_at)
+                          : new Date(new Date(c.created_at).getTime() + 14 * 24 * 60 * 60 * 1000)
+                        const isLocked = Date.now() < clawbackEnds.getTime()
+                        return (
+                          <button
+                            onClick={() => onApprove(c.id)}
+                            disabled={isLocked}
+                            title={isLocked ? `Available to approve on ${clawbackEnds.toLocaleDateString('en-AU')}` : 'Approve commission'}
+                            style={{
+                              ...ghostBtn,
+                              color: isLocked ? '#7BAED4' : '#22c55e',
+                              borderColor: isLocked ? 'rgba(123,174,212,0.3)' : 'rgba(34,197,94,0.3)',
+                              cursor: isLocked ? 'not-allowed' : 'pointer',
+                              opacity: isLocked ? 0.55 : 1,
+                            }}
+                          >
+                            Approve
+                          </button>
+                        )
+                      })()}
                       {c.status === 'approved' && (
                         <button onClick={() => onMarkPaid(c)} style={{ ...ghostBtn, color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' }}>Mark Paid</button>
                       )}

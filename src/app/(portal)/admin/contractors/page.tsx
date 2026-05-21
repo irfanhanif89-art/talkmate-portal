@@ -6,7 +6,8 @@ import ContractorsView, { type ContractorRow, type PipelineRow } from './contrac
 export const metadata: Metadata = { title: 'Contractors' }
 export const dynamic = 'force-dynamic'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function AdminContractorsPage() {
   const supabase = await createClient()
