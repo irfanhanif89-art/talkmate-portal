@@ -138,37 +138,12 @@ export default async function AdminPage() {
     <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 14 }}>Admin</h1>
 
-      {/* Admin section nav */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-        {[
-          { href: '/admin/clients', label: 'Clients', badge: pendingClientCount },
-          { href: '/admin/clients/overview', label: 'Client Overview' },
-          { href: '/admin/sales-team', label: 'Sales Team' },
-          { href: '/admin/contractors', label: 'Contractors' },
-          { href: '/admin/sales-scripts', label: 'Sales Scripts' },
-          { href: '/admin/partners', label: 'Partners' },
-          { href: '/admin/white-label', label: 'White Label' },
-          { href: '/admin/make-setup', label: 'Make.com Setup' },
-        ].map(l => (
-          <Link
-            key={l.href}
-            href={l.href}
-            style={{
-              padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-              background: 'rgba(74,159,232,0.08)', border: '1px solid rgba(74,159,232,0.25)',
-              color: '#4A9FE8', textDecoration: 'none', fontFamily: 'Outfit, sans-serif',
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-            }}
-          >{l.label} →
-            {typeof l.badge === 'number' && l.badge > 0 && (
-              <span style={{
-                background: '#F59E0B', color: 'white', fontSize: 10, fontWeight: 700,
-                padding: '2px 7px', borderRadius: 99,
-              }}>{l.badge}</span>
-            )}
-          </Link>
-        ))}
-      </div>
+      {/*
+        Horizontal section-nav tab bar removed. Persistent navigation now
+        lives in the left sidebar (AdminSidebarLayout). Keeping the tab bar
+        as well would duplicate every link and create two competing
+        "active state" indicators.
+      */}
 
       {/* Pending clients banner — Session 4 brief Part 6. */}
       {pendingClientCount > 0 && (

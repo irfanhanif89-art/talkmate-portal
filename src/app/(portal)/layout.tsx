@@ -8,7 +8,6 @@ import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
 import TrialBanner, { TrialExpiredOverlay } from '@/components/portal/trial-banner'
 import PendingPaymentBanner from '@/components/portal/pending-payment-banner'
-import AdminTopbar from '@/components/admin/admin-topbar'
 
 const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
 
@@ -18,12 +17,18 @@ export default async function PortalLayout({ children }: { children: React.React
   if (!user) redirect('/login')
 
   // Super-admin bypass — hello@talkmate.com.au has no business record.
-  // Render a minimal shell with a topbar (logo + logout) so /admin
-  // pages have visible chrome without a full sidebar.
+  // Don't render PortalShell (no business to scope it to). For pages
+  // under /admin/*, the nested admin layout supplies its own sidebar
+  // chrome; for non-/admin pages (legacy /dashboard etc. that an admin
+  // somehow lands on) the children render bare.
+  //
+  // Previously this branch rendered AdminTopbar — that's been removed
+  // because the new AdminSidebarLayout (in (portal)/admin/layout.tsx)
+  // owns the persistent admin chrome. Rendering both produced a
+  // duplicate logo + logout stack at the top of every admin page.
   if (user.email && ADMIN_EMAILS.includes(user.email)) {
     return (
       <div className="min-h-screen bg-background text-foreground">
-        <AdminTopbar userEmail={user.email} />
         {children}
       </div>
     )
