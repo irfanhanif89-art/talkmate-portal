@@ -1,17 +1,24 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Activity, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight,
-  Circle, ExternalLink, Filter, MessageSquare, RefreshCcw, Shield,
+  Circle, Filter, MessageSquare, RefreshCcw,
 } from 'lucide-react'
 
 // Session 24 — Agent Health Monitor view.
 // Pure UI component. State that needs to persist (resolving an alert)
 // goes through a POST to /api/admin/agent-health/resolve which re-runs
 // the page on success via router.refresh().
+//
+// Chrome: this view renders bare content. The persistent admin sidebar
+// (src/components/admin/AdminSidebarLayout.tsx, wired in via
+// (portal)/admin/layout.tsx) supplies the logo, navigation, user
+// avatar, and logout button. Earlier revisions of this file rendered
+// a standalone topbar that duplicated all of that — it's been
+// removed; the Refresh button and the "X critical" badge are kept
+// as page-level actions next to the h1.
 
 interface BusinessRow {
   id: string
@@ -74,7 +81,6 @@ interface Props {
   alerts: AlertRow[]
   bizNameById: Record<string, string>
   lastChecked: string | null
-  adminEmail: string
 }
 
 type SeverityFilter = 'all' | 'critical' | 'warning'
@@ -137,65 +143,52 @@ export default function AgentHealthView(props: Props) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#061322', color: '#F2F6FB', fontFamily: 'Outfit, sans-serif' }}>
-      <header
-        style={{
-          position: 'sticky', top: 0, zIndex: 50,
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 24px',
-          background: '#071829', borderBottom: '1px solid rgba(255,255,255,0.06)',
-        }}
-      >
-        <Link href="/admin/clients" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'white' }}>
-          <div style={{ width: 30, height: 30, background: '#E8622A', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Shield size={15} color="white" />
-          </div>
-          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.3px' }}>
-            Talk<span style={{ fontWeight: 300, color: '#4A9FE8', letterSpacing: '2px' }}>Mate</span>
-            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#E8622A', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              Admin
-            </span>
-          </span>
-        </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {openCriticalCount > 0 && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 10px', borderRadius: 999,
-              background: 'rgba(239,68,68,0.18)', color: '#EF4444',
-              fontSize: 12, fontWeight: 700,
-            }}>
-              <AlertTriangle size={12} /> {openCriticalCount} critical
-            </span>
-          )}
-          <button
-            onClick={() => router.refresh()}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 12px',
-              background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-              color: '#C8D8EA', borderRadius: 8,
-              fontSize: 12, fontWeight: 500, cursor: 'pointer',
-              fontFamily: 'Outfit, sans-serif',
-            }}
-          >
-            <RefreshCcw size={13} /> Refresh
-          </button>
-          <span style={{ fontSize: 12, color: '#7BAED4' }}>{props.adminEmail}</span>
-        </div>
-      </header>
-
+    <div style={{ minHeight: '100vh', background: '#0A1628', color: '#F2F6FB', fontFamily: 'Outfit, sans-serif' }}>
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px 64px' }}>
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>
-            Agent Health Monitor
-          </h1>
-          <p style={{ fontSize: 14, color: '#7BAED4', marginTop: 6, marginBottom: 0 }}>
-            Live configuration status and speech pattern detection across all active agents.
-          </p>
-          <p style={{ fontSize: 12, color: '#5A88B5', marginTop: 4 }}>
-            Last checked {formatAgo(props.lastChecked)}
-          </p>
+        <div style={{
+          marginBottom: 28,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+          gap: 16, flexWrap: 'wrap' as const,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', margin: 0 }}>
+              Agent Health Monitor
+            </h1>
+            <p style={{ fontSize: 14, color: '#7BAED4', marginTop: 6, marginBottom: 0 }}>
+              Live configuration status and speech pattern detection across all active agents.
+            </p>
+            <p style={{ fontSize: 12, color: '#5A88B5', marginTop: 4 }}>
+              Last checked {formatAgo(props.lastChecked)}
+            </p>
+          </div>
+          {/* Page-level actions: kept here (not in a topbar) so they sit
+              next to the heading and the sidebar continues to own all
+              cross-page chrome. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            {openCriticalCount > 0 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 999,
+                background: 'rgba(239,68,68,0.18)', color: '#EF4444',
+                fontSize: 12, fontWeight: 700,
+              }}>
+                <AlertTriangle size={12} /> {openCriticalCount} critical
+              </span>
+            )}
+            <button
+              onClick={() => router.refresh()}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 12px',
+                background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                color: '#C8D8EA', borderRadius: 8,
+                fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                fontFamily: 'Outfit, sans-serif',
+              }}
+            >
+              <RefreshCcw size={13} /> Refresh
+            </button>
+          </div>
         </div>
 
         {/* ───── Section 1 — Health Status Cards ─────────────────── */}
@@ -522,7 +515,3 @@ function formatAgo(iso: string | null | undefined): string {
   if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`
   return new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
-
-// Suppress unused-import warning for ExternalLink — kept available for
-// future "open in Vapi" link expansion.
-void ExternalLink

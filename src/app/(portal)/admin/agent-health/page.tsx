@@ -126,7 +126,6 @@ export default async function AgentHealthPage() {
       alerts={(alertsData ?? []) as AlertRow[]}
       bizNameById={Object.fromEntries(bizNameById)}
       lastChecked={lastChecked}
-      adminEmail={auth.user.email ?? ''}
     />
   )
 }
