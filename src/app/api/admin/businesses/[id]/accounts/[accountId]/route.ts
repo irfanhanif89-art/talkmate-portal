@@ -4,8 +4,8 @@ import { requireAdmin } from '@/lib/admin-auth'
 
 interface LinkedNumber {
   phone: string
-  name?: string | null
-  is_primary?: boolean
+  name: string | null
+  is_primary: boolean
 }
 
 function cleanLinkedNumbers(input: unknown): LinkedNumber[] {

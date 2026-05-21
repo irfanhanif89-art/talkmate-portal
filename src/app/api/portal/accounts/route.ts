@@ -7,8 +7,8 @@ import { requireClient } from '@/lib/portal-auth'
 
 interface LinkedNumber {
   phone: string
-  name?: string | null
-  is_primary?: boolean
+  name: string | null
+  is_primary: boolean
 }
 
 function cleanLinkedNumbers(input: unknown): LinkedNumber[] {

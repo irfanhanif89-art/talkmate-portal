@@ -22,7 +22,8 @@ const JSON_FIELDS = new Set([
   'operating_hours', 'overridden_holidays',
 ])
 
-async function loadOrEmpty(supabase: Awaited<ReturnType<typeof requireClient>> extends { supabase: infer S } ? S : never, clientId: string) {
+type AuthSuccess = Extract<Awaited<ReturnType<typeof requireClient>>, { ok: true }>
+async function loadOrEmpty(supabase: AuthSuccess['supabase'], clientId: string) {
   const { data } = await supabase
     .from('scheduler_settings')
     .select('*')

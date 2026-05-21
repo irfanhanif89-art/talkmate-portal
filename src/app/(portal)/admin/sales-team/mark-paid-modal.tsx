@@ -34,7 +34,7 @@ export default function MarkPaidModal({ commission, onClose, onSuccess }: Props)
   }
 
   return (
-    <ModalShell title="Mark commission as paid" subtitle={`${commission.rep_name} · ${commission.business_name} · ${formatCurrency(commission.amount)}`} onClose={onClose}>
+    <ModalShell title="Mark commission as paid" subtitle={`${commission.rep_name} · ${commission.business_name} · ${formatCurrency(commission.total)}`} onClose={onClose}>
       <label style={{ display: 'block', marginBottom: 14 }}>
         <span style={{ fontSize: 11, color: '#7BAED4', fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment reference *</span>
         <input
