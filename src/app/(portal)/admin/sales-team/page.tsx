@@ -6,7 +6,8 @@ import AdminSalesTeamView, { type AdminCommissionRow, type AdminLeadRow, type Ad
 export const metadata: Metadata = { title: 'Sales Team' }
 export const dynamic = 'force-dynamic'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function AdminSalesTeamPage() {
   const supabase = await createClient()
@@ -33,7 +34,7 @@ export default async function AdminSalesTeamPage() {
       .select('id, business_name, contact_name, phone, email, industry, status, approval_status, won_plan, won_at, business_id, created_at, assigned_to, approval_notes')
       .order('created_at', { ascending: false }),
     admin.from('commissions')
-      .select('id, rep_id, lead_id, business_id, plan, commission_amount, bonus_amount, status, created_at, paid_at, payment_reference, revoke_reason, leads(business_name, won_billing_cycle)')
+      .select('id, rep_id, lead_id, business_id, plan, commission_amount, bonus_amount, status, created_at, paid_at, payment_reference, revoke_reason, clawback_period_ends_at, leads(business_name, won_billing_cycle)')
       .order('created_at', { ascending: false }),
     admin.from('rep_contracts')
       .select('id, rep_id, document_name, status, sent_at, signed_at')
@@ -127,6 +128,7 @@ export default async function AdminSalesTeamPage() {
       paid_at: c.paid_at,
       payment_reference: c.payment_reference,
       revoke_reason: c.revoke_reason,
+      clawback_period_ends_at: c.clawback_period_ends_at ?? null,
     }
   })
 

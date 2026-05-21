@@ -280,7 +280,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
             {(load.code === 'invalid' || load.code === 'missing') && 'Please double-check the link from your invite email.'}
           </p>
           <p style={{ color: 'rgba(255,255,255,0.7)' }}>
-            Email <a style={{ color: '#22D3EE' }} href="mailto:irfanhanif89@gmail.com">irfanhanif89@gmail.com</a>
+            Email <a style={{ color: '#22D3EE' }} href="mailto:hello@talkmate.com.au">hello@talkmate.com.au</a>
           </p>
         </div>
       </div>
@@ -527,7 +527,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
             <h3 style={{ fontSize: 16, margin: '20px 0 6px' }}>Commission Schedule</h3>
             <CommissionTable />
             <p style={{ ...note, marginTop: 20 }}>
-              Questions? Email <a style={{ color: '#22D3EE' }} href="mailto:irfanhanif89@gmail.com">irfanhanif89@gmail.com</a>
+              Questions? Email <a style={{ color: '#22D3EE' }} href="mailto:hello@talkmate.com.au">hello@talkmate.com.au</a>
             </p>
           </>
         )}

@@ -1,14 +1,36 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { PLAN_CONFIG, type Plan } from '@/lib/plan'
 
 const ORDER: Plan[] = ['starter', 'growth', 'pro']
 
 export default function PlanComparison({ currentPlan }: { currentPlan: string }) {
-  const router = useRouter()
   const current = (currentPlan === 'professional' ? 'pro' : currentPlan) as Plan
+  // Session 27 (H6) — track which card is mid-redirect so we can show a
+  // loading state on its button while the Stripe portal session is created.
+  const [loadingPlan, setLoadingPlan] = useState<Plan | null>(null)
+
+  async function openStripePortal(planKey: Plan) {
+    if (loadingPlan) return
+    setLoadingPlan(planKey)
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const data = await res.json()
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        // Fall back: surface the error so we don't strand the user on a
+        // disabled button.
+        alert(data.error ?? 'Could not open Stripe portal. Please try again.')
+        setLoadingPlan(null)
+      }
+    } catch {
+      alert('Could not open Stripe portal. Please try again.')
+      setLoadingPlan(null)
+    }
+  }
   return (
     <div style={{ marginBottom: 28 }}>
       <h3 style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 4 }}>Compare plans</h3>
@@ -44,16 +66,23 @@ export default function PlanComparison({ currentPlan }: { currentPlan: string })
                 </div>
               ))}
               <button
-                disabled={isCurrent}
-                onClick={() => router.push('/api/stripe/portal')}
+                disabled={isCurrent || loadingPlan !== null}
+                onClick={() => openStripePortal(planKey)}
                 style={{
                   width: '100%', marginTop: 14,
                   background: isCurrent ? 'rgba(255,255,255,0.06)' : recommended ? '#1565C0' : '#E8622A',
                   color: isCurrent ? '#7BAED4' : 'white', border: 'none', borderRadius: 9,
-                  padding: '10px 14px', fontSize: 13, fontWeight: 700, cursor: isCurrent ? 'default' : 'pointer', fontFamily: 'Outfit, sans-serif',
+                  padding: '10px 14px', fontSize: 13, fontWeight: 700,
+                  cursor: isCurrent ? 'default' : loadingPlan === planKey ? 'wait' : 'pointer',
+                  fontFamily: 'Outfit, sans-serif',
+                  opacity: loadingPlan !== null && loadingPlan !== planKey ? 0.55 : 1,
                 }}
               >
-                {isCurrent ? 'Current plan' : `Switch to ${cfg.label} →`}
+                {isCurrent
+                  ? 'Current plan'
+                  : loadingPlan === planKey
+                    ? 'Opening Stripe…'
+                    : `Switch to ${cfg.label} →`}
               </button>
             </div>
           )

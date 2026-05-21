@@ -6,7 +6,8 @@ import ScriptsView, { type ScriptRow } from './scripts-view'
 export const metadata: Metadata = { title: 'Sales Scripts' }
 export const dynamic = 'force-dynamic'
 
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function SalesScriptsPage() {
   const supabase = await createClient()

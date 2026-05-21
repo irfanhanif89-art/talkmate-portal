@@ -4036,3 +4036,280 @@ No new env vars. Uses existing:
   via `/admin/contractors` (delete + re-invite + re-sign), or a
   future targeted script.
 
+
+# Session 27 — Revenue-Critical Fixes
+
+Branch: `feature/session-27-revenue-fixes` from `dev`.
+Migration: `042_session27_fixes.sql`.
+
+Fourteen Tier-1 findings from the system audit. Two themes — close the
+silent revenue leaks (Stripe payment failures, stranded pay-now signups,
+mock onboarding payment), and make the demo-blocking surfaces work
+(Proxima white-label preview, sales-rep lead creation).
+
+## Parts shipped
+
+- **Part 1 (H2)** — `/wl-preview/*` is public again. `middleware.ts` adds
+  an early-return at the top of `middleware()` BEFORE any auth lookup,
+  and removes `/wl-preview` from `protectedPaths`. Anonymous prospects
+  can hit `/wl-preview/proxima` without bouncing to /login.
+
+- **Part 2 (H1)** — Onboarding step 9 wired to real Stripe. The
+  `setTimeout` mock with bare HTML card inputs is gone. Step 9 now POSTs
+  to `/api/stripe/embedded-checkout` with `returnUrl=/onboarding?paid=1`
+  and renders `<EmbeddedCheckout>` from `@stripe/react-stripe-js`. After
+  Stripe redirects back, an effect polls `/api/onboarding/payment-status`
+  every 2s for up to 30s until `account_status` flips off `pending_payment`
+  (the webhook is the source of truth, never the client-side redirect).
+  When confirmed, the wizard advances to step 10. Stuck pay-now signups
+  are rescued by the new `/api/cron/expire-pending-payments` cron
+  (daily, 22:45 UTC): rows in `pending_payment` older than 24h get
+  flipped to `trial` with a 7-day window and an email saying we have
+  started your trial — finish setup here.
+
+- **Parts 3+4 (H3, H4, H5)** — Stripe webhook gaps closed.
+  `notifications.ts` gains a generic `sendAdminTelegram(text)` helper
+  (no more inline fetches to api.telegram.org). The `invoice.payment_failed`
+  branch now generates a Stripe billing portal session, emails the client
+  ("Action required — your TalkMate payment failed"), AND fires a
+  Telegram alert to admin. The `customer.subscription.deleted` branch
+  now flips `businesses.account_status = cancelled`, emails the client
+  ("Your TalkMate subscription has been cancelled. Reactivate →"), and
+  Telegrams admin. Existing `subscriptions` table behavior unchanged.
+
+- **Part 5 (H7)** — Settings → Notifications "Save Preferences" now
+  actually saves. `saveBusiness()` is whitelisted to the businesses
+  columns it owns (name, phone_number, website, address, abn, voice).
+  A new `saveNotifications()` reads the live `notifications_config`
+  JSONB, merges the local notifs state on top, and writes it back —
+  preserving keys other tabs/admin set. `notification_email` moved off
+  the Business Info form (where it was silently failing) into the
+  Notifications card. Voice select now persists. WhatsApp/Telegram
+  toggles on the Notifications tab write to the same JSONB path as
+  the Integrations tab — no more drift between the two views.
+
+- **Part 6 (H22)** — Sales reps can now add their own leads. New
+  `POST /api/sales/leads` validates business_name + contact_name +
+  contact_phone, stamps `assigned_to=auth.rep.id` server-side
+  (request body never trusted for rep_id), and creates an audit
+  `lead_activities` row. UI: a new `AddLeadModal` component opens
+  from a "+ Add Lead" button in the leads-board top-right and from
+  an empty-state CTA when the rep has zero leads. The kanban
+  immediately prepends the new lead in the "New" column. The
+  dashboard banner copy ("Start by adding your first lead from the
+  Leads tab") is now accurate. Rep commissions page surfaces
+  "Clears on [date]" next to every pending row so reps see exactly
+  when the 14-day clawback ends.
+
+- **Part 7 (H23)** — 14-day clawback enforced on rep commissions.
+  `/api/admin/commissions/[id]` now returns 409 if an admin tries
+  to approve a commission before `clawback_period_ends_at`. New
+  commissions get the column populated by the won route at created
+  time (`won_at + 14d`); migration 042 backfills every existing row.
+  Admin sales-team view shows "🔒 Clawback ends [date]" under the
+  Created column, with the Approve button disabled (tooltip:
+  "Available to approve on [date]") until the period passes.
+
+- **Part 8 (H24, daily-scheduling)** — `vercel.json` cleaned up.
+  Three groups of three crons that shared a minute have been
+  staggered by 15 minutes each (Vercel Hobby plan concurrency).
+  Group `0 22 *`: onboard-day7 / expire-trials / daily-quality-digest
+  → kept onboard-day7 at :00, moved expire-trials to :15,
+  daily-quality-digest to :30. Group `0 23 *`: call-forward-check
+  at :00, trial-reminders at :15, clear-eligible-commissions at :30.
+  Group `0 * * * *`: abandoned-signup at :00, email-triggers at :15,
+  sms-reminders at :30. The new `expire-pending-payments` cron sits
+  at `45 22 * * *`. (Note: `clear-eligible-commissions` was already
+  in vercel.json — Session 26 added it; brief was working from a
+  stale view of the audit. Confirmed scheduled; just moved its
+  minute for the stagger.)
+
+- **Part 9 (H25, H26, H29)** — Self-serve signup gets a welcome
+  email + `signup_at` + onboarding redirect.
+  `src/app/api/auth/signup/route.ts` writes `signup_at: now()` into
+  the business insert (column added idempotently by migration 042;
+  any downstream cron filtering on `signup_at` finally fires for
+  self-serve users). After the row lands, sends a Resend welcome
+  email via `sendEmail()` and flips `welcome_email_sent=true` on
+  success. Middleware adds a `shouldRedirectToOnboarding()` helper:
+  if the user is authenticated, owns a business with
+  `onboarding_complete=false` AND `account_status` in
+  `(trial, pending_payment, pending)`, redirect every
+  protected path (except /onboarding, /accept-terms, /subscribe,
+  /admin, /sales) to /onboarding. Admin exemption uses the existing
+  super-admin allowlist that already short-circuits the middleware
+  earlier — no new env vars.
+
+- **Part 10 (H6)** — Plan upgrade/downgrade buttons fixed.
+  `plan-comparison.tsx` no longer `router.push()`es into a POST-only
+  endpoint. The cards now `fetch(/api/stripe/portal, { method: POST })`
+  and redirect to `data.url`. Per-card loading state ("Opening Stripe…")
+  prevents double-click. The "Upgrade →" button on the current-plan
+  card got an onClick handler with the same pattern.
+  `/api/stripe/portal/route.ts` was already correct — no changes there.
+
+- **Part 11 (H34)** — All hardcoded fallback secrets removed.
+  Resend API key literals in `webhooks/stripe/route.ts` and
+  `cron/abandoned-signup/route.ts` dropped. Telegram bot token
+  literals in `cron/health-monitor/route.ts` and
+  `onboarding/complete/route.ts` dropped. Hardcoded Telegram chat
+  IDs (`7809273812`) removed from three files. The personal
+  Gmail address (`irfanhanif89@gmail.com`) was the most pervasive
+  — 15 source locations. Auth allowlists (`ADMIN_EMAILS = [...]`
+  in 11 files plus the `||` chain in `admin-auth.ts`,
+  `admin/trials/page.tsx`, `admin/sms-failures/page.tsx`,
+  `admin/audit-log/page.tsx`) now read `process.env.ADMIN_EMAIL`
+  instead of the literal. The two `mailto:` references in the
+  contractor onboarding flow route to `hello@talkmate.com.au`.
+  The `irfanhanif89@gmail.com` literal in `onboarding/complete`
+  for the admin-notification email now uses `process.env.ADMIN_EMAIL
+  || process.env.INTERNAL_ALERT_EMAIL`. `grep` confirms zero
+  remaining matches.
+
+## Migration 042
+
+`supabase/migrations/042_session27_fixes.sql`. Five changes, all
+idempotent:
+
+1. `businesses.signup_at TIMESTAMPTZ` (IF NOT EXISTS) + backfill
+   `created_at` for `onboarded_by=self` rows that lack it.
+2. `businesses.welcome_email_sent BOOLEAN DEFAULT false` (IF NOT
+   EXISTS).
+3. `commissions.clawback_period_ends_at TIMESTAMPTZ` (IF NOT EXISTS)
+   + backfill `created_at + interval 14 days` for every row.
+4. `sms_log_sms_type_check` CHECK constraint dropped and recreated
+   to include `callback_confirmation` and `dispatcher_callback_alert`
+   (Session 22 callback handler types) ALONGSIDE every existing
+   type from migration 032 — preserved verbatim.
+5. `admin_sms_failures` view recreated. Same SELECT and join as
+   migration 033; only the WHERE clause widens from `status=failed`
+   to `status IN (failed, rejected)` so plan-quota refusals show
+   in the admin UI alongside Twilio failures.
+
+## Environment variables
+
+No new env vars are required for the build to compile. To get full
+production behavior, ensure these are set in Vercel:
+
+- `RESEND_API_KEY` — required by Stripe webhook welcome email,
+  abandoned-signup cron, payment-failure email. All now fail
+  closed (log + skip) if missing instead of using a leaked literal.
+- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ADMIN_CHAT_ID` — required by
+  every admin alert path (sendAdminTelegram, health-monitor,
+  approve-agent, onboarding-complete). All fail closed if missing.
+- `ADMIN_EMAIL` (optional but recommended) — adds a personal
+  super-admin email to the allowlist alongside `hello@talkmate.com.au`
+  and `INTERNAL_ALERT_EMAIL`. If unset, the literal previously
+  hardcoded (`irfanhanif89@gmail.com`) is no longer special; Irfan
+  should sign in via `hello@talkmate.com.au` or set `ADMIN_EMAIL`.
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (optional) — the onboarding
+  wizard EmbeddedCheckout falls back to the same `pk_live_*` key
+  the /subscribe flow already uses if unset. Setting this env var
+  is the recommended path going forward.
+
+## Deviations from the brief
+
+- **Brief Part 8 said "add clear-eligible-commissions to vercel.json"**
+  — it was already there (Session 26). Confirmed scheduled; only
+  staggered its minute to avoid colliding with two other 23:00 UTC
+  crons. Brief was based on the audit, which was based on a stale
+  view of `vercel.json` before Session 26 merged into dev.
+- **Brief Part 3/4 spec showed an inline `sendTelegramMessage` call
+  that did not exist** — implemented as `sendAdminTelegram(text)`
+  in `notifications.ts`. Audit M38 explicitly recommended this
+  helper; this session adds it.
+- **Brief Part 10 said "create `src/app/api/stripe/portal/route.ts`"**
+  — it already existed and was already POST-only with the correct
+  return signature. Only the callers (plan-comparison and the
+  current-plan "Upgrade →" button) needed fixing.
+- **Brief Part 6 used hypothetical field names** (`contact_phone`,
+  `contact_email`, `rep_id`). Actual leads schema (migration 036)
+  uses `phone`, `email`, `assigned_to`. POST body uses the real
+  column names so creates/edits stay symmetric.
+- **Brief Part 9c suggested a new `ADMIN_EMAIL` env var pattern
+  for admin exemption from the onboarding redirect**. Instead used
+  the existing super-admin allowlist (`ADMIN_EMAILS = [hello@..., 
+  process.env.ADMIN_EMAIL]`) that already short-circuits the
+  middleware earlier — admins already hit a return statement before
+  the new redirect check fires. No new env var pattern introduced.
+- **Brief Part 5 said `notification_email` belongs in
+  notifications_config** — confirmed it was a JSONB column, removed
+  the broken Business Info form entry, and made `saveNotifications`
+  the single writer.
+- **Added Part 2 sub-fix not in the original brief: `returnUrl`
+  body param on `/api/stripe/embedded-checkout`** so the onboarding
+  wizard can come back to /onboarding instead of /dashboard. Backward
+  compatible — defaults to the existing /dashboard return if unset.
+  Validated as a relative path to prevent open-redirect abuse.
+
+## What was deliberately not touched
+
+- The 15 deferred High-severity audit items (H8, H9, H10, H11, H12,
+  H13, H14, H15, H18, H19, H20, H21, H27, H28, H30, H31, H32, H33)
+  — three follow-on briefs queued: Vapi lifecycle, SMS/bookings
+  data integrity, admin tooling completeness.
+- The legacy `/bookings` page schema (Flow 6 H19) — separate
+  follow-up.
+- Stripe webhook `customer.subscription.updated`, the two legacy
+  checkout routes (`/api/stripe/checkout`, `/api/stripe/create-checkout-session`),
+  Vapi agent lifecycle issues, agent health alerts — all queued.
+- Make.com scenarios — no payload changes; the new email paths
+  use `sendEmail` directly so Make does not need to change.
+- Vapi assistants — no config or behavior changes.
+
+## Manual handoff for Donna
+
+1. Apply `supabase/migrations/042_session27_fixes.sql` on production
+   Supabase after merge to main.
+2. Confirm `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_ADMIN_CHAT_ID` are set in Vercel production env (they
+   already were — this just removes the source fallback safety net).
+3. Optionally set `ADMIN_EMAIL` in Vercel to add a personal
+   super-admin alongside `hello@talkmate.com.au`.
+4. No Make.com scenario changes required.
+5. No Vapi changes required.
+6. Verify cron schedules show the new entries on the Vercel dashboard:
+   - `expire-pending-payments` at 45 22 * * * (new)
+   - `expire-trials` moved from 0 22 * * * to 15 22 * * *
+   - `daily-quality-digest` moved from 0 22 * * * to 30 22 * * *
+   - `trial-reminders` moved from 0 23 * * * to 15 23 * * *
+   - `clear-eligible-commissions` moved from 0 23 * * * to 30 23 * * *
+   - `email-triggers` moved from 0 * * * * to 15 * * * *
+   - `sms-reminders` moved from 0 * * * * to 30 * * * *
+
+## Testing checklist (run on preview/test mode before prod)
+
+- [ ] `/wl-preview/proxima` loads anonymously (no /login redirect).
+- [ ] New self-serve signup writes `signup_at`, sends welcome email,
+      redirects to /onboarding.
+- [ ] Admin user signs in and is NOT redirected to /onboarding.
+- [ ] Onboarding step 9 renders Stripe EmbeddedCheckout (not the
+      mock card inputs).
+- [ ] After Stripe test-mode payment, wizard polls and advances to
+      step 10. URL no longer carries `?paid=1`.
+- [ ] Pay-now signup that abandons Stripe → 24h later, cron flips
+      to trial, owner receives the "we have started your trial" email.
+- [ ] Stripe test webhook `invoice.payment_failed` → owner email
+      with Stripe portal link + admin Telegram fire.
+- [ ] Stripe test webhook `customer.subscription.deleted` →
+      `businesses.account_status` becomes cancelled, owner email
+      sends, admin Telegram fires.
+- [ ] Settings → Notifications → toggle anything → click "Save
+      Preferences" → success toast → refresh → toggles persist.
+- [ ] Voice card in Settings → AI Voice Agent → choose a different
+      voice → click Save & Sync → refresh → voice persists.
+- [ ] Sales rep clicks "+ Add Lead" → modal opens → required fields
+      enforce → submit → new lead appears in the "New" kanban column.
+- [ ] Sales rep with zero leads sees the empty-state CTA.
+- [ ] Admin tries to approve a < 14-day-old commission → 409 with
+      a clawback-ends-at message. Approve button disabled in UI
+      with tooltip showing the date.
+- [ ] Rep portal commissions page shows "Clears on [date]" under
+      every pending row.
+- [ ] Plan-comparison "Switch to Growth →" opens Stripe portal in
+      new location.
+- [ ] Current-plan "Upgrade →" button opens Stripe portal.
+- [ ] `npm run build` passes with zero errors. (Confirmed in
+      Session 27.)
+- [ ] `grep` for the removed secret literals returns nothing.
+      (Confirmed in Session 27.)

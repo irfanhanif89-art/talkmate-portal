@@ -56,15 +56,20 @@ async function sendAlert(message: string) {
     console.error('[health-monitor] WhatsApp failed:', e)
   }
 
-  // Telegram backup
+  // Telegram backup — env vars must be set in Vercel; no source fallback.
   try {
-    const token = process.env.TELEGRAM_BOT_TOKEN || '8191514620:AAGmr4DitFXG9Wn0U_26FpDyhKNQyMvmotA'
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: '7809273812', text: message }),
-    })
-    console.log('[health-monitor] Telegram alert sent')
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID
+    if (!token || !chatId) {
+      console.error('[health-monitor] TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID missing — skipping Telegram alert')
+    } else {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message }),
+      })
+      console.log('[health-monitor] Telegram alert sent')
+    }
   } catch (e) {
     console.error('[health-monitor] Telegram failed:', e)
   }

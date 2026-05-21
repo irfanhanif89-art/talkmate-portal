@@ -284,7 +284,15 @@ export default function BillingPage() {
               Manage in Stripe
             </button>
             {planConfig.key !== 'pro' && planConfig.key !== 'professional' && (
-              <button style={{ flex: 1, padding: '11px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              <button
+                onClick={async () => {
+                  const r = await fetch('/api/stripe/portal', { method: 'POST' })
+                  const d = await r.json()
+                  if (d.url) window.location.href = d.url
+                  else alert(d.error ?? 'Could not open Stripe portal. Please try again.')
+                }}
+                style={{ flex: 1, padding: '11px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
                 Upgrade →
               </button>
             )}

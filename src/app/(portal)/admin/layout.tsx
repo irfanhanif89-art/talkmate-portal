@@ -10,7 +10,8 @@ import AdminSidebarLayout from '@/components/admin/AdminSidebarLayout'
 // Belt-and-braces — Next.js layouts can sometimes render before a
 // parent redirect resolves during hot reload, and we'd rather double-
 // check than briefly leak admin chrome to a logged-out user.
-const ADMIN_EMAILS = ['hello@talkmate.com.au', 'irfanhanif89@gmail.com']
+// Set ADMIN_EMAIL in Vercel environment variables
+const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()

@@ -1,9 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_hH6pbyrr_BgLjFBZyiHwaErEyibPgtVpm'
+// Resend key must be set in Vercel env vars. No source fallback.
+const RESEND_API_KEY = process.env.RESEND_API_KEY
 
 async function sendEmail(to: string, subject: string, html: string) {
+  if (!RESEND_API_KEY) {
+    console.error('[abandoned-signup] RESEND_API_KEY missing — skipping email to', to)
+    return
+  }
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
