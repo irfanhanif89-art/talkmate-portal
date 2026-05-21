@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileText, Plus, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, FileText, Plus, AlertTriangle, Send } from 'lucide-react'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/sales-format'
 
 export interface DetailContractor {
@@ -115,6 +115,32 @@ export default function ContractorDetailView({
   const [addOpen, setAddOpen] = useState(false)
   const [terminateOpen, setTerminateOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; message: string } | null>(null)
+
+  const showToast = (kind: 'ok' | 'err', message: string) => {
+    setToast({ kind, message })
+    window.setTimeout(() => setToast(null), 4000)
+  }
+
+  const canResendInvite = contractor.status === 'invited' || contractor.status === 'agreement_sent'
+
+  const resendInvite = async () => {
+    setBusy('resend')
+    try {
+      const res = await fetch(`/api/contractors/${contractor.id}/resend`, { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) {
+        showToast('err', json.error || 'Could not resend invite')
+      } else {
+        showToast('ok', `Invite resent to ${contractor.email}`)
+        router.refresh()
+      }
+    } catch {
+      showToast('err', 'Could not resend invite')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const totalEarned = useMemo(
     () => commissions.filter(c => c.status === 'paid' || c.status === 'cleared').reduce((s, c) => s + Number(c.commission_amount), 0),
@@ -155,6 +181,16 @@ export default function ContractorDetailView({
 
   return (
     <div style={wrap}>
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 24, right: 24, zIndex: 100,
+          padding: '12px 18px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+          background: toast.kind === 'ok' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+          border: `1px solid ${toast.kind === 'ok' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
+          color: toast.kind === 'ok' ? '#86efac' : '#fca5a5',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+        }}>{toast.message}</div>
+      )}
       <button style={{ ...btnGhost, marginBottom: 16 }} onClick={() => router.push('/admin/contractors')}>
         <ArrowLeft size={14} /> All contractors
       </button>
@@ -168,7 +204,22 @@ export default function ContractorDetailView({
       {/* Profile */}
       <div style={card}>
         <h2 style={sectionTitle}>Profile</h2>
-        <div style={kvRow}><div style={kvKey}>Email</div><div style={kvVal}>{contractor.email}</div></div>
+        <div style={kvRow}>
+          <div style={kvKey}>Email</div>
+          <div style={{ ...kvVal, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+            <span>{contractor.email}</span>
+            {canResendInvite && (
+              <button
+                style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}
+                disabled={busy === 'resend'}
+                onClick={resendInvite}
+              >
+                <Send size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                {busy === 'resend' ? 'Resending...' : 'Resend Invite'}
+              </button>
+            )}
+          </div>
+        </div>
         <div style={kvRow}><div style={kvKey}>Phone</div><div style={kvVal}>{contractor.phone || 'Not provided'}</div></div>
         <div style={kvRow}><div style={kvKey}>ABN</div><div style={kvVal}>{contractor.abn || 'Not provided (47% withholding applies)'}</div></div>
         <div style={kvRow}><div style={kvKey}>Bank BSB</div><div style={kvVal}>{contractor.bank_bsb || 'Not provided'}</div></div>
@@ -251,20 +302,28 @@ export default function ContractorDetailView({
                 </tr>
               </thead>
               <tbody>
-                {commissions.map(c => (
+                {commissions.map(c => {
+                  const clawbackEnd = new Date(c.clawback_period_ends_at)
+                  const clawbackHeld = clawbackEnd.getTime() > Date.now()
+                  return (
                   <tr key={c.id}>
                     <td style={tdStyle}>{c.plan_type}</td>
                     <td style={tdStyle}>{c.billing_cycle}</td>
                     <td style={tdStyle}>{formatCurrency(Number(c.sale_amount))}</td>
                     <td style={tdStyle}>${Number(c.commission_amount).toFixed(2)}</td>
                     <td style={tdStyle}>{statusBadge(c.status)}</td>
-                    <td style={tdStyle}>{formatDate(c.clawback_period_ends_at)}</td>
+                    <td style={tdStyle}>
+                      <span style={{ color: clawbackHeld ? '#F59E0B' : 'inherit' }}>
+                        {formatDate(c.clawback_period_ends_at)}
+                      </span>
+                    </td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {c.status === 'pending' && (
                           <button
-                            style={btnGhost}
-                            disabled={busy === c.id + ':clear'}
+                            style={clawbackHeld ? { ...btnGhost, opacity: 0.5, cursor: 'not-allowed' } : btnGhost}
+                            disabled={busy === c.id + ':clear' || clawbackHeld}
+                            title={clawbackHeld ? `Available to clear on ${formatDate(c.clawback_period_ends_at)}` : undefined}
                             onClick={() => updateCommission(c.id, 'clear')}
                           >Mark Cleared</button>
                         )}
@@ -291,7 +350,8 @@ export default function ContractorDetailView({
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

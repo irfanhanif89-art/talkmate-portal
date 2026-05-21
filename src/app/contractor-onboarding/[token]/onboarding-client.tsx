@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import SignatureCapture, { type SignatureMethod } from '@/components/contractor/SignatureCapture'
+import { isValidAbnFormat, normaliseAbn } from '@/lib/abn'
 
 type ContractorPayload = {
   id: string
@@ -137,7 +139,8 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   const [acct, setAcct] = useState('')
   const [agreeAgreement, setAgreeAgreement] = useState(false)
   const [agreeScript, setAgreeScript] = useState(false)
-  const [agreeAbnWithhold, setAgreeAbnWithhold] = useState(false)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  const [signatureMethod, setSignatureMethod] = useState<SignatureMethod>('drawn')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const agreementBoxRef = useRef<HTMLDivElement | null>(null)
@@ -182,6 +185,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }, [])
 
   const submitDetails = useCallback(async () => {
+    if (!isValidAbnFormat(abn)) {
+      setSubmitError('Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -190,7 +197,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone || null,
-          abn: abn || null,
+          abn: normaliseAbn(abn),
           bank_bsb: bsb || null,
           bank_account_number: acct || null,
         }),
@@ -209,6 +216,14 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }, [token, phone, abn, bsb, acct])
 
   const submitSign = useCallback(async () => {
+    if (!signatureDataUrl) {
+      setSubmitError('Please sign the agreement before continuing.')
+      return
+    }
+    if (!isValidAbnFormat(abn)) {
+      setSubmitError('Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -217,7 +232,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           signature_consent: true,
-          abn: abn || null,
+          signature_data_url: signatureDataUrl,
+          signature_method: signatureMethod,
+          signature_timestamp: new Date().toISOString(),
+          abn: normaliseAbn(abn),
           bank_bsb: bsb || null,
           bank_account_number: acct || null,
         }),
@@ -233,7 +251,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
     } finally {
       setSubmitting(false)
     }
-  }, [token, abn, bsb, acct])
+  }, [token, abn, bsb, acct, signatureDataUrl, signatureMethod])
 
   if (!load) {
     return (
@@ -270,7 +288,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }
 
   const c = load.contractor
-  const needsAbnCheckbox = !abn || abn.trim().length === 0
+  const abnValid = isValidAbnFormat(abn)
 
   return (
     <div style={wrap}>
@@ -515,12 +533,26 @@ export default function ContractorOnboardingClient({ token }: { token: string })
             </div>
 
             <div style={{ marginTop: 12 }}>
-              <label style={label}>ABN (optional)</label>
-              <input style={input} value={abn} onChange={e => setAbn(e.target.value)} placeholder="11 digit ABN" />
-              <p style={note}>
-                If you do not provide an ABN, 47 percent tax withholding applies to all commission payments
-                as required by Australian law.
-              </p>
+              <label style={label}>ABN (required)</label>
+              <input
+                style={input}
+                value={abn}
+                onChange={e => setAbn(e.target.value)}
+                placeholder="11 digit ABN"
+                required
+                inputMode="numeric"
+                maxLength={14}
+              />
+              {abn.trim().length > 0 && !isValidAbnFormat(abn) && (
+                <p style={{ ...note, color: '#fca5a5' }}>
+                  Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.
+                </p>
+              )}
+              {abn.trim().length === 0 && (
+                <p style={note}>
+                  Contractors must have a valid 11-digit ABN to engage with TalkMate.
+                </p>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginTop: 12 }}>
@@ -539,7 +571,11 @@ export default function ContractorOnboardingClient({ token }: { token: string })
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button style={buttonGhost} onClick={() => setStep(2)}>Back</button>
-              <button style={submitting ? buttonDisabled : button} disabled={submitting} onClick={submitDetails}>
+              <button
+                style={submitting || !abnValid ? buttonDisabled : button}
+                disabled={submitting || !abnValid}
+                onClick={submitDetails}
+              >
                 {submitting ? 'Saving...' : 'Continue'}
               </button>
             </div>
@@ -548,14 +584,25 @@ export default function ContractorOnboardingClient({ token }: { token: string })
 
         {step === 4 && (
           <>
-            <h1 style={heading}>Sign Agreement</h1>
-            <p style={sub}>Confirm the details below and tick each box to sign.</p>
+            <h1 style={heading}>Sign the Agreement</h1>
+            <p style={sub}>
+              By signing below you confirm you have read and agree to all terms of
+              the TalkMate Sales Contractor Agreement v2.0.
+            </p>
 
             <div style={summaryBox}>
               <div style={{ marginBottom: 4 }}><strong>Contractor:</strong> {fullName}</div>
               <div style={{ marginBottom: 4 }}><strong>Agreement Version:</strong> 2.0</div>
               <div style={{ marginBottom: 4 }}><strong>Date:</strong> {today}</div>
               <div><strong>Script Version:</strong> {scriptVersion} (dated {scriptDate})</div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <SignatureCapture
+                signerName={fullName}
+                onSignatureChange={setSignatureDataUrl}
+                onMethodChange={setSignatureMethod}
+              />
             </div>
 
             <label style={checkboxRow}>
@@ -576,30 +623,30 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               </span>
             </label>
 
-            {needsAbnCheckbox && (
-              <label style={checkboxRow}>
-                <input type="checkbox" checked={agreeAbnWithhold} onChange={e => setAgreeAbnWithhold(e.target.checked)} style={{ marginTop: 4 }} />
-                <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-                  I understand that TalkMate is required by law to withhold 47 percent of all
-                  commission payments until I provide a valid ABN.
-                </span>
-              </label>
-            )}
-
             {submitError && <div style={{ ...errorBox, marginTop: 12 }}>{submitError}</div>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button style={buttonGhost} onClick={() => setStep(3)}>Back</button>
               <button
                 style={
-                  submitting || !agreeAgreement || !agreeScript || (needsAbnCheckbox && !agreeAbnWithhold)
+                  submitting
+                    || !signatureDataUrl
+                    || !agreeAgreement
+                    || !agreeScript
+                    || !abnValid
                     ? buttonDisabled
                     : button
                 }
-                disabled={submitting || !agreeAgreement || !agreeScript || (needsAbnCheckbox && !agreeAbnWithhold)}
+                disabled={
+                  submitting
+                  || !signatureDataUrl
+                  || !agreeAgreement
+                  || !agreeScript
+                  || !abnValid
+                }
                 onClick={submitSign}
               >
-                {submitting ? 'Generating your signed agreement...' : 'Sign Agreement'}
+                {submitting ? 'Generating your signed agreement...' : 'Sign and Complete'}
               </button>
             </div>
           </>

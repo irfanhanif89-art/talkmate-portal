@@ -86,6 +86,34 @@ export async function notifyAdminAlert(message: string) {
   await sendTelegram(message)
 }
 
+// Sent to a contractor when an existing auth user is found at signing
+// time (so inviteUserByEmail does not generate the magic-link email).
+// They still need to know their portal is live.
+export async function sendRepPortalAccessEmail(opts: {
+  email: string
+  name: string
+  portalUrl: string
+}) {
+  await sendEmail({
+    to: opts.email,
+    subject: 'Your TalkMate Sales HQ access is ready',
+    html: repPortalAccessEmailHtml({ repName: opts.name, portalUrl: opts.portalUrl }),
+  })
+}
+
+// Sent to a contractor when their agreement is terminated.
+export async function sendTerminationEmail(opts: {
+  email: string
+  name: string
+  terminationDate: string
+}) {
+  await sendEmail({
+    to: opts.email,
+    subject: 'Your TalkMate Sales Contractor Agreement has been terminated',
+    html: terminationEmailHtml({ repName: opts.name, terminationDate: opts.terminationDate }),
+  })
+}
+
 // =============================================
 // Email templates
 // =============================================
@@ -187,6 +215,26 @@ export function dealRejectedEmailHtml(opts: { repName: string; businessName: str
     ${opts.reason ? `<p><strong>Reason:</strong> ${escapeHtml(opts.reason)}</p>` : ''}
     <p>The lead has been moved back into your pipeline. Reach out to admin if you'd like to discuss.</p>
     <p style="margin: 22px 0;">${btn(`${PORTAL_URL}/sales/leads`, 'Back to Pipeline')}</p>
+  `)
+}
+
+export function repPortalAccessEmailHtml(opts: { repName: string; portalUrl: string }) {
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your contractor agreement is signed</h2>
+    <p>Hi ${escapeHtml(opts.repName)},</p>
+    <p>Welcome to the TalkMate sales team. Your contractor agreement is signed and your Sales HQ portal access is now live on your existing TalkMate login.</p>
+    <p style="margin: 22px 0;">${btn(opts.portalUrl, 'Open Sales HQ')}</p>
+    <p>Sign in with the same email this message was sent to. If you have any questions, just reply to this email.</p>
+  `)
+}
+
+export function terminationEmailHtml(opts: { repName: string; terminationDate: string }) {
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your TalkMate Sales Contractor Agreement has been terminated</h2>
+    <p>Hi ${escapeHtml(opts.repName)},</p>
+    <p>This email confirms that your Sales Contractor Agreement with TalkMate has been terminated effective <strong>${escapeHtml(opts.terminationDate)}</strong>. Your portal access has been revoked.</p>
+    <p>Any commissions earned on qualified sales prior to this date will be paid in accordance with the agreement terms.</p>
+    <p>If you have questions please contact <a href="mailto:hello@talkmate.com.au" style="color: #E8622A;">hello@talkmate.com.au</a>.</p>
   `)
 }
 
