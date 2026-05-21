@@ -4,7 +4,11 @@
 //   B. Signed PDF deliver - CONTRACTOR_SIGNED_PDF_WEBHOOK_URL
 // Both are best-effort: a webhook failure is logged but never blocks
 // the underlying API response. Donna populates the env vars after the
-// Make.com scenarios are built.
+// Make.com scenarios are built. If an env var is unset, we fire an
+// admin Telegram alert so a missing config does not silently swallow
+// contractor email delivery.
+
+import { notifyAdminAlert } from '@/lib/sales-notify'
 
 export interface InviteEmailPayload {
   contractor_id: string
@@ -25,9 +29,12 @@ export interface SignedPdfPayload {
   signed_pdf_signed_url: string
 }
 
-async function postWebhook(url: string | undefined, payload: unknown, label: string): Promise<{ ok: boolean; error?: string }> {
+async function postWebhook(url: string | undefined, payload: unknown, label: string, envVar: string): Promise<{ ok: boolean; error?: string }> {
   if (!url) {
     console.warn(`[contractor-webhook] ${label} skipped - webhook URL not configured`)
+    notifyAdminAlert(
+      `⚠️ ${envVar} is not set. ${label} was not delivered to contractor. Fix the env var immediately.`,
+    ).catch(() => {})
     return { ok: false, error: 'webhook url not configured' }
   }
   try {
@@ -48,9 +55,9 @@ async function postWebhook(url: string | undefined, payload: unknown, label: str
 }
 
 export function postInviteEmail(payload: InviteEmailPayload) {
-  return postWebhook(process.env.CONTRACTOR_AGREEMENT_WEBHOOK_URL, payload, 'invite email')
+  return postWebhook(process.env.CONTRACTOR_AGREEMENT_WEBHOOK_URL, payload, 'invite email', 'CONTRACTOR_AGREEMENT_WEBHOOK_URL')
 }
 
 export function postSignedPdfDelivery(payload: SignedPdfPayload) {
-  return postWebhook(process.env.CONTRACTOR_SIGNED_PDF_WEBHOOK_URL, payload, 'signed pdf delivery')
+  return postWebhook(process.env.CONTRACTOR_SIGNED_PDF_WEBHOOK_URL, payload, 'signed pdf delivery', 'CONTRACTOR_SIGNED_PDF_WEBHOOK_URL')
 }

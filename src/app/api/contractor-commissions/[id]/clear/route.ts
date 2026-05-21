@@ -19,6 +19,16 @@ export async function PATCH(_req: Request, ctx: { params: Promise<{ id: string }
   if (existing.status !== 'pending') {
     return NextResponse.json({ ok: false, error: 'Only pending commissions can be cleared' }, { status: 409 })
   }
+  if (new Date(existing.clawback_period_ends_at) > new Date()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Commission cannot be cleared until the 14-day clawback period has ended.',
+        clawback_ends_at: existing.clawback_period_ends_at,
+      },
+      { status: 409 },
+    )
+  }
 
   const { error } = await admin
     .from('contractor_commissions')

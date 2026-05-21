@@ -1,11 +1,11 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { isValidAbnFormat } from '@/lib/abn'
 
 export interface ContractorAgreementFields {
   contractor_first_name: string
   contractor_last_name: string
-  contractor_address: string
   agreement_date: string
   contractor_email: string
   contractor_phone: string
@@ -38,6 +38,13 @@ const TEMPLATE_REL_PATH = 'public/templates/contractor-agreement-template.pdf'
 export async function generateContractorAgreementPdf(
   fields: ContractorAgreementFields
 ): Promise<GeneratePdfResult> {
+  // ABN is mandatory and must pass format + checksum validation. The
+  // client and server routes enforce this earlier; this check is a
+  // last-line guard so we never produce a PDF without a valid ABN.
+  if (!fields.contractor_abn || !isValidAbnFormat(fields.contractor_abn)) {
+    throw new Error('contractor_abn must be a valid 11-digit ABN')
+  }
+
   const templatePath = path.join(process.cwd(), TEMPLATE_REL_PATH)
   let templateBytes: Uint8Array | null = null
   try {
@@ -87,7 +94,6 @@ export async function generateContractorAgreementPdf(
     y -= 4
     draw('Parties', { size: 13, bold: true })
     draw(`Contractor: ${fields.contractor_first_name} ${fields.contractor_last_name}`)
-    draw(`Address: ${fields.contractor_address}`)
     draw(`Email: ${fields.contractor_email}`)
     draw(`Phone: ${fields.contractor_phone}`)
     draw(`ABN: ${fields.contractor_abn}`)

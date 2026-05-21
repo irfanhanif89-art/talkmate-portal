@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import SignatureCapture, { type SignatureMethod } from '@/components/contractor/SignatureCapture'
+import { isValidAbnFormat, normaliseAbn } from '@/lib/abn'
 
 type ContractorPayload = {
   id: string
@@ -138,7 +139,6 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   const [acct, setAcct] = useState('')
   const [agreeAgreement, setAgreeAgreement] = useState(false)
   const [agreeScript, setAgreeScript] = useState(false)
-  const [agreeAbnWithhold, setAgreeAbnWithhold] = useState(false)
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const [signatureMethod, setSignatureMethod] = useState<SignatureMethod>('drawn')
   const [submitting, setSubmitting] = useState(false)
@@ -185,6 +185,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }, [])
 
   const submitDetails = useCallback(async () => {
+    if (!isValidAbnFormat(abn)) {
+      setSubmitError('Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -193,7 +197,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone || null,
-          abn: abn || null,
+          abn: normaliseAbn(abn),
           bank_bsb: bsb || null,
           bank_account_number: acct || null,
         }),
@@ -216,6 +220,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
       setSubmitError('Please sign the agreement before continuing.')
       return
     }
+    if (!isValidAbnFormat(abn)) {
+      setSubmitError('Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -227,7 +235,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
           signature_data_url: signatureDataUrl,
           signature_method: signatureMethod,
           signature_timestamp: new Date().toISOString(),
-          abn: abn || null,
+          abn: normaliseAbn(abn),
           bank_bsb: bsb || null,
           bank_account_number: acct || null,
         }),
@@ -280,7 +288,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }
 
   const c = load.contractor
-  const needsAbnCheckbox = !abn || abn.trim().length === 0
+  const abnValid = isValidAbnFormat(abn)
 
   return (
     <div style={wrap}>
@@ -390,12 +398,26 @@ export default function ContractorOnboardingClient({ token }: { token: string })
             </div>
 
             <div style={{ marginTop: 12 }}>
-              <label style={label}>ABN (optional)</label>
-              <input style={input} value={abn} onChange={e => setAbn(e.target.value)} placeholder="11 digit ABN" />
-              <p style={note}>
-                If you do not provide an ABN, 47 percent tax withholding applies to all commission payments
-                as required by Australian law.
-              </p>
+              <label style={label}>ABN (required)</label>
+              <input
+                style={input}
+                value={abn}
+                onChange={e => setAbn(e.target.value)}
+                placeholder="11 digit ABN"
+                required
+                inputMode="numeric"
+                maxLength={14}
+              />
+              {abn.trim().length > 0 && !isValidAbnFormat(abn) && (
+                <p style={{ ...note, color: '#fca5a5' }}>
+                  Please enter your 11-digit ABN. Contractors must have a valid ABN to engage with TalkMate.
+                </p>
+              )}
+              {abn.trim().length === 0 && (
+                <p style={note}>
+                  Contractors must have a valid 11-digit ABN to engage with TalkMate.
+                </p>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginTop: 12 }}>
@@ -414,7 +436,11 @@ export default function ContractorOnboardingClient({ token }: { token: string })
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button style={buttonGhost} onClick={() => setStep(2)}>Back</button>
-              <button style={submitting ? buttonDisabled : button} disabled={submitting} onClick={submitDetails}>
+              <button
+                style={submitting || !abnValid ? buttonDisabled : button}
+                disabled={submitting || !abnValid}
+                onClick={submitDetails}
+              >
                 {submitting ? 'Saving...' : 'Continue'}
               </button>
             </div>
@@ -462,16 +488,6 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               </span>
             </label>
 
-            {needsAbnCheckbox && (
-              <label style={checkboxRow}>
-                <input type="checkbox" checked={agreeAbnWithhold} onChange={e => setAgreeAbnWithhold(e.target.checked)} style={{ marginTop: 4 }} />
-                <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-                  I understand that TalkMate is required by law to withhold 47 percent of all
-                  commission payments until I provide a valid ABN.
-                </span>
-              </label>
-            )}
-
             {submitError && <div style={{ ...errorBox, marginTop: 12 }}>{submitError}</div>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
@@ -482,7 +498,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
                     || !signatureDataUrl
                     || !agreeAgreement
                     || !agreeScript
-                    || (needsAbnCheckbox && !agreeAbnWithhold)
+                    || !abnValid
                     ? buttonDisabled
                     : button
                 }
@@ -491,7 +507,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
                   || !signatureDataUrl
                   || !agreeAgreement
                   || !agreeScript
-                  || (needsAbnCheckbox && !agreeAbnWithhold)
+                  || !abnValid
                 }
                 onClick={submitSign}
               >
