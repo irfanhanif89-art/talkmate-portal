@@ -224,7 +224,6 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H30–H33** — Various deferred audit items
 
 ### Infrastructure
-- **VAPI_WEBHOOK_SECRET** not set in Vercel — webhook signature verification is disabled
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used
 - **Make.com scenarios** not yet built (contractor invite email + signed PDF delivery)
 
