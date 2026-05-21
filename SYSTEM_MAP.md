@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-05-22
 **Last session:** 28
-**Main SHA:** (pending merge)
+**Main SHA:** da63120
 **Next migration number:** 044
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
@@ -39,7 +39,7 @@
 | 25 | 2026 | feature/session-25-unified-rep-lifecycle | — | 040 | Unified rep lifecycle — contractor → sales_rep provisioning, portal access |
 | 26 | 2026-05-21 | feature/fix-contractor-signature-panel | 9674bd1 | 041 | Contractor signature panel — ABN mandatory, hard-fail upload, clawback, resend invite, Telegram alerts |
 | 27 | 2026-05-22 | feature/session-27-revenue-fixes | e612c9b | 042 | Revenue fixes — Stripe real payment, /wl-preview public, SMS type constraint, clawback enforcement, sales rep add lead, hardcoded secrets removed |
-| 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | (pending) | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
+| 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | da63120 | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
 
 ---
 
@@ -216,11 +216,6 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 ## Known Gaps / Deferred Work
 
 ### High Priority (from Session 27 audit — not yet addressed)
-- **H8** — Vapi lifecycle issues (agent not deprovisioned on cancel/trial-end) — separate from the Session 28 H8 governance gate
-- **H9** — SMS/bookings data integrity issues
-- **H10** — Stripe `customer.subscription.updated` not handled
-- **H11** — Legacy checkout routes (`/api/stripe/checkout`, `/api/stripe/create-checkout-session`) not cleaned up
-- **H12–H15** — Vapi agent health alerts (note: Session 28 reused the H8–H15 labels for its own four parts; the original audit items here remain)
 - **H18–H21** — Bookings/legacy page schema issues
 - **H27–H28** — Admin tooling completeness gaps
 - **H30–H33** — Various deferred audit items
