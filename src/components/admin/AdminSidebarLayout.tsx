@@ -37,7 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/clients',        label: 'Clients',        icon: Users },
   { href: '/admin/sales-team',     label: 'Sales Team',     icon: TrendingUp },
   { href: '/admin/contractors',    label: 'Contracts',      icon: FileText },
-  { href: '/admin/sales-scripts',  label: 'Sales Scripts',  icon: BookOpen },
+  { href: '/admin/sales-scripts',  label: 'Sales Resources',  icon: BookOpen },
   { href: '/admin/sms-failures',   label: 'SMS Failures',   icon: MessageSquareX },
   { href: '/admin/agent-health',   label: 'Agent Health',   icon: Activity },
   { href: '/admin/settings',       label: 'Settings',       icon: Settings, comingSoon: true },
