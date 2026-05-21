@@ -25,6 +25,9 @@ export default async function AdminSalesTeamPage() {
   const [{ data: reps }, { data: leads }, { data: commissions }, { data: contracts }] = await Promise.all([
     admin.from('sales_reps')
       .select('id, full_name, email, phone, status, contract_signed_at, policy_acknowledged_at, created_at, team_id')
+      // Session 25: this page now manages legacy manually-onboarded reps
+      // only. Contractor-flow reps live on /admin/contractors.
+      .eq('is_legacy', true)
       .order('created_at', { ascending: false }),
     admin.from('leads')
       .select('id, business_name, contact_name, phone, email, industry, status, approval_status, won_plan, won_at, business_id, created_at, assigned_to, approval_notes')

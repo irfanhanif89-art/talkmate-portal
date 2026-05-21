@@ -142,7 +142,7 @@ export async function PATCH(
   // After saving the manual update, recompute auto checks. If everything
   // now passes, stamp the verified fields and flip businesses.golive_verified.
   const { result: autoResult, business } = await computeAutoChecks(admin, businessId)
-  const merged = { ...(data as ChecklistRow), ...autoResult }
+  const merged: ChecklistRow = { ...(data as ChecklistRow), ...autoResult }
 
   const autoAllPass = AUTO_CHECK_KEYS.every(k => merged[k] === true)
   const manualAllPass = MANUAL_CHECK_KEYS.every(k => merged[k as ManualCheckKey] === true)

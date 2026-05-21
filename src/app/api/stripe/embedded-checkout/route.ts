@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
   // Build line items: recurring subscription + (optional) one-off setup fee.
   // Setup fee is skipped when the admin has flagged setup_fee_waived = true.
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+  const lineItems: NonNullable<Stripe.Checkout.SessionCreateParams['line_items']> = [
     { price: recurringPriceId, quantity: 1 },
   ]
 

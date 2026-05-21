@@ -127,7 +127,7 @@ function StatusPill({ status }: { status: string | null }) {
     cancelled:       { color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: 'rgba(100,116,139,0.4)', label: 'Cancelled' },
     expired:         { color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: 'rgba(100,116,139,0.4)', label: 'Expired' },
   }
-  const sty = (status && map[status]) ?? { color: '#7BAED4', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: status ?? 'Unknown' }
+  const sty = (status ? map[status] : undefined) ?? { color: '#7BAED4', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: status ?? 'Unknown' }
   return (
     <span style={{
       display: 'inline-block', padding: '3px 9px', borderRadius: 99,

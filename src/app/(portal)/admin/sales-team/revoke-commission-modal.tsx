@@ -34,7 +34,7 @@ export default function RevokeCommissionModal({ commission, onClose, onSuccess }
   }
 
   return (
-    <ModalShell title="Revoke commission" subtitle={`${commission.rep_name} · ${commission.business_name} · ${formatCurrency(commission.amount)}`} onClose={onClose}>
+    <ModalShell title="Revoke commission" subtitle={`${commission.rep_name} · ${commission.business_name} · ${formatCurrency(commission.total)}`} onClose={onClose}>
       <p style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.6, margin: '0 0 14px' }}>
         Common reasons: client cancelled within the 14-day money-back window, payment chargeback, plan downgrade after close. The rep will be emailed with your reason.
       </p>

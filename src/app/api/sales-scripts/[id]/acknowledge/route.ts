@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 // Public-but-authenticated: the contractor passes their invite_token
 // as a Bearer token (the same token used during onboarding). The
-// contractor must already be in 'signed' or 'active' status.
+// contractor must already be 'active'.
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
   const authHeader = req.headers.get('authorization') ?? ''
@@ -19,7 +19,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .eq('invite_token', token)
     .maybeSingle()
   if (!contractor) return NextResponse.json({ ok: false, error: 'Invalid token' }, { status: 401 })
-  if (contractor.status !== 'signed' && contractor.status !== 'active') {
+  if (contractor.status !== 'active') {
     return NextResponse.json({ ok: false, error: 'Contractor is not active' }, { status: 403 })
   }
 

@@ -14,7 +14,7 @@ export interface DetailContractor {
   abn: string | null
   bank_bsb: string | null
   bank_account_number: string | null
-  status: 'invited' | 'agreement_sent' | 'signed' | 'active' | 'terminated'
+  status: 'invited' | 'agreement_sent' | 'active' | 'terminated'
   agreement_signed_at: string | null
   signed_pdf_url: string | null
   termination_date: string | null
