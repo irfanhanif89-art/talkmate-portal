@@ -3825,3 +3825,214 @@ No new env vars. Uses existing:
 - Live Vapi agents — this session adds **monitoring** of agents,
   it does not modify any agent config. Donna remains the only
   path that pushes config changes to Vapi.
+
+---
+
+# Session 25 — Unified Rep Lifecycle (2026-05-21)
+
+Branch: `feature/session-25-unified-rep-lifecycle` (off `dev`)
+Migration: `040_unified_rep_lifecycle.sql`
+Build status: `npm run build` passes — `✓ Compiled successfully in 28.8s`, 143 routes. `tsc --noEmit`: 0 errors.
+
+## What this session ships
+
+Merges the previously disconnected Contractors (Session 23, automated
+signing) and Sales Reps (Session 21, manual upload) systems into one
+lifecycle. When a contractor completes the digital signing flow and
+their status becomes `active`, they are now auto-provisioned as a
+sales rep — Supabase auth invite, `sales_reps` row, portal access —
+so the rep enters one clean journey instead of two parallel ones.
+`/admin/contractors` is now the single source of truth for the rep
+lifecycle; `/admin/sales-team` is soft-retired to manage legacy
+manually-onboarded reps only.
+
+### New files
+
+| Path | Purpose |
+| --- | --- |
+| `supabase/migrations/040_unified_rep_lifecycle.sql` | Links `contractors` ↔ `sales_reps`, adds `onboarded_via`, `is_legacy`, backfills legacy reps, cleans deprecated `signed` status |
+
+### Modified files
+
+| Path | Change |
+| --- | --- |
+| `src/components/admin/AdminSidebarLayout.tsx` | Sidebar nav: `Contracts` → `Contractors` |
+| `src/lib/sales-notify.ts` | New exported `notifyAdminAlert()` (generic telegram alert) |
+| `src/app/api/contractor-onboarding/[token]/sign/route.ts` | After contractor goes active: invite Supabase auth user, insert `sales_reps` row, link via `contractors.sales_rep_id`. Best-effort, never blocks signing. |
+| `src/app/(portal)/admin/contractors/page.tsx` | Fetches `sales_rep_id` plus aggregated leads + commissions for the new Pipeline tab |
+| `src/app/(portal)/admin/contractors/contractors-view.tsx` | Two-tab layout, Portal Access column, Pipeline & Commissions tab, status badges retuned, `signed` dropped from union |
+| `src/app/(portal)/admin/contractors/[id]/contractor-detail-view.tsx` | `signed` removed from status union |
+| `src/app/api/sales-scripts/[id]/acknowledge/route.ts` | Drop redundant `signed` status check |
+| `src/lib/sales-auth.ts` | `SalesRepRow` widened with `onboarded_via`, `contractor_id`; SELECT updated |
+| `src/app/sales/dashboard/page.tsx` | First-login welcome banner when no leads + no activities; copy branches on `onboarded_via` |
+| `src/app/sales/contract/page.tsx` | Contractor-flow reps see a read-only "agreement on file" card with a short-lived signed URL into `contractor-agreements`; manual reps see the existing upload flow |
+| `src/app/(portal)/admin/sales-team/page.tsx` | `sales_reps` query filtered to `is_legacy = true` |
+| `src/app/(portal)/admin/sales-team/admin-sales-team-view.tsx` | Dismissible (sessionStorage) info banner explaining the split |
+
+### Pre-existing TS errors swept up
+
+The build inherited 19 TypeScript errors across 10 files from `dev`.
+None were in files Session 25 touches, but the brief required a
+clean final build, so they were fixed under the same branch in
+commit [e37806a](https://github.com/irfanhanif89-art/talkmate-portal/commit/e37806a):
+
+- `LinkedNumber` interface in the four vip-callers account routes —
+  optional modifiers on `name` and `is_primary` blocked type-predicate
+  narrowing in `cleanLinkedNumbers`.
+- `mark-paid-modal.tsx`, `revoke-commission-modal.tsx` — referenced
+  `commission.amount`; the field is `commission.total`.
+- `golive-checklist/[businessId]/route.ts` — annotating `merged` as
+  `ChecklistRow` preserves the index signature past the spread.
+- `scheduler-config/route.ts` — replaced an `extends`-conditional
+  type-extract (which distributed to `never` over the discriminated
+  union) with `Extract<..., { ok: true }>`.
+- `stripe/embedded-checkout/route.ts` — Stripe 22 type resolution
+  couldn't see `Checkout.SessionCreateParams.LineItem` through the
+  class/namespace merge; replaced with the indexed type
+  `NonNullable<Stripe.Checkout.SessionCreateParams['line_items']>`.
+- `sales/clients/page.tsx` — `(status && map[status]) ??` made `""`
+  the value of `sty`; ternary keeps the union narrowing intact.
+
+## Migration 040 schema
+
+`supabase/migrations/040_unified_rep_lifecycle.sql` is idempotent —
+every column add is `IF NOT EXISTS`, the check constraint is added
+via a guarded `DO $$` block, the backfill is filtered so re-runs are
+safe.
+
+New columns:
+- `contractors.sales_rep_id` (`UUID` FK → `sales_reps.id ON DELETE SET NULL`)
+- `contractors.portal_invited_at` (`TIMESTAMPTZ`)
+- `contractors.portal_access_email` (`TEXT`)
+- `sales_reps.contractor_id` (`UUID` FK → `contractors.id ON DELETE SET NULL`)
+- `sales_reps.onboarded_via` (`TEXT`, `CHECK IN ('manual', 'contractor_flow')`, default `'manual'`)
+- `sales_reps.is_legacy` (`BOOLEAN`, default `false`)
+
+New indexes:
+- `idx_contractors_sales_rep_id`
+- `idx_sales_reps_contractor_id`
+- `idx_sales_reps_is_legacy`
+
+Data steps:
+- `UPDATE sales_reps SET is_legacy = true, onboarded_via = 'manual'
+  WHERE contractor_id IS NULL AND onboarded_via = 'manual' AND
+  is_legacy IS DISTINCT FROM true` — flags every pre-Session-25 rep
+  as legacy, but rerun-safe.
+- `UPDATE contractors SET status = 'active' WHERE status = 'signed'` —
+  defensive cleanup of the deprecated `signed` value. The sign route
+  has always transitioned `invited → active` directly, so this is
+  expected to touch zero rows in practice.
+
+No new RLS — both tables already have admin-only / self-row policies
+from migrations 036 and 038.
+
+## Manual deployment steps for Donna
+
+1. Merge `feature/session-25-unified-rep-lifecycle` into `dev` (then
+   `main` once verified). Vercel auto-deploys from `main`.
+2. Apply migration 040 on production Supabase SQL editor.
+3. Confirm:
+   - `select column_name from information_schema.columns where
+     table_name = 'contractors' and column_name in ('sales_rep_id',
+     'portal_invited_at', 'portal_access_email');` returns 3 rows.
+   - `select column_name from information_schema.columns where
+     table_name = 'sales_reps' and column_name in ('contractor_id',
+     'onboarded_via', 'is_legacy');` returns 3 rows.
+   - `select count(*) from sales_reps where is_legacy = true;` matches
+     the pre-migration `sales_reps` count.
+4. Sidebar shows "Contractors" (was "Contracts").
+5. End-to-end smoke test:
+   - Invite a test contractor at `/admin/contractors`.
+   - Status renders blue "Agreement Sent" badge.
+   - Open the public link, complete all 5 steps, sign.
+   - In Supabase, `select status, sales_rep_id, portal_invited_at
+     from contractors where email = '...'` — status is `active`,
+     `sales_rep_id` populated, `portal_invited_at` set.
+   - Matching `sales_reps` row exists with `onboarded_via =
+     'contractor_flow'`, `is_legacy = false`, `contractor_id` linked back.
+   - The test email receives a Supabase auth invite. Accepting it
+     lands on `/sales/dashboard` showing the welcome banner.
+   - `/sales/contract` shows the read-only "agreement on file" card,
+     not the upload modal.
+   - `/admin/sales-team` does **not** show the new rep (filtered out
+     by `is_legacy`).
+   - `/admin/contractors` Pipeline tab shows the rep with 0 leads /
+     0 wins / $0 commission.
+6. If provisioning fails for any reason, a Telegram alert posts to
+   the admin chat (`notifyAdminAlert()`); the contractor signing
+   response still returns 200 — manual portal access can then be
+   recovered by an admin.
+
+## Environment variables
+
+No new env vars. Uses existing:
+- `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL` (admin client + auth invite)
+- `NEXT_PUBLIC_APP_URL` (invite `redirectTo` and signed-PDF URL base)
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID` (provisioning-failure alerts)
+
+## Deviations from the brief
+
+- **`signed` status retired**: the brief's Part 3d badge config omitted
+  `signed`. The user chose "remove from the flow entirely", so the
+  union narrows to `invited | agreement_sent | active | terminated`
+  in both view files, the `sales-scripts` acknowledge check drops
+  the OR-clause, and migration 040 cleans up any stale rows. There
+  is no DB CHECK constraint on `contractors.status` — keeping it
+  loose for now in case a future status is needed.
+- **`auth user already exists` handling**: the brief assumed
+  `inviteUserByEmail` always succeeds. If a contractor's email is
+  already in `auth.users` (e.g. they were a legacy manual rep), the
+  sign route now falls back to `listUsers()` and either links the
+  contractor to the existing `sales_reps` row or inserts a new one
+  pointing at the existing auth user — never violates
+  `sales_reps.UNIQUE(user_id)`.
+- **`sendAdminAlert()` did not exist**: the brief assumed it did.
+  Replaced with a new exported `notifyAdminAlert(message)` in
+  `sales-notify.ts`, following the file's existing fire-and-forget
+  pattern.
+- **Schema reality vs brief**: contractors store `first_name` +
+  `last_name` (the brief said `contractor.name`); sales_reps uses
+  `full_name` (the brief said `name`). All concatenations and
+  inserts use the real column names.
+- **`contract_signed_at` on `sales_reps`** is set to the signing
+  timestamp for contractor-flow reps. The column exists and is the
+  obvious truth for these reps even though the brief didn't mention it.
+- **Sales-team filter location**: the brief said "the API route that
+  fetches sales reps". That page is a server component with the
+  fetch inline (no API route). The `.eq('is_legacy', true)` filter
+  went there. Same effect.
+- **Banner uses `sessionStorage`, not `localStorage`**: brief said
+  "dismissible per session (localStorage)" — those two contradict.
+  `sessionStorage` matches the "per session" intent.
+- **Migration 040 idempotency**: the brief's inline `CHECK` on
+  `ADD COLUMN onboarded_via` is not rerun-safe (constraint name
+  collision). Split into `ADD COLUMN` + guarded `DO $$ ... ALTER
+  TABLE ... ADD CONSTRAINT` so the file can be applied twice.
+- **Backfill guard tightened**: brief had `UPDATE sales_reps SET
+  is_legacy = true WHERE contractor_id IS NULL`. Adding `AND
+  onboarded_via = 'manual' AND is_legacy IS DISTINCT FROM true`
+  prevents the (unlikely) case where a contractor-flow rep with a
+  `contractor_id` somehow ended up missing it on a rerun from
+  getting flagged legacy.
+
+## What was deliberately not touched
+
+- **Legacy `/admin/sales-team` data path**: leads, commissions,
+  rep contract upload — all still work for `is_legacy = true` reps.
+  Brief explicitly said "do NOT delete `/admin/sales-team`".
+- **Existing `/contractor-onboarding/[token]` signing flow** — only
+  the server-side sign route was extended. The 5-step public UI
+  is unchanged.
+- **`contractor-agreements` Supabase storage bucket** — unchanged
+  from Session 23.
+- **Make.com scenarios** — no new webhooks. Existing invite-email
+  + signed-PDF-delivery webhooks still fire.
+- **Vapi agents** — no changes.
+- **Production data backfill for already-active contractors**: the
+  migration links columns and flags legacy reps, but does **not**
+  retroactively invite Supabase auth users for any contractor whose
+  status was already `active` before this migration ran. If you
+  want those provisioned, that's a manual one-shot per contractor
+  via `/admin/contractors` (delete + re-invite + re-sign), or a
+  future targeted script.
+
