@@ -1,11 +1,11 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { isValidAbnFormat } from '@/lib/abn'
 
 export interface ContractorAgreementFields {
   contractor_first_name: string
   contractor_last_name: string
-  contractor_address: string
   agreement_date: string
   contractor_email: string
   contractor_phone: string
@@ -16,6 +16,11 @@ export interface ContractorAgreementFields {
   script_date: string
   signed_ip: string
   signed_at_iso: string
+  // Optional captured signature. PNG data URL captured client-side via
+  // SignatureCapture. When supplied, the image is embedded on the
+  // signature page. Method is recorded as text caption for audit.
+  signature_data_url?: string
+  signature_method?: 'drawn' | 'typed'
 }
 
 export interface GeneratePdfResult {
@@ -33,6 +38,13 @@ const TEMPLATE_REL_PATH = 'public/templates/contractor-agreement-template.pdf'
 export async function generateContractorAgreementPdf(
   fields: ContractorAgreementFields
 ): Promise<GeneratePdfResult> {
+  // ABN is mandatory and must pass format + checksum validation. The
+  // client and server routes enforce this earlier; this check is a
+  // last-line guard so we never produce a PDF without a valid ABN.
+  if (!fields.contractor_abn || !isValidAbnFormat(fields.contractor_abn)) {
+    throw new Error('contractor_abn must be a valid 11-digit ABN')
+  }
+
   const templatePath = path.join(process.cwd(), TEMPLATE_REL_PATH)
   let templateBytes: Uint8Array | null = null
   try {
@@ -82,7 +94,6 @@ export async function generateContractorAgreementPdf(
     y -= 4
     draw('Parties', { size: 13, bold: true })
     draw(`Contractor: ${fields.contractor_first_name} ${fields.contractor_last_name}`)
-    draw(`Address: ${fields.contractor_address}`)
     draw(`Email: ${fields.contractor_email}`)
     draw(`Phone: ${fields.contractor_phone}`)
     draw(`ABN: ${fields.contractor_abn}`)
@@ -135,7 +146,43 @@ export async function generateContractorAgreementPdf(
   sy -= 6
   sdraw(`Electronically signed by ${fields.contractor_first_name} ${fields.contractor_last_name}`)
   sdraw(`on ${fields.agreement_date} at ${new Date(fields.signed_at_iso).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane' })} AEST`)
-  sy -= 6
+  sy -= 12
+
+  // Embed the captured signature image, if provided. Sized to 200x60
+  // (aspect locked to the source canvas, capped to that box).
+  if (fields.signature_data_url && fields.signature_data_url.startsWith('data:image/png;base64,')) {
+    try {
+      const base64 = fields.signature_data_url.replace(/^data:image\/png;base64,/, '')
+      const imgBytes = Buffer.from(base64, 'base64')
+      const sigImage = await pdfDoc.embedPng(imgBytes)
+      const maxW = 200
+      const maxH = 60
+      const ratio = Math.min(maxW / sigImage.width, maxH / sigImage.height)
+      const drawW = sigImage.width * ratio
+      const drawH = sigImage.height * ratio
+      const boxX = 50
+      const boxY = sy - drawH
+      sigPage.drawImage(sigImage, { x: boxX, y: boxY, width: drawW, height: drawH })
+      // Caption underneath the signature image
+      const captionY = boxY - 14
+      sigPage.drawText(`${fields.contractor_first_name} ${fields.contractor_last_name}`, {
+        x: boxX, y: captionY, size: 10, font: helvBold, color: black,
+      })
+      sigPage.drawText(fields.agreement_date, {
+        x: boxX, y: captionY - 14, size: 10, font: helv, color: black,
+      })
+      const methodLabel = fields.signature_method === 'typed' ? 'typed' : 'drawn'
+      sigPage.drawText(`Signed electronically via TalkMate Sales Portal (${methodLabel})`, {
+        x: boxX, y: captionY - 28, size: 8, font: helv, color: grey,
+      })
+      sy = captionY - 44
+    } catch {
+      // If embed fails (corrupt PNG, etc.) we still produce the PDF —
+      // the textual acknowledgement below is sufficient for audit.
+      sdraw('(Signature image could not be embedded; textual record below applies.)', { size: 9, color: grey })
+    }
+  }
+
   sdraw('By signing electronically the Contractor confirms:', { bold: true })
   sdraw('  - They have read and agree to be bound by this agreement.')
   sdraw('  - They acknowledge the current approved TalkMate sales script.')

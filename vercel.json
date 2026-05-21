@@ -20,6 +20,7 @@
     { "path": "/api/cron/sync-public-holidays", "schedule": "0 0 1 1 *" },
     { "path": "/api/cron/score-pending-calls", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/daily-quality-digest", "schedule": "0 22 * * *" },
-    { "path": "/api/cron/agent-health-check", "schedule": "*/30 * * * *" }
+    { "path": "/api/cron/agent-health-check", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/clear-eligible-commissions", "schedule": "0 23 * * *" }
   ]
 }
