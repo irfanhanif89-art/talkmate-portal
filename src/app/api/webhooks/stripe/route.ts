@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { sendAdminTelegram } from '@/lib/notifications'
+import { sendEmail } from '@/lib/resend'
 
 async function sendWelcomeEmail(email: string, businessName: string, plan: string) {
   const planLabel = plan === 'professional' ? 'Professional' : plan === 'growth' ? 'Growth' : 'Starter'
@@ -8,7 +10,7 @@ async function sendWelcomeEmail(email: string, businessName: string, plan: strin
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY || 're_hH6pbyrr_BgLjFBZyiHwaErEyibPgtVpm'}`,
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -108,6 +110,54 @@ export async function POST(request: NextRequest) {
     case 'customer.subscription.deleted': {
       const sub = event.data.object as Stripe.Subscription
       await supabase.from('subscriptions').update({ status: 'cancelled' }).eq('stripe_subscription_id', sub.id)
+
+      // Session 27 (H5) — gate portal access on Stripe-side cancellation.
+      const customerId = sub.customer as string
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id, name, plan, owner_user_id')
+        .eq('stripe_customer_id', customerId)
+        .maybeSingle()
+      if (biz) {
+        await supabase.from('businesses').update({ account_status: 'cancelled' }).eq('id', biz.id)
+
+        // Look up owner email separately because users.email is the canonical
+        // source (auth.users may have a different one if it was changed).
+        const { data: owner } = await supabase.from('users').select('email, full_name').eq('id', biz.owner_user_id).maybeSingle()
+        if (owner?.email) {
+          const firstName = (owner.full_name ?? '').split(' ')[0] || 'there'
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
+          await sendEmail({
+            to: owner.email,
+            subject: 'Your TalkMate subscription has been cancelled',
+            replyTo: 'hello@talkmate.com.au',
+            html: `
+              <div style="font-family:'Outfit',sans-serif;max-width:560px;margin:0 auto;background:#061322;color:white;padding:40px;border-radius:16px;">
+                <h1 style="font-size:24px;font-weight:800;margin:0 0 14px 0;line-height:1.25;">Your TalkMate subscription has been cancelled.</h1>
+                <p style="color:rgba(255,255,255,0.75);line-height:1.7;margin:0 0 18px 0;">
+                  Hi ${firstName}, your TalkMate subscription has been cancelled. Your AI receptionist will no longer answer calls.
+                </p>
+                <p style="color:rgba(255,255,255,0.75);line-height:1.7;margin:0 0 24px 0;">
+                  If you cancelled by mistake or want to resubscribe, head over to your pricing page.
+                </p>
+                <a href="${appUrl}/billing" style="display:inline-block;background:#E8622A;color:white;font-size:15px;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;margin-bottom:24px;">
+                  Reactivate
+                </a>
+                <p style="color:rgba(255,255,255,0.5);font-size:13px;margin:18px 0 0 0;">
+                  Your data will be kept for 30 days. After that it will be removed in line with our data retention policy.
+                </p>
+                <p style="color:rgba(255,255,255,0.5);font-size:13px;margin:14px 0 0 0;">
+                  Reply to this email if you have any questions.
+                </p>
+              </div>
+            `,
+          })
+        }
+
+        await sendAdminTelegram(
+          `🔴 Subscription cancelled\nClient: ${biz.name ?? '(unknown)'}\nPlan: ${biz.plan ?? 'unknown'}\nStripe customer: ${customerId}`
+        )
+      }
       break
     }
     case 'invoice.payment_succeeded': {
@@ -119,11 +169,61 @@ export async function POST(request: NextRequest) {
       break
     }
     case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice & { customer: string; subscription?: string }
-      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', invoice.customer).single()
+      const invoice = event.data.object as Stripe.Invoice & { customer: string; subscription?: string; amount_due?: number }
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id, name, plan, owner_user_id')
+        .eq('stripe_customer_id', invoice.customer)
+        .maybeSingle()
       if (biz) {
         await supabase.from('notifications').insert({ business_id: biz.id, type: 'payment_failed', message: `❌ Payment failed — please update your billing details` })
         if (invoice.subscription) await supabase.from('subscriptions').update({ status: 'past_due' }).eq('stripe_subscription_id', invoice.subscription)
+
+        // Session 27 (H3) — email client with a Stripe portal link they can
+        // use to update their card, and (H4) Telegram the admin.
+        const { data: owner } = await supabase.from('users').select('email, full_name').eq('id', biz.owner_user_id).maybeSingle()
+        let portalUrl: string | null = null
+        try {
+          const portalSession = await stripe.billingPortal.sessions.create({
+            customer: invoice.customer,
+            return_url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'}/billing`,
+          })
+          portalUrl = portalSession.url
+        } catch (e) {
+          console.error('[stripe webhook] billingPortal.sessions.create failed', e)
+        }
+
+        if (owner?.email) {
+          const firstName = (owner.full_name ?? '').split(' ')[0] || 'there'
+          const amount = ((invoice.amount_due ?? 0) / 100).toFixed(2)
+          await sendEmail({
+            to: owner.email,
+            subject: 'Action required — your TalkMate payment failed',
+            replyTo: 'hello@talkmate.com.au',
+            html: `
+              <div style="font-family:'Outfit',sans-serif;max-width:560px;margin:0 auto;background:#061322;color:white;padding:40px;border-radius:16px;">
+                <h1 style="font-size:24px;font-weight:800;margin:0 0 14px 0;line-height:1.25;">Your TalkMate payment failed.</h1>
+                <p style="color:rgba(255,255,255,0.75);line-height:1.7;margin:0 0 18px 0;">
+                  Hi ${firstName}, your recent payment of $${amount} AUD for TalkMate failed to process.
+                </p>
+                <p style="color:rgba(255,255,255,0.75);line-height:1.7;margin:0 0 24px 0;">
+                  Please update your payment method to keep your AI receptionist active:
+                </p>
+                ${portalUrl ? `<a href="${portalUrl}" style="display:inline-block;background:#E8622A;color:white;font-size:15px;font-weight:700;padding:14px 28px;border-radius:10px;text-decoration:none;margin-bottom:24px;">Update payment method</a>` : ''}
+                <p style="color:rgba(255,255,255,0.5);font-size:13px;margin:18px 0 0 0;">
+                  If you need help, reply to this email.
+                </p>
+                <p style="color:rgba(255,255,255,0.75);font-size:13px;margin:18px 0 0 0;">
+                  The TalkMate Team
+                </p>
+              </div>
+            `,
+          })
+        }
+
+        await sendAdminTelegram(
+          `💳 Payment failed\nClient: ${biz.name ?? '(unknown)'}\nAmount: $${((invoice.amount_due ?? 0) / 100).toFixed(2)} AUD\nPlan: ${biz.plan ?? 'unknown'}\nStripe customer: ${invoice.customer}`
+        )
       }
       break
     }

@@ -11,6 +11,29 @@
 
 const TG_BASE = 'https://api.telegram.org/bot'
 
+// Session 27 — generic admin Telegram helper. Use for any one-off operator
+// alert (Stripe payment failure, subscription cancellation, etc.) instead of
+// inlining a fetch to api.telegram.org. Silent no-op if env vars are missing;
+// never throws.
+export async function sendAdminTelegram(text: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID
+  if (!token || !chatId) return
+  try {
+    await fetch(`${TG_BASE}${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+      }),
+    })
+  } catch {
+    // Fire-and-forget — alerting is best-effort.
+  }
+}
+
 interface FailedSms {
   to_phone: string | null
   message: string | null

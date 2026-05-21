@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { sendSms } from '@/lib/twilio'
+import { sendEmail } from '@/lib/resend'
 import { validatePassword } from '@/lib/password'
 
 // Self-serve signup route — Session 8. Public, no auth header required.
@@ -221,6 +222,9 @@ export async function POST(request: Request) {
     onboarded_by: 'self',
     account_status: isTrial ? 'trial' : 'pending_payment',
     onboarding_complete: false,
+    // Session 27 — signup_at powers abandoned-cart, onboard-day7, NPS, and
+    // every downstream cron that filters on self-serve signup time.
+    signup_at: now.toISOString(),
     welcome_email_sent: false,
   }
   if (isTrial) {
@@ -288,6 +292,59 @@ export async function POST(request: Request) {
     } catch (e) {
       console.error('[signup] make.com webhook failed', e)
     }
+  }
+
+  // ---- welcome email to the new client (Session 27 H25) ------------
+  // Trial users get a different CTA than pay-now users; pay-now users are
+  // already being redirected to Stripe so their first portal touch is
+  // post-payment, while trial users land on /onboarding.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
+  const ctaUrl = `${appUrl}/onboarding`
+  const welcomeHtml = `
+    <div style="font-family: 'Outfit', sans-serif; max-width: 560px; margin: 0 auto; background: #061322; color: white; padding: 40px; border-radius: 16px;">
+      <div style="margin-bottom: 28px;">
+        <span style="font-size: 28px; font-weight: 800; color: white;">Talk</span><span style="font-size: 18px; font-weight: 300; color: #4A9FE8; letter-spacing: 4px;">Mate</span>
+      </div>
+      <h1 style="font-size: 26px; font-weight: 800; color: white; margin: 0 0 12px 0; line-height: 1.25;">
+        Welcome to TalkMate. Your AI receptionist is almost ready.
+      </h1>
+      <p style="font-size: 15px; color: rgba(255,255,255,0.75); line-height: 1.7; margin: 0 0 24px 0;">
+        Hi ${fullName.split(' ')[0] || 'there'}, complete your setup in just a few minutes and your agent will be live answering calls.
+      </p>
+      <a href="${ctaUrl}" style="display: inline-block; background: #E8622A; color: white; font-size: 15px; font-weight: 700; padding: 14px 28px; border-radius: 10px; text-decoration: none; margin-bottom: 28px;">
+        Complete Setup
+      </a>
+      <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 22px; margin-bottom: 24px;">
+        <p style="font-size: 13px; font-weight: 700; color: white; margin: 0 0 10px 0;">What happens next:</p>
+        <div style="font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.9;">
+          1. Tell us about your business<br/>
+          2. Set your hours and pricing<br/>
+          3. Your AI receptionist goes live
+        </div>
+      </div>
+      <p style="font-size: 13px; color: rgba(255,255,255,0.5); margin: 0;">
+        If you need help at any stage, reply to this email.
+      </p>
+      <p style="font-size: 13px; color: rgba(255,255,255,0.75); margin: 18px 0 0 0;">
+        Irfan<br/>
+        <span style="color: rgba(255,255,255,0.5);">Founder, TalkMate</span>
+      </p>
+    </div>
+  `
+  try {
+    const sent = await sendEmail({
+      to: email,
+      subject: `Welcome to TalkMate — let's get your AI receptionist set up`,
+      html: welcomeHtml,
+      replyTo: 'hello@talkmate.com.au',
+    })
+    if (sent.ok) {
+      await admin.from('businesses')
+        .update({ welcome_email_sent: true })
+        .eq('id', biz.id)
+    }
+  } catch (e) {
+    console.error('[signup] welcome email failed', e)
   }
 
   // ---- direct SMS notification (belt-and-braces) -------------------

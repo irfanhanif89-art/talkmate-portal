@@ -28,6 +28,15 @@ export async function POST(request: NextRequest) {
   const billingCycle = isBillingCycle((body as Record<string, string>).billingCycle)
     ? (body as Record<string, string>).billingCycle as 'monthly' | 'annual'
     : 'monthly'
+  // Session 27 (H1) — onboarding wizard sends a custom returnUrl so we
+  // come back to /onboarding instead of /dashboard. Validate it's a relative
+  // path so we can't be used as an open redirect.
+  const rawReturnUrl = typeof (body as Record<string, unknown>).returnUrl === 'string'
+    ? String((body as Record<string, string>).returnUrl)
+    : null
+  const returnUrlPath = (rawReturnUrl && rawReturnUrl.startsWith('/') && !rawReturnUrl.startsWith('//'))
+    ? rawReturnUrl
+    : '/dashboard?checkout=success'
 
   if (!planKey) {
     return NextResponse.json({ error: 'planKey must be starter, growth, or pro' }, { status: 400 })
@@ -101,7 +110,7 @@ export async function POST(request: NextRequest) {
       billing_cycle: billingCycle,
       setup_fee_charged: biz.setup_fee_waived ? 'false' : (setupPriceId ? 'true' : 'unconfigured'),
     },
-    return_url: `${appUrl}/dashboard?checkout=success`,
+    return_url: `${appUrl}${returnUrlPath}`,
   })
 
   if (!session.client_secret) {

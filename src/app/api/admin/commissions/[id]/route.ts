@@ -32,7 +32,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { data: commission } = await admin
     .from('commissions')
     .select(`
-      id, status, commission_amount, rep_id, lead_id,
+      id, status, commission_amount, rep_id, lead_id, created_at, clawback_period_ends_at,
       sales_reps:rep_id (full_name, email),
       leads:lead_id (business_name)
     `)
@@ -47,6 +47,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (action === 'approve') {
     if (commission.status !== 'pending') {
       return NextResponse.json({ ok: false, error: 'Only pending commissions can be approved' }, { status: 409 })
+    }
+    // Session 27 (H23) — 14-day clawback gate. The contractor flow has
+    // enforced this since Session 26; this brings the rep-side commissions
+    // table in line. clawback_period_ends_at is backfilled on every row by
+    // migration 042, and new rows get it set at /api/sales/leads/[id]/won.
+    const clawbackEnds = commission.clawback_period_ends_at
+      ? new Date(commission.clawback_period_ends_at as string)
+      : new Date(new Date(commission.created_at as string).getTime() + 14 * 24 * 60 * 60 * 1000)
+    if (Date.now() < clawbackEnds.getTime()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Commission cannot be approved until the 14-day clawback period ends on ${clawbackEnds.toLocaleDateString('en-AU')}.`,
+          clawback_ends_at: clawbackEnds.toISOString(),
+        },
+        { status: 409 },
+      )
     }
     updates.status = 'approved'
     updates.approved_at = now

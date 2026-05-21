@@ -16,6 +16,9 @@ export interface CommissionRow {
   paid_at: string | null
   payment_reference: string | null
   revoke_reason: string | null
+  // Session 27 (H23) — surface the 14-day clawback countdown so reps can see
+  // exactly when their commission becomes eligible for admin approval.
+  clawback_period_ends_at: string | null
 }
 
 const STATUS_STYLES: Record<CommissionRow['status'], { label: string; bg: string; color: string; border: string }> = {
@@ -117,6 +120,23 @@ export default function CommissionsTable({ rows, repName }: { rows: CommissionRo
                       {r.status === 'revoked' && r.revoke_reason && (
                         <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{r.revoke_reason}</div>
                       )}
+                      {/* Session 27 (H23) — clawback countdown for pending
+                          rows. Commission is held for 14 days post-sale to
+                          cover the client money-back guarantee. */}
+                      {r.status === 'pending' && (() => {
+                        const ends = r.clawback_period_ends_at
+                          ? new Date(r.clawback_period_ends_at)
+                          : new Date(new Date(r.created_at).getTime() + 14 * 24 * 60 * 60 * 1000)
+                        const cleared = Date.now() >= ends.getTime()
+                        return (
+                          <div
+                            style={{ fontSize: 10, color: cleared ? '#22c55e' : '#f59e0b', marginTop: 4, fontWeight: 600 }}
+                            title="Commission is held for 14 days after the sale to cover the client money-back guarantee."
+                          >
+                            {cleared ? '✓ Eligible for approval' : `Clears on ${ends.toLocaleDateString('en-AU')}`}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td style={{ ...td, color: '#7BAED4' }}>{formatDate(r.created_at)}</td>
                     <td style={{ ...td, color: '#7BAED4', fontFamily: 'monospace', fontSize: 12 }}>{r.payment_reference ?? '—'}</td>

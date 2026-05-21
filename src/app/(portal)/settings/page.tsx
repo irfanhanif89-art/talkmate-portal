@@ -143,9 +143,58 @@ export default function SettingsPage() {
     setTeam(members || [])
   }
 
+  // Session 27 (H7) — whitelist the columns we write so we never blow away
+  // notifications_config (which is owned by saveNotifications below) or any
+  // other JSONB that the AI agent flow / admin tools manage.
   async function saveBusiness() {
-    await supabase.from('businesses').update(biz).eq('id', biz.id)
+    if (!biz.id) return
+    const patch: Record<string, unknown> = {
+      name: biz.name ?? null,
+      phone_number: biz.phone_number ?? null,
+      website: biz.website ?? null,
+      address: biz.address ?? null,
+      abn: biz.abn ?? null,
+      // voice is a top-level businesses column (see voice select handler).
+      voice,
+    }
+    await supabase.from('businesses').update(patch).eq('id', biz.id)
     setSaved('Saved ✅'); setTimeout(() => setSaved(''), 3000)
+  }
+
+  // Session 27 (H7) — notification preferences persist into the JSONB
+  // notifications_config column on the businesses row. notification_email
+  // belongs here, not at the top level. Also mirrors whatsapp_number and
+  // telegram_chat_id so the Notifications and Integrations tabs stay in sync.
+  async function saveNotifications() {
+    if (!biz.id) return
+    // Read the current config from the DB so we never overwrite keys other
+    // tabs (or admin) might have set since this page loaded.
+    const { data: row } = await supabase
+      .from('businesses')
+      .select('notifications_config')
+      .eq('id', biz.id)
+      .maybeSingle()
+    const existingCfg = ((row?.notifications_config ?? {}) as Record<string, unknown>) ?? {}
+    const nextCfg: Record<string, unknown> = {
+      ...existingCfg,
+      email_on_transfer: notifs.emailOnTransfer,
+      daily_summary: notifs.dailySummary,
+      weekly_report: notifs.weeklyReport,
+      notification_email: notifs.email || null,
+      whatsapp_number: notifs.whatsapp ? (notifs.whatsappNum || null) : null,
+      telegram_chat_id: notifs.telegram ? (notifs.telegramUser || null) : null,
+      urgent_call_number: notifs.urgentCall ? (notifs.urgentNum || null) : null,
+    }
+    const { error } = await supabase
+      .from('businesses')
+      .update({ notifications_config: nextCfg })
+      .eq('id', biz.id)
+    if (error) {
+      setSaved((error.message ?? 'Could not save preferences') + ' ❌')
+    } else {
+      setSaved('Preferences saved ✅')
+    }
+    setTimeout(() => setSaved(''), 3000)
   }
 
   // PATCH /api/portal/services — client-side save for the new
@@ -247,7 +296,9 @@ export default function SettingsPage() {
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Business Information</h3>
           <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>Used by your AI agent when speaking to callers.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Notification Email', 'notification_email'], ['Website', 'website'], ['Address', 'address']].map(([label, key]) => (
+            {/* Notification email moved to the Notifications tab (lives in
+                notifications_config JSONB, not on the businesses row). */}
+            {[['Business Name', 'name'], ['Phone Number', 'phone_number'], ['Website', 'website'], ['Address', 'address']].map(([label, key]) => (
               <div key={key}>
                 <label style={lbl}>{label}</label>
                 <input value={biz[key] || ''} onChange={e => setBiz(b => ({ ...b, [key]: e.target.value }))} style={inp} />
@@ -452,7 +503,7 @@ export default function SettingsPage() {
               {notifs.urgentCall && <input type="tel" value={notifs.urgentNum} onChange={e => setNotifs(n => ({ ...n, urgentNum: e.target.value }))} placeholder="+61 4XX XXX XXX" style={{ ...inp, marginTop: 4 }} />}
             </div>
 
-            <button onClick={saveBusiness} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Preferences</button>
+            <button onClick={saveNotifications} style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Save Preferences</button>
           </div>
 
           {/* Session 18 — Call Intelligence alert routing. Self-fetches. */}
