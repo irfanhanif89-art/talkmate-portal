@@ -199,7 +199,10 @@ export async function computeAutoChecks(
   // key. Failures (no key, Vapi 5xx, missing assistant) leave both
   // checks at false rather than throwing — go-live is the caller and
   // shouldn't see a 500 from this helper.
-  const { configValid, promptClean } = await validateVapiConfig(business.vapi_agent_id)
+  //
+  // Session 28 (H11): pass business.plan so Starter agents don't fail
+  // for missing booking/quoting tools they were never meant to have.
+  const { configValid, promptClean } = await validateVapiConfig(business.vapi_agent_id, business.plan)
 
   const result: AutoCheckResult = {
     check_escalation_number:
@@ -259,7 +262,10 @@ export async function computeAutoChecks(
 // (warnings don't block go-live); `promptClean` is true when none of
 // the prompt-content critical/warning codes fired. Both default to
 // false when the network call can't complete.
-async function validateVapiConfig(vapiAgentId: string | null): Promise<{ configValid: boolean; promptClean: boolean }> {
+async function validateVapiConfig(
+  vapiAgentId: string | null,
+  plan: string | null,
+): Promise<{ configValid: boolean; promptClean: boolean }> {
   const apiKey = process.env.VAPI_API_KEY
   if (!vapiAgentId || !apiKey) return { configValid: false, promptClean: false }
 
@@ -270,7 +276,7 @@ async function validateVapiConfig(vapiAgentId: string | null): Promise<{ configV
     })
     if (!res.ok) return { configValid: false, promptClean: false }
     const assistant = await res.json() as Record<string, unknown>
-    const issues = validateAgentConfig(assistant)
+    const issues = validateAgentConfig(assistant, { plan: plan ?? undefined })
 
     // configValid = no CRITICAL config issues. We allow warnings
     // (slight stability drift, missing optional tool) through so a

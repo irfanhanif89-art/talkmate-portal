@@ -22,7 +22,11 @@ import { scoreCallAsync } from '@/lib/score-call-async'
 // non-error status.
 
 const BATCH_LIMIT = 10
-const LOOKBACK_HOURS = 24
+// Session 28 (H13): pending uses 24h, error uses 7 days. Error rows
+// older than 24h were permanently stuck under the old single window —
+// the recovery sweep could never reach them.
+const PENDING_LOOKBACK_HOURS = 24
+const ERROR_LOOKBACK_HOURS = 7 * 24
 
 // False-negative rescore knobs (kept small so a stuck row can't
 // hog the budget — the admin one-shot endpoint can do bigger sweeps).
@@ -33,6 +37,7 @@ const FALSE_NEG_BATCH = 5
 interface PendingCallRow {
   vapi_call_id: string | null
   business_id: string
+  created_at: string
 }
 
 interface FalseNegRow {
@@ -45,7 +50,8 @@ export async function GET(request: Request) {
   if (auth) return auth
 
   const supabase = createAdminClient()
-  const cutoff = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
+  const pendingCutoff = new Date(Date.now() - PENDING_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
+  const errorCutoff = new Date(Date.now() - ERROR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString()
 
   // ── Step 1: reset false-negative candidates back to 'pending' so
   //           the normal pending sweep below picks them up.
@@ -89,23 +95,48 @@ export async function GET(request: Request) {
     console.error('[score-pending-calls] false-neg sweep error', (e as Error).message)
   }
 
-  // ── Step 2: rescore everything currently 'pending' or 'error'.
-  const { data, error } = await supabase
-    .from('calls')
-    .select('vapi_call_id, business_id')
-    .in('intelligence_status', ['pending', 'error'])
-    .gte('created_at', cutoff)
-    .not('vapi_call_id', 'is', null)
-    .not('transcript', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(BATCH_LIMIT)
+  // ── Step 2: rescore pending and error rows.
+  //
+  // Session 28 (H13): split into two queries so error rows get a wider
+  // 7-day window without bloating the pending sweep. Then merge,
+  // dedupe by vapi_call_id, sort oldest-first (prevents error rows
+  // starving behind a flood of newer pending rows), and cap at the
+  // original BATCH_LIMIT so we don't double the Anthropic spend.
+  const [{ data: pendingData, error: pendingErr }, { data: errorData, error: errorErr }] = await Promise.all([
+    supabase
+      .from('calls')
+      .select('vapi_call_id, business_id, created_at')
+      .eq('intelligence_status', 'pending')
+      .gte('created_at', pendingCutoff)
+      .not('vapi_call_id', 'is', null)
+      .not('transcript', 'is', null)
+      .order('created_at', { ascending: true })
+      .limit(BATCH_LIMIT),
+    supabase
+      .from('calls')
+      .select('vapi_call_id, business_id, created_at')
+      .eq('intelligence_status', 'error')
+      .gte('created_at', errorCutoff)
+      .not('vapi_call_id', 'is', null)
+      .not('transcript', 'is', null)
+      .order('created_at', { ascending: true })
+      .limit(BATCH_LIMIT),
+  ])
 
-  if (error) {
-    console.error('[score-pending-calls] query failed', error.message)
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+  if (pendingErr || errorErr) {
+    const msg = pendingErr?.message ?? errorErr?.message ?? 'query failed'
+    console.error('[score-pending-calls] query failed', msg)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 
-  const rows = (data ?? []) as PendingCallRow[]
+  const merged = [...(pendingData ?? []), ...(errorData ?? [])] as PendingCallRow[]
+  const rows = merged
+    .filter((call, index, self) =>
+      index === self.findIndex(c => c.vapi_call_id === call.vapi_call_id)
+    )
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .slice(0, BATCH_LIMIT)
+
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, attempted: 0, false_neg_reset: falseNegResetCount })
   }

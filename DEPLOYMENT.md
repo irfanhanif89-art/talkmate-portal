@@ -4313,3 +4313,189 @@ production behavior, ensure these are set in Vercel:
       Session 27.)
 - [ ] `grep` for the removed secret literals returns nothing.
       (Confirmed in Session 27.)
+
+---
+
+## SESSION 28 — Vapi Lifecycle + Call Intelligence Resilience (2026-05-22)
+
+Hardens the Vapi function endpoint, the call-intelligence retry path,
+and the agent provisioning + go-live approval flow. Closes the H8-H15
+gaps from the Session 27 audit.
+
+### Branch
+Pushed to `feature/session-28-vapi-lifecycle` (branched from `dev`).
+
+### What ships
+
+**Part 1 — H12: Vapi function endpoint auth (`src/app/api/vapi/functions/route.ts`)**
+- `VAPI_WEBHOOK_SECRET` is now mandatory. Previously, leaving the env
+  var unset silently disabled the auth check. Any request that
+  doesn't carry a matching `x-vapi-secret` (or `Authorization: Bearer ...`)
+  now gets 401. If the env var is missing, the route returns 500 with
+  a logged error rather than accepting traffic.
+- Legacy `{ function_name, business_id, params }` callers no longer
+  trust `business_id` from the body. The route now resolves the
+  business via the Vapi `assistantId` (matched against
+  `businesses.vapi_agent_id`) and rejects suspended / cancelled /
+  expired accounts with 403. The Vapi-native branch already did this
+  lookup correctly and was not touched.
+
+**Part 2 — H14 + H13 + H15: Call intelligence resilience**
+- `src/lib/score-call-async.ts`:
+  - The outer catch now stamps `intelligence_status='error'` +
+    `alert_reason` on the calls row so the retry cron can find it.
+    Previously an unexpected throw left rows stuck in their initial
+    state, invisible to recovery.
+  - `CRITICAL_FLAG_TYPES` dropped `dropped_call` and `wrong_info` —
+    neither is in the `CallFlagType` union, both were silently
+    stripped by `coerceFlag`, so neither could ever fire.
+- `src/app/api/cron/score-pending-calls/route.ts`:
+  - Split into two queries. `pending` rows use the original 24h
+    lookback; `error` rows now use a 7-day lookback. Merged,
+    deduplicated by `vapi_call_id`, sorted oldest-first (prevents
+    error rows starving behind newer pending rows), then capped at
+    `BATCH_LIMIT=10` so total Anthropic spend per run is unchanged.
+
+**Part 3 — H10 + H11 + H9: Agent config standard cleanup**
+- `src/lib/agent-config-standard.ts`:
+  - `tools` restructured into three groups — `required`,
+    `requiredForBookings`, `requiredForQuoting`. Removed
+    `requiredForTowing` and `transferCall` (the latter is Vapi's
+    built-in live transfer feature, never a function tool).
+  - Added `ISSUE_DEFINITIONS` entries for every new tool slot:
+    `MISSING_GET_TEAM`, `MISSING_CHECK_AVAILABILITY`,
+    `MISSING_ADD_TO_WAITLIST`, `MISSING_CANCEL_BOOKING`,
+    `MISSING_RESCHEDULE_BOOKING`, `MISSING_CALCULATE_JOB_QUOTE`,
+    `MISSING_LOG_QUOTE_ADDON`.
+- `src/lib/vapi-tool-defs.ts` (new): single source of truth for
+  `TOOL_DEFS`, `buildTool`, `buildParameters`, `toolName`, and
+  `wrapsParams`. Both `/api/vapi/sync` and `/api/admin/vapi/sync`
+  used to keep their own copy of these — descriptions had already
+  drifted slightly. Consolidated on the longer/more detailed
+  descriptions from the client route; no structural divergences
+  (properties, required arrays, enums) were found. Both routes now
+  import from this module.
+- `src/lib/agent-config-validator.ts`:
+  - `validateAgentConfig` now takes an optional `{ plan }` and skips
+    booking + quoting tool checks on Starter plans. Default plan is
+    'growth' (most permissive) when unspecified.
+  - Extended `missMap` to include the new tools — every required
+    tool surfaces a pre-defined `ISSUE_DEFINITIONS` code (no template
+    strings, no risk of an unknown code crashing `makeIssue`).
+- `src/lib/golive-checks.ts`:
+  - Passes `business.plan` into `validateAgentConfig` so the
+    `check_agent_config_valid` auto-check no longer fails Starter
+    clients for missing `create_booking` / `check_availability`.
+- `src/lib/vapi-agent-builder.ts` (new): `buildNewAgentPayload`
+  produces a complete Vapi assistant POST body that passes the
+  validator on first creation. All voice/timing/transcriber values
+  come from `AGENT_CONFIG_STANDARD`; tools come from the new groups.
+  Fixes voice.provider='eleven-labs' (Vapi expects '11labs'),
+  missing voice model, missing stopSpeakingPlan, missing
+  transcriber config, and zero tools on freshly-onboarded agents.
+- `src/app/api/onboarding/complete/route.ts`:
+  - Replaces the hand-written Vapi POST body with a call to
+    `buildNewAgentPayload`. Every new client agent now ships with
+    the full standard config and the correct tool list for its plan.
+
+**Part 4 — H8: Gate approve-agent on go-live checklist (`src/app/api/admin/approve-agent/route.ts`)**
+- Switched auth from the `x-admin-key` header to `requireAdmin()`
+  (matches every other `/api/admin/*` route).
+- Before approval, runs `computeAutoChecks` and reads
+  `client_golive_checklist`. Approval fails 400 with a list of
+  failing checks unless `?override=true` is passed.
+- Required manual checks: `manual_vapi_functions_registered`,
+  `manual_test_call_made`, `manual_sms_delivered_to_owner`.
+- When `?override=true` is used despite failing checks, a Telegram
+  alert fires via `sendAdminTelegram` naming the business and the
+  failing checks so we have an audit trail of emergency approvals.
+
+### Migration
+
+- `supabase/migrations/043_session28_fixes.sql`:
+  - Adds `calls.intelligence_retry_count INTEGER DEFAULT 0` for a
+    future retry-cap feature.
+  - Adds a partial index on `calls (intelligence_status, created_at)
+    WHERE intelligence_status IN ('pending', 'error')` to speed up
+    the new split queries in the score-pending-calls cron.
+  - All statements idempotent.
+
+### Decisions / deviations from brief
+
+- The brief instructed verifying `account_status` valid values
+  before shipping the H12 gate. Confirmed from migration 022 the
+  full set is `(trial, active, pending, pending_payment, expired,
+  suspended, cancelled)`. The Part 1 gate uses `['active', 'trial']`
+  as specified.
+- The brief stated `validateAgentConfig` returned a `ValidationResult`
+  object. The real return type is `AgentIssue[]`. Kept the actual
+  return type; added the `options?: { plan?: string }` parameter as
+  brief intended.
+- The brief listed manual check key candidates with an instruction
+  to verify against `MANUAL_CHECK_KEYS`. The three names listed in
+  the brief (`manual_vapi_functions_registered`,
+  `manual_test_call_made`, `manual_sms_delivered_to_owner`) match
+  `MANUAL_CHECK_KEYS` in `golive-checks.ts:53-67` exactly — used as-is.
+- TOOL_DEFS were already structurally identical between
+  `/api/vapi/sync` and `/api/admin/vapi/sync`. Only the description
+  strings on `check_availability`, `add_to_waitlist`, `cancel_booking`,
+  `reschedule_booking` were shorter in the admin copy. Consolidated
+  on the longer client-route descriptions. No structural merge work
+  was needed.
+
+### Out of scope
+
+- The previous Session 27 known-gaps notes about Vapi lifecycle on
+  cancel/trial-end (the original "H8") and the Stripe
+  `customer.subscription.updated` handler are NOT addressed here.
+  Session 28's H8 refers to the approve-agent governance gate per
+  the brief. The original Session 27 H8-H15 gap text in SYSTEM_MAP
+  reflected scope-of-future-work — the Session 28 brief reuses the
+  H8-H15 labels for its own four parts. Those original
+  Session 27 audit items remain as deferred work.
+
+### Manual handoff for Donna
+
+1. Apply `supabase/migrations/043_session28_fixes.sql` on production
+   Supabase after merge to main.
+2. Confirm `VAPI_WEBHOOK_SECRET` is set in Vercel production env.
+   The function endpoint will now refuse to start serving requests
+   until it is — `/api/vapi/functions` returns 500 with a log line
+   `[vapi/functions] VAPI_WEBHOOK_SECRET is not set` when missing.
+3. Confirm every Vapi assistant's tool `server.secret` matches
+   `VAPI_WEBHOOK_SECRET` — a mismatch will produce 401s.
+4. No Make.com scenario changes required.
+5. Existing approve-agent callers need to be updated: the old
+   `x-admin-key: $ADMIN_SECRET_KEY` header is no longer accepted.
+   Use a logged-in admin session.
+6. After deploying, run `/admin/agent-health` for a sweep of
+   existing clients — Starter plans should now pass
+   `check_agent_config_valid` even though they have no booking
+   tools registered.
+
+### Testing checklist
+
+- [ ] POST to `/api/vapi/functions` without `x-vapi-secret` → 401.
+- [ ] POST to `/api/vapi/functions` with wrong secret → 401.
+- [ ] POST to `/api/vapi/functions` with correct secret → proceeds.
+- [ ] POST to `/api/vapi/functions` legacy format with a
+      `body.business_id` that doesn't match the assistant's
+      `vapi_agent_id` → returns 404 (unknown assistant) instead of
+      silently writing against the wrong tenant.
+- [ ] `scoreCallAsync` with a forced throw → `calls.intelligence_status`
+      becomes `'error'` with the message captured in `alert_reason`.
+- [ ] `score-pending-calls` cron picks up error rows 24h-7d old.
+- [ ] `CRITICAL_FLAG_TYPES` import no longer references
+      `dropped_call` or `wrong_info`.
+- [ ] New Vapi agent created via onboarding → `validateAgentConfig`
+      reports zero critical issues immediately.
+- [ ] Starter go-live → `check_agent_config_valid` passes.
+- [ ] Growth/Pro go-live → fails until `create_booking`,
+      `check_availability`, etc. are registered.
+- [ ] Both sync routes produce identical tool definitions (they now
+      import the same module).
+- [ ] `POST /api/admin/approve-agent` without complete checklist →
+      400 with `failing_checks`.
+- [ ] `POST /api/admin/approve-agent?override=true` → approves and
+      fires a Telegram alert with the failing checks.
+- [ ] `npm run build` passes with zero errors. (Confirmed.)
