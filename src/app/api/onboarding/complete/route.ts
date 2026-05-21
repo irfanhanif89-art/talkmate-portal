@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { BUSINESS_TYPE_CONFIG, type BusinessType } from '@/lib/business-types'
 import { seedDefaultSmartLists, type IndustrySlug } from '@/lib/smart-lists'
+import { buildNewAgentPayload } from '@/lib/vapi-agent-builder'
 
 // Lazy-init so module evaluation doesn't crash at build-time when the key
 // isn't injected (Next 16 collects page data at build time without env vars).
@@ -45,24 +46,25 @@ ${config.complianceRule ? `IMPORTANT: ${config.complianceRule}` : ''}
 
 Always be warm, natural, and helpful. You represent ${business.name} in Australia.`
 
-  // Create Vapi assistant
+  // Session 28 (H9) — build a complete, validator-clean Vapi payload.
+  // The old hand-rolled body used voice.provider='eleven-labs' (wrong
+  // — Vapi expects '11labs'), shipped no voice model, no
+  // stopSpeakingPlan, no transcriber config, and zero tools. Every
+  // new client agent failed validateAgentConfig on day one and Donna
+  // had to fix each one by hand. The builder uses
+  // AGENT_CONFIG_STANDARD for every config value.
+  const vapiPayload = buildNewAgentPayload({
+    businessName: business.name,
+    businessId: business.id,
+    systemPrompt,
+    firstMessage: greeting,
+    voiceId: typeof responses.voice === 'string' ? responses.voice : undefined,
+    plan: (business.plan as string | undefined) ?? 'starter',
+  })
   const vapiRes = await fetch('https://api.vapi.ai/assistant', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${process.env.VAPI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: `${business.name} — Talkmate Agent`,
-      model: {
-        provider: 'openai',
-        model: 'gpt-4o',
-        systemPrompt,
-        temperature: 0.7,
-      },
-      voice: {
-        provider: 'eleven-labs',
-        voiceId: responses.voice as string || 'rachel',
-      },
-      firstMessage: greeting,
-    })
+    body: JSON.stringify(vapiPayload),
   })
 
   let vapiAgentId = null

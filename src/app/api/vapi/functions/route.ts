@@ -61,16 +61,20 @@ interface EscalationConfig {
 
 export async function POST(request: Request) {
   // ---- auth -------------------------------------------------------
+  // Session 28 (H12): VAPI_WEBHOOK_SECRET is now mandatory. Previously
+  // an unset secret silently disabled auth — an open endpoint that
+  // could write bookings, callbacks, SMS for any business_id sent in
+  // the body.
   const expected = process.env.VAPI_WEBHOOK_SECRET
-  if (expected) {
-    const got = request.headers.get('x-vapi-secret') ?? request.headers.get('authorization') ?? ''
-    const normalized = got.startsWith('Bearer ') ? got.slice(7) : got
-    if (normalized !== expected) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!expected) {
+    console.error('[vapi/functions] VAPI_WEBHOOK_SECRET is not set — rejecting all requests')
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
   }
-  // If VAPI_WEBHOOK_SECRET is unset we permit calls (dev). Production
-  // operators MUST set it.
+  const got = request.headers.get('x-vapi-secret') ?? request.headers.get('authorization') ?? ''
+  const normalized = got.startsWith('Bearer ') ? got.slice(7) : got
+  if (normalized !== expected) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let raw: any
@@ -108,10 +112,30 @@ export async function POST(request: Request) {
     businessId = biz?.id ?? ''
   } else {
     // Legacy custom format
-    const body = raw as FnRequest
+    // Session 28 (H12): do NOT trust body.business_id — it lets anyone
+    // with the webhook secret call any business's tools. Resolve via
+    // the Vapi assistantId on the request and gate suspended /
+    // cancelled / expired accounts.
+    const body = raw as FnRequest & { call?: { assistantId?: string }; assistant?: { id?: string }; assistantId?: string }
     fn = (body.function_name ?? '').trim()
-    businessId = (body.business_id ?? '').trim()
     params = (body.params ?? {}) as Record<string, unknown>
+    const assistantId = body.call?.assistantId ?? body.assistant?.id ?? body.assistantId
+    if (!assistantId) {
+      return NextResponse.json({ error: 'Missing assistantId' }, { status: 400 })
+    }
+    const supabaseAdmin = createAdminClient()
+    const { data: business } = await supabaseAdmin
+      .from('businesses')
+      .select('id, plan, account_status')
+      .eq('vapi_agent_id', assistantId)
+      .maybeSingle()
+    if (!business) {
+      return NextResponse.json({ error: 'Unknown assistant' }, { status: 404 })
+    }
+    if (!['active', 'trial'].includes(business.account_status as string)) {
+      return NextResponse.json({ error: 'Account not active' }, { status: 403 })
+    }
+    businessId = business.id
   }
 
   if (!VALID_FNS.has(fn)) {

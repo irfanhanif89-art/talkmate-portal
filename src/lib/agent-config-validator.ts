@@ -134,9 +134,18 @@ function extractSystemPrompt(assistant: Record<string, unknown>): string {
   return legacyRoot
 }
 
-export function validateAgentConfig(assistantJson: Record<string, unknown>): AgentIssue[] {
+export function validateAgentConfig(
+  assistantJson: Record<string, unknown>,
+  options?: { plan?: string },
+): AgentIssue[] {
   const issues: AgentIssue[] = []
   const std = AGENT_CONFIG_STANDARD
+  // Session 28 (H11): plan-aware. Starter agents intentionally do
+  // NOT carry the booking/quoting tools, so we skip those checks.
+  // Default to 'growth' (most permissive) so a missing plan still
+  // surfaces every issue.
+  const plan = (options?.plan ?? 'growth').toLowerCase()
+  const isStarterPlan = plan === 'starter'
 
   // ---- voice block --------------------------------------------------
   const voice = asRecord(assistantJson.voice)
@@ -236,22 +245,49 @@ export function validateAgentConfig(assistantJson: Record<string, unknown>): Age
   }
 
   // ---- tools --------------------------------------------------------
+  // Session 28 (H11): use the extended missMap so each required tool
+  // surfaces a pre-defined ISSUE_DEFINITIONS code (never construct
+  // codes from string templates — they'd crash makeIssue).
   const toolNames = extractToolNames(assistantJson)
   if (toolNames.length === 0) {
     issues.push(makeIssue('NO_TOOLS', 'model.tools', toolNames, std.tools.required))
   } else {
     const present = new Set(toolNames)
     const missMap: Record<string, keyof typeof ISSUE_DEFINITIONS> = {
-      create_booking:    'MISSING_CREATE_BOOKING',
-      check_caller:      'MISSING_CHECK_CALLER',
-      schedule_callback: 'MISSING_SCHEDULE_CALLBACK',
-      log_outcome:       'MISSING_LOG_OUTCOME',
+      check_caller:        'MISSING_CHECK_CALLER',
+      schedule_callback:   'MISSING_SCHEDULE_CALLBACK',
+      log_outcome:         'MISSING_LOG_OUTCOME',
+      get_team:            'MISSING_GET_TEAM',
+      create_booking:      'MISSING_CREATE_BOOKING',
+      check_availability:  'MISSING_CHECK_AVAILABILITY',
+      add_to_waitlist:     'MISSING_ADD_TO_WAITLIST',
+      cancel_booking:      'MISSING_CANCEL_BOOKING',
+      reschedule_booking:  'MISSING_RESCHEDULE_BOOKING',
+      calculate_job_quote: 'MISSING_CALCULATE_JOB_QUOTE',
+      log_quote_addon:     'MISSING_LOG_QUOTE_ADDON',
     }
+    // Always check required tools (Starter, Growth, Pro all need these).
     for (const required of std.tools.required) {
       if (!present.has(required)) {
         const code = missMap[required]
         if (code) {
           issues.push(makeIssue(code, `model.tools[${required}]`, null, required))
+        }
+      }
+    }
+    // Booking + quoting tools — Growth/Pro only. Starter doesn't ship
+    // with these and shouldn't fail validation when they're absent.
+    if (!isStarterPlan) {
+      const planSpecific = [
+        ...std.tools.requiredForBookings,
+        ...std.tools.requiredForQuoting,
+      ]
+      for (const required of planSpecific) {
+        if (!present.has(required)) {
+          const code = missMap[required]
+          if (code) {
+            issues.push(makeIssue(code, `model.tools[${required}]`, null, required))
+          }
         }
       }
     }

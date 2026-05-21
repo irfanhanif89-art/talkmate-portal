@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { NextResponse } from 'next/server'
+import { AGENT_CONFIG_STANDARD } from '@/lib/agent-config-standard'
+import { buildTool, toolName, type VapiTool } from '@/lib/vapi-tool-defs'
 
 // Admin-scoped Vapi sync. Mirrors the logic in /api/vapi/sync but takes
 // the target client id from the query string instead of inferring it
@@ -8,27 +10,8 @@ import { NextResponse } from 'next/server'
 // view (/admin/clients/[clientId]/portal/*) so Irfan can push agent
 // changes for a specific client without swapping sessions.
 //
-// The brief explicitly forbids modifying /api/vapi/sync; the two files
-// share the same data shape and tool envelope but live separately to
-// keep the client endpoint untouched.
-
-interface VapiToolFunction {
-  name?: string
-  description?: string
-  parameters?: Record<string, unknown>
-}
-
-interface VapiTool {
-  type?: string
-  function?: VapiToolFunction
-  server?: { url?: string; secret?: string } | null
-  name?: string
-  description?: string
-  parameters?: Record<string, unknown>
-  serverUrl?: string
-  serverUrlSecret?: string
-  [k: string]: unknown
-}
+// Session 28 (H10): TOOL_DEFS, buildTool, toolName live in
+// /lib/vapi-tool-defs.ts now — the two sync routes can no longer drift.
 
 interface VipCaller {
   phone: string
@@ -44,134 +27,6 @@ interface TeamMember {
   name: string
   role: string | null
   phone: string | null
-}
-
-const TOOL_DEFS: Record<string, { description: string; properties: Record<string, unknown>; required: string[] }> = {
-  check_caller: {
-    description: 'Look up an incoming caller by phone to surface VIP status, prior history, and repeat-caller flags. Call this once at the very start of every call before greeting.',
-    properties: {
-      phone: { type: 'string', description: "The caller's phone number in E.164 or local format" },
-    },
-    required: ['phone'],
-  },
-  log_outcome: {
-    description: 'Log the outcome of the current call so the portal can update analytics and CRM records.',
-    properties: {
-      call_id: { type: 'string', description: "The current Vapi call id (e.g. 'call_xxx')" },
-      outcome: { type: 'string', description: 'Short outcome label, e.g. transferred, message_taken, booking_created, callback_scheduled' },
-      transfer_to: { type: 'string', description: 'Name or role of the team member the call was transferred to, if any' },
-      transfer_success: { type: 'boolean', description: 'Whether the transfer actually connected' },
-      summary: { type: 'string', description: 'One-sentence summary of what the caller wanted' },
-    },
-    required: ['call_id'],
-  },
-  get_team: {
-    description: 'Fetch the active team members so the assistant can transfer a caller to the right person. Optionally pass a `query` to bias ordering by name, role, or department.',
-    properties: {
-      query: { type: 'string', description: "Optional search hint, e.g. 'accountant' or 'Sarah'" },
-    },
-    required: [],
-  },
-  schedule_callback: {
-    description: 'Schedule a callback for a caller who could not be helped right now.',
-    properties: {
-      caller_name: { type: 'string', description: "Caller's name" },
-      caller_phone: { type: 'string', description: "Caller's phone number" },
-      preferred_time: { type: 'string', description: "Caller's preferred callback time (free text or ISO timestamp)" },
-      reason: { type: 'string', description: 'Why the caller wants a callback' },
-      call_id: { type: 'string', description: 'The current Vapi call id, if available' },
-    },
-    required: ['caller_phone'],
-  },
-  // Session 14 — distance quoting (Growth/Pro only; gated below).
-  calculate_job_quote: {
-    description: 'Calculate a job quote based on pickup and dropoff addresses, truck type, and customer rate type. Call this after confirming the customer type (account or retail) and collecting both addresses.',
-    properties: {
-      pickup_address: { type: 'string', description: 'The full pickup address as given by the caller' },
-      dropoff_address: { type: 'string', description: 'The full dropoff address as given by the caller' },
-      truck_type: { type: 'string', enum: ['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader_40ft'], description: 'The type of truck required for the job' },
-      rate_type: { type: 'string', enum: ['account', 'retail'], description: 'account for trade/account customers, retail for private customers' },
-      caller_phone: { type: 'string', description: "The caller's phone number" },
-      call_id: { type: 'string', description: 'The Vapi call ID for this call' },
-    },
-    required: ['pickup_address', 'dropoff_address', 'truck_type', 'rate_type'],
-  },
-  log_quote_addon: {
-    description: 'Append an add-on (waiting time, toll, door direction change, futile trip) to an existing quote and return the updated total. Call this for each add-on the caller confirms after the initial quote.',
-    properties: {
-      quote_id: { type: 'string', description: 'The quote id returned by calculate_job_quote' },
-      addon_name: { type: 'string', description: 'The exact name of the add-on as it appears in the services list (e.g. "Waiting Time - Loaded Tilt Tray")' },
-      quantity: { type: 'number', description: 'Units of the add-on. Defaults to 1.' },
-    },
-    required: ['quote_id', 'addon_name'],
-  },
-  check_availability: {
-    description: 'Check if the requested date and time has an available slot. Always call this before create_booking when the caller proposes a specific date or time.',
-    properties: {
-      date: { type: 'string', description: 'The day requested. Accepts ISO date or natural language like "tomorrow".' },
-      time: { type: 'string', description: 'The time of day requested, e.g. "9am", "2:30pm", "14:30".' },
-      duration_minutes: { type: 'number', description: 'Optional. Estimated duration of the job.' },
-    },
-    required: ['date', 'time'],
-  },
-  add_to_waitlist: {
-    description: 'Add the caller to the waitlist when no slot is available.',
-    properties: {
-      caller_phone: { type: 'string', description: "Caller's phone number" },
-      caller_name: { type: 'string', description: "Caller's name" },
-      requested_date: { type: 'string', description: 'Preferred date' },
-      truck_type: { type: 'string', description: 'Truck type if relevant' },
-      pickup_address: { type: 'string', description: 'Pickup address' },
-      dropoff_address: { type: 'string', description: 'Dropoff address' },
-      description: { type: 'string', description: 'Short description of the job' },
-      call_id: { type: 'string', description: 'Vapi call id' },
-    },
-    required: ['caller_phone'],
-  },
-  cancel_booking: {
-    description: 'Cancel an existing booking by booking_id or by caller_phone + scheduled_start.',
-    properties: {
-      booking_id: { type: 'string', description: 'The booking id to cancel.' },
-      caller_phone: { type: 'string', description: "Caller's phone number." },
-      scheduled_start: { type: 'string', description: 'Original start timestamp.' },
-      cancellation_reason: { type: 'string', description: 'Optional reason.' },
-    },
-    required: [],
-  },
-  reschedule_booking: {
-    description: 'Move an existing booking to a new date and time.',
-    properties: {
-      booking_id: { type: 'string', description: 'The booking id.' },
-      caller_phone: { type: 'string', description: "Caller's phone number." },
-      scheduled_start: { type: 'string', description: 'Original start timestamp.' },
-      new_date: { type: 'string', description: 'New requested date.' },
-      new_time: { type: 'string', description: 'New requested time.' },
-    },
-    required: ['new_date', 'new_time'],
-  },
-  // Session 17B -- create_booking exposed to Growth/Pro towing agents.
-  create_booking: {
-    description: 'Create a confirmed booking after the caller has agreed to the time, date, and job details. Call this only after check_availability confirms the slot is available.',
-    properties: {
-      caller_name: { type: 'string', description: 'Full name of the caller' },
-      caller_phone: { type: 'string', description: 'Caller phone number' },
-      pickup_address: { type: 'string', description: 'Full pickup address' },
-      dropoff_address: { type: 'string', description: 'Full dropoff address' },
-      pickup_contact_name: { type: 'string', description: 'Name of person at pickup' },
-      pickup_contact_phone: { type: 'string', description: 'Phone of person at pickup' },
-      dropoff_contact_name: { type: 'string', description: 'Name of person at dropoff' },
-      dropoff_contact_phone: { type: 'string', description: 'Phone of person at dropoff' },
-      truck_type: { type: 'string', enum: ['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader_40ft'], description: 'Truck type required' },
-      rate_type: { type: 'string', enum: ['account', 'retail'], description: 'account for trade clients, retail otherwise' },
-      scheduled_date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-      scheduled_time: { type: 'string', description: 'Time in HH:MM 24-hour format' },
-      description: { type: 'string', description: 'Any additional job notes' },
-      account_id: { type: 'string', description: 'UUID of account if caller is an account client' },
-      driver_id: { type: 'string', description: 'UUID of assigned driver if known' },
-      call_id: { type: 'string', description: 'Vapi call ID for this call' },
-    },
-    required: ['caller_name', 'caller_phone', 'scheduled_date', 'scheduled_time'],
-  },
 }
 
 // Session 15 — VIP bypass + scheduler prompt blocks.
@@ -264,75 +119,6 @@ function removeQuoteBlock(prompt: string): { next: string; changed: boolean } {
   if (!QUOTE_BLOCK_RE.test(prompt)) return { next: prompt, changed: false }
   const next = prompt.replace(QUOTE_BLOCK_RE, '')
   return { next, changed: next !== prompt }
-}
-
-function toolName(tool: VapiTool | null | undefined): string | null {
-  if (!tool) return null
-  return tool.function?.name ?? tool.name ?? null
-}
-
-function wrapsParams(template: VapiTool | null): boolean {
-  const params = (template?.function?.parameters ?? template?.parameters) as Record<string, unknown> | undefined
-  const properties = params?.properties as Record<string, unknown> | undefined
-  return !!(properties && 'function_name' in properties && 'business_id' in properties && 'params' in properties)
-}
-
-function buildParameters(functionName: string, businessId: string, template: VapiTool | null): Record<string, unknown> {
-  const def = TOOL_DEFS[functionName]
-  if (wrapsParams(template)) {
-    return {
-      type: 'object',
-      properties: {
-        function_name: { type: 'string', enum: [functionName], description: `Always set to "${functionName}"` },
-        business_id: { type: 'string', enum: [businessId], description: 'Always pass the business id baked into this tool' },
-        params: {
-          type: 'object',
-          properties: def.properties,
-          required: def.required,
-        },
-      },
-      required: ['function_name', 'business_id', 'params'],
-    }
-  }
-  return {
-    type: 'object',
-    properties: def.properties,
-    required: def.required,
-  }
-}
-
-function buildTool(
-  functionName: string,
-  businessId: string,
-  template: VapiTool | null,
-  defaults: { serverUrl: string; serverSecret: string | undefined },
-): VapiTool {
-  const def = TOOL_DEFS[functionName]
-  const parameters = buildParameters(functionName, businessId, template)
-
-  const base: VapiTool = template
-    ? JSON.parse(JSON.stringify(template))
-    : {
-        type: 'function',
-        server: { url: defaults.serverUrl, secret: defaults.serverSecret },
-      }
-
-  if (base.server || (base.serverUrl == null && base.serverUrlSecret == null)) {
-    base.server = {
-      url: base.server?.url ?? defaults.serverUrl,
-      secret: base.server?.secret ?? defaults.serverSecret,
-    }
-  }
-
-  base.type = base.type ?? 'function'
-  base.function = {
-    name: functionName,
-    description: def.description,
-    parameters,
-  }
-  if (base.name !== undefined) base.name = functionName
-
-  return base
 }
 
 const VIP_BLOCK_HEADER = '====================================================='
@@ -452,13 +238,14 @@ export async function POST(req: Request) {
   const serverUrl = appUrl + '/api/vapi/functions'
 
   const template = existingTools.find(t => toolName(t) === 'check_caller') ?? null
+  // Session 28 (H10): mirror /api/vapi/sync — tool groupings come from
+  // AGENT_CONFIG_STANDARD.tools so the two routes can never drift.
   const plan = (business.plan as string | null) ?? 'starter'
   const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
-  const baseTools = ['check_caller', 'log_outcome', 'get_team', 'schedule_callback']
-  const quoteTools = ['calculate_job_quote', 'log_quote_addon']
-  // Session 17B -- create_booking added so Growth/Pro agents can commit bookings.
-  const schedulerTools = ['check_availability', 'create_booking', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking']
-  const ensured = quoteToolsEnabled ? [...baseTools, ...quoteTools, ...schedulerTools] : baseTools
+  const baseTools = [...AGENT_CONFIG_STANDARD.tools.required]
+  const bookingTools = [...AGENT_CONFIG_STANDARD.tools.requiredForBookings]
+  const quoteTools = [...AGENT_CONFIG_STANDARD.tools.requiredForQuoting]
+  const ensured = quoteToolsEnabled ? [...baseTools, ...bookingTools, ...quoteTools] : baseTools
 
   let toolsChanged = false
   const nextTools: VapiTool[] = existingTools.slice()
@@ -474,7 +261,7 @@ export async function POST(req: Request) {
     }
   }
   if (!quoteToolsEnabled) {
-    for (const fn of [...quoteTools, ...schedulerTools]) {
+    for (const fn of [...bookingTools, ...quoteTools]) {
       const idx = nextTools.findIndex(t => toolName(t) === fn)
       if (idx !== -1) {
         nextTools.splice(idx, 1)
