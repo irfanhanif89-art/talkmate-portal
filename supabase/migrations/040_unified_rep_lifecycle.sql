@@ -62,5 +62,11 @@ create index if not exists idx_contractors_sales_rep_id on contractors(sales_rep
 create index if not exists idx_sales_reps_contractor_id on sales_reps(contractor_id);
 create index if not exists idx_sales_reps_is_legacy on sales_reps(is_legacy);
 
+-- Data cleanup: the deprecated 'signed' value on contractors.status is
+-- retired this session. The sign route already transitions invited ->
+-- active directly, so this UPDATE is defensive — only touches rows
+-- that may have been left in the intermediate state.
+update contractors set status = 'active' where status = 'signed';
+
 -- No new RLS — inherits from contractors / sales_reps which already have
 -- admin-only and self-row policies (see migrations 036 and 038).

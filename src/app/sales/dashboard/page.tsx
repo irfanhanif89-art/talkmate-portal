@@ -42,12 +42,30 @@ export default async function SalesDashboardPage() {
     (sum, c) => sum + Number(c.commission_amount ?? 0), 0
   )
 
+  const isFirstLogin = (leadsAssigned ?? 0) === 0 && (activities ?? []).length === 0
+
   return (
     <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif' }}>
       <PageHeading
         title={`G'day ${auth.rep.full_name.split(' ')[0]} 👋`}
         sub="Your sales HQ. Track your pipeline, log activity, close deals."
       />
+
+      {isFirstLogin && (
+        <div style={{
+          padding: '18px 22px', marginBottom: 24, borderRadius: 12,
+          background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.25)',
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#22D3EE', marginBottom: 6 }}>
+            Welcome to TalkMate, {auth.rep.full_name.split(' ')[0]}.
+          </div>
+          <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, lineHeight: 1.6 }}>
+            {auth.rep.onboarded_via === 'contractor_flow'
+              ? 'Your contractor agreement is signed and your account is active. Start by adding your first lead from the Leads tab.'
+              : 'Your account is active. Once your manager assigns leads, they will appear below.'}
+          </p>
+        </div>
+      )}
 
       {/* Stat cards */}
       <div style={{

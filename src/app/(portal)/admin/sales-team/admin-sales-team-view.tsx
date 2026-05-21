@@ -1,8 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Users, GitBranch, DollarSign, Plus, Download, Trophy } from 'lucide-react'
+import { Users, GitBranch, DollarSign, Plus, Download, Trophy, X } from 'lucide-react'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/sales-format'
 import InviteRepModal from './invite-rep-modal'
 import ContractManagerModal from './contract-manager-modal'
@@ -10,6 +10,8 @@ import ApproveDealModal from './approve-deal-modal'
 import RejectDealModal from './reject-deal-modal'
 import RevokeCommissionModal from './revoke-commission-modal'
 import MarkPaidModal from './mark-paid-modal'
+
+const LEGACY_BANNER_KEY = 'sales-team-legacy-banner-dismissed'
 
 export interface AdminRepRow {
   id: string
@@ -117,6 +119,7 @@ export default function AdminSalesTeamView({ reps, leads, commissions, leaderboa
 
   return (
     <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif', background: '#061322', color: 'white', minHeight: '100vh' }}>
+      <LegacyBanner />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 22 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>Sales Team</h1>
@@ -170,6 +173,43 @@ export default function AdminSalesTeamView({ reps, leads, commissions, leaderboa
       {rejectLead && <RejectDealModal lead={rejectLead} onClose={() => setRejectLead(null)} onSuccess={() => { setRejectLead(null); router.refresh() }} />}
       {revokeCommission && <RevokeCommissionModal commission={revokeCommission} onClose={() => setRevokeCommission(null)} onSuccess={() => { setRevokeCommission(null); router.refresh() }} />}
       {payCommission && <MarkPaidModal commission={payCommission} onClose={() => setPayCommission(null)} onSuccess={() => { setPayCommission(null); router.refresh() }} />}
+    </div>
+  )
+}
+
+function LegacyBanner() {
+  const [dismissed, setDismissed] = useState(true)
+  useEffect(() => {
+    try {
+      setDismissed(window.sessionStorage.getItem(LEGACY_BANNER_KEY) === '1')
+    } catch {
+      setDismissed(false)
+    }
+  }, [])
+  if (dismissed) return null
+  return (
+    <div style={{
+      padding: '12px 16px', marginBottom: 16, borderRadius: 9,
+      background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.35)',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+    }}>
+      <div style={{ fontSize: 13, color: '#BBD9FF', lineHeight: 1.6 }}>
+        New contractors are now onboarded through the Contractors page with automated digital signing.
+        This page manages legacy manually-onboarded reps only.
+      </div>
+      <button
+        onClick={() => {
+          try { window.sessionStorage.setItem(LEGACY_BANNER_KEY, '1') } catch {}
+          setDismissed(true)
+        }}
+        aria-label="Dismiss"
+        style={{
+          background: 'transparent', border: 'none', color: '#7BAED4',
+          padding: 2, cursor: 'pointer', display: 'flex', alignItems: 'center',
+        }}
+      >
+        <X size={16} />
+      </button>
     </div>
   )
 }
