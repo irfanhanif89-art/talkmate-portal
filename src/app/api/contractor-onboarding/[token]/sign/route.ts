@@ -16,11 +16,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     bank_bsb?: unknown
     bank_account_number?: unknown
     signature_consent?: unknown
+    signature_data_url?: unknown
+    signature_method?: unknown
+    signature_timestamp?: unknown
   }
 
   if (body.signature_consent !== true) {
     return NextResponse.json({ ok: false, error: 'Signature consent is required' }, { status: 400 })
   }
+
+  // Captured electronic signature is now required — Electronic
+  // Transactions Act 2001 (Qld) compliance per the agreement.
+  const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : ''
+  if (!signatureDataUrl.startsWith('data:image/png;base64,')) {
+    return NextResponse.json({ ok: false, error: 'A drawn or typed signature is required' }, { status: 400 })
+  }
+  const signatureMethod: 'drawn' | 'typed' =
+    body.signature_method === 'typed' ? 'typed' : 'drawn'
+  const signatureClientTimestamp = typeof body.signature_timestamp === 'string'
+    ? body.signature_timestamp
+    : null
 
   const admin = createAdminClient()
   const { data: contractor } = await admin
@@ -88,6 +103,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       script_date: scriptDate,
       signed_ip: ip,
       signed_at_iso,
+      signature_data_url: signatureDataUrl,
+      signature_method: signatureMethod,
     })
     pdfBytes = res.pdf
     usedTemplate = res.usedTemplate
@@ -136,7 +153,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 })
   }
 
-  // Insert agreement record.
+  // Insert agreement record with signature metadata (migration 041).
   await admin.from('contractor_agreements').insert({
     contractor_id: contractor.id,
     agreement_version: '2.0',
@@ -146,6 +163,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     signed_ip: ip,
     signed_pdf_url: storedPath,
     status: 'signed',
+    signature_method: signatureMethod,
+    signature_timestamp: signatureClientTimestamp,
+    ip_address: ip,
   })
 
   // Record script acknowledgement (one row per active script).

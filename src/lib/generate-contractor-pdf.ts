@@ -16,6 +16,11 @@ export interface ContractorAgreementFields {
   script_date: string
   signed_ip: string
   signed_at_iso: string
+  // Optional captured signature. PNG data URL captured client-side via
+  // SignatureCapture. When supplied, the image is embedded on the
+  // signature page. Method is recorded as text caption for audit.
+  signature_data_url?: string
+  signature_method?: 'drawn' | 'typed'
 }
 
 export interface GeneratePdfResult {
@@ -135,7 +140,43 @@ export async function generateContractorAgreementPdf(
   sy -= 6
   sdraw(`Electronically signed by ${fields.contractor_first_name} ${fields.contractor_last_name}`)
   sdraw(`on ${fields.agreement_date} at ${new Date(fields.signed_at_iso).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane' })} AEST`)
-  sy -= 6
+  sy -= 12
+
+  // Embed the captured signature image, if provided. Sized to 200x60
+  // (aspect locked to the source canvas, capped to that box).
+  if (fields.signature_data_url && fields.signature_data_url.startsWith('data:image/png;base64,')) {
+    try {
+      const base64 = fields.signature_data_url.replace(/^data:image\/png;base64,/, '')
+      const imgBytes = Buffer.from(base64, 'base64')
+      const sigImage = await pdfDoc.embedPng(imgBytes)
+      const maxW = 200
+      const maxH = 60
+      const ratio = Math.min(maxW / sigImage.width, maxH / sigImage.height)
+      const drawW = sigImage.width * ratio
+      const drawH = sigImage.height * ratio
+      const boxX = 50
+      const boxY = sy - drawH
+      sigPage.drawImage(sigImage, { x: boxX, y: boxY, width: drawW, height: drawH })
+      // Caption underneath the signature image
+      const captionY = boxY - 14
+      sigPage.drawText(`${fields.contractor_first_name} ${fields.contractor_last_name}`, {
+        x: boxX, y: captionY, size: 10, font: helvBold, color: black,
+      })
+      sigPage.drawText(fields.agreement_date, {
+        x: boxX, y: captionY - 14, size: 10, font: helv, color: black,
+      })
+      const methodLabel = fields.signature_method === 'typed' ? 'typed' : 'drawn'
+      sigPage.drawText(`Signed electronically via TalkMate Sales Portal (${methodLabel})`, {
+        x: boxX, y: captionY - 28, size: 8, font: helv, color: grey,
+      })
+      sy = captionY - 44
+    } catch {
+      // If embed fails (corrupt PNG, etc.) we still produce the PDF —
+      // the textual acknowledgement below is sufficient for audit.
+      sdraw('(Signature image could not be embedded; textual record below applies.)', { size: 9, color: grey })
+    }
+  }
+
   sdraw('By signing electronically the Contractor confirms:', { bold: true })
   sdraw('  - They have read and agree to be bound by this agreement.')
   sdraw('  - They acknowledge the current approved TalkMate sales script.')

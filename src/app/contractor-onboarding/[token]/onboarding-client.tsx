@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import SignatureCapture, { type SignatureMethod } from '@/components/contractor/SignatureCapture'
 
 type ContractorPayload = {
   id: string
@@ -138,6 +139,8 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   const [agreeAgreement, setAgreeAgreement] = useState(false)
   const [agreeScript, setAgreeScript] = useState(false)
   const [agreeAbnWithhold, setAgreeAbnWithhold] = useState(false)
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  const [signatureMethod, setSignatureMethod] = useState<SignatureMethod>('drawn')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const agreementBoxRef = useRef<HTMLDivElement | null>(null)
@@ -209,6 +212,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
   }, [token, phone, abn, bsb, acct])
 
   const submitSign = useCallback(async () => {
+    if (!signatureDataUrl) {
+      setSubmitError('Please sign the agreement before continuing.')
+      return
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
@@ -217,6 +224,9 @@ export default function ContractorOnboardingClient({ token }: { token: string })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           signature_consent: true,
+          signature_data_url: signatureDataUrl,
+          signature_method: signatureMethod,
+          signature_timestamp: new Date().toISOString(),
           abn: abn || null,
           bank_bsb: bsb || null,
           bank_account_number: acct || null,
@@ -233,7 +243,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
     } finally {
       setSubmitting(false)
     }
-  }, [token, abn, bsb, acct])
+  }, [token, abn, bsb, acct, signatureDataUrl, signatureMethod])
 
   if (!load) {
     return (
@@ -413,14 +423,25 @@ export default function ContractorOnboardingClient({ token }: { token: string })
 
         {step === 4 && (
           <>
-            <h1 style={heading}>Sign Agreement</h1>
-            <p style={sub}>Confirm the details below and tick each box to sign.</p>
+            <h1 style={heading}>Sign the Agreement</h1>
+            <p style={sub}>
+              By signing below you confirm you have read and agree to all terms of
+              the TalkMate Sales Contractor Agreement v2.0.
+            </p>
 
             <div style={summaryBox}>
               <div style={{ marginBottom: 4 }}><strong>Contractor:</strong> {fullName}</div>
               <div style={{ marginBottom: 4 }}><strong>Agreement Version:</strong> 2.0</div>
               <div style={{ marginBottom: 4 }}><strong>Date:</strong> {today}</div>
               <div><strong>Script Version:</strong> {scriptVersion} (dated {scriptDate})</div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <SignatureCapture
+                signerName={fullName}
+                onSignatureChange={setSignatureDataUrl}
+                onMethodChange={setSignatureMethod}
+              />
             </div>
 
             <label style={checkboxRow}>
@@ -457,14 +478,24 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <button style={buttonGhost} onClick={() => setStep(3)}>Back</button>
               <button
                 style={
-                  submitting || !agreeAgreement || !agreeScript || (needsAbnCheckbox && !agreeAbnWithhold)
+                  submitting
+                    || !signatureDataUrl
+                    || !agreeAgreement
+                    || !agreeScript
+                    || (needsAbnCheckbox && !agreeAbnWithhold)
                     ? buttonDisabled
                     : button
                 }
-                disabled={submitting || !agreeAgreement || !agreeScript || (needsAbnCheckbox && !agreeAbnWithhold)}
+                disabled={
+                  submitting
+                  || !signatureDataUrl
+                  || !agreeAgreement
+                  || !agreeScript
+                  || (needsAbnCheckbox && !agreeAbnWithhold)
+                }
                 onClick={submitSign}
               >
-                {submitting ? 'Generating your signed agreement...' : 'Sign Agreement'}
+                {submitting ? 'Generating your signed agreement...' : 'Sign and Complete'}
               </button>
             </div>
           </>
