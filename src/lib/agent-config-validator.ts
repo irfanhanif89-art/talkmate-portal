@@ -100,19 +100,38 @@ function extractToolNames(assistant: Record<string, unknown>): string[] {
 }
 
 function extractSystemPrompt(assistant: Record<string, unknown>): string {
-  // Vapi's current shape: model.messages[0].role === 'system'
+  // Vapi stores the system prompt in one of two places depending on
+  // when the assistant was created:
+  //   • model.systemPrompt        — legacy assistants (GM Towing,
+  //                                 Spectrum Towing, and most existing
+  //                                 TalkMate clients live here)
+  //   • model.messages[].content  — newer Vapi assistant format
+  //                                 (entry where role === 'system')
+  //
+  // The 21 May 2026 cron run fired a false-positive NO_SYSTEM_PROMPT
+  // alert against Glen's agent because this helper only checked the
+  // messages path. Both locations are now consulted in order; the
+  // first non-empty hit wins. A final fallback to top-level
+  // assistant.systemPrompt is retained for the rare assistants that
+  // serialise the prompt outside the model object.
   const model = asRecord(assistant.model)
+
+  const modelSystemPrompt = asString(model.systemPrompt)
+  if (modelSystemPrompt.trim()) return modelSystemPrompt
+
   const messages = Array.isArray(model.messages) ? model.messages : []
   for (const m of messages) {
     const msg = asRecord(m)
     if (asString(msg.role) === 'system') {
       const content = asString(msg.content)
-      if (content) return content
+      if (content.trim()) return content
     }
   }
-  // Legacy: assistant.systemPrompt
-  const legacy = asString(assistant.systemPrompt) || asString(assistant.firstMessage && (assistant.firstMessage as Record<string, unknown>).systemPrompt)
-  return legacy
+
+  // Final fallback for older shapes that put the prompt at the root.
+  const legacyRoot = asString(assistant.systemPrompt)
+    || asString(assistant.firstMessage && (assistant.firstMessage as Record<string, unknown>).systemPrompt)
+  return legacyRoot
 }
 
 export function validateAgentConfig(assistantJson: Record<string, unknown>): AgentIssue[] {
@@ -239,24 +258,28 @@ export function validateAgentConfig(assistantJson: Record<string, unknown>): Age
   }
 
   // ---- system prompt content ---------------------------------------
+  // The field path reflects both possible Vapi locations checked by
+  // extractSystemPrompt(). The "missing" message names both so Donna
+  // can grep Vapi for the right field when remediating.
   const prompt = extractSystemPrompt(assistantJson)
+  const promptField = 'model.systemPrompt or model.messages[0].content'
   if (!prompt.trim()) {
-    issues.push(makeIssue('NO_SYSTEM_PROMPT', 'model.messages[0].content', prompt || null, 'non-empty system prompt'))
+    issues.push(makeIssue('NO_SYSTEM_PROMPT', promptField, null, 'non-empty system prompt'))
   } else {
     for (const { pattern, label } of PLACEHOLDER_PATTERNS) {
       const m = pattern.exec(prompt)
       if (m) {
-        issues.push(makeIssue('PLACEHOLDER_IN_PROMPT', 'model.messages[0].content', `…${m[0]}…`, `no "${label}"`))
+        issues.push(makeIssue('PLACEHOLDER_IN_PROMPT', promptField, `…${m[0]}…`, `no "${label}"`))
         break // one critical per prompt is enough — surface the first match
       }
     }
     const dollarMatch = DOLLAR_PATTERN.exec(prompt)
     if (dollarMatch) {
-      issues.push(makeIssue('DOLLAR_SIGN_IN_PROMPT', 'model.messages[0].content', dollarMatch[0], 'spelled-out amount, e.g. "two hundred dollars"'))
+      issues.push(makeIssue('DOLLAR_SIGN_IN_PROMPT', promptField, dollarMatch[0], 'spelled-out amount, e.g. "two hundred dollars"'))
     }
     const ordinalMatch = ORDINAL_PATTERN.exec(prompt)
     if (ordinalMatch) {
-      issues.push(makeIssue('ORDINAL_SUFFIX_IN_PROMPT', 'model.messages[0].content', ordinalMatch[0], 'spelled-out ordinal, e.g. "the first"'))
+      issues.push(makeIssue('ORDINAL_SUFFIX_IN_PROMPT', promptField, ordinalMatch[0], 'spelled-out ordinal, e.g. "the first"'))
     }
   }
 

@@ -92,7 +92,7 @@ export const ISSUE_DEFINITIONS: Record<string, { severity: IssueSeverity; messag
   WRONG_TRANSCRIBER_LANG:   { severity: 'warning',  message: 'Transcriber language is not en-AU' },
   WRONG_ENDPOINTING:        { severity: 'warning',  message: 'Transcriber endpointing is not 500ms' },
   WRONG_SERVER_URL:         { severity: 'warning',  message: 'serverUrl does not point to https://app.talkmate.com.au/api/vapi/functions' },
-  NO_SYSTEM_PROMPT:         { severity: 'critical', message: 'System prompt is empty or missing' },
+  NO_SYSTEM_PROMPT:         { severity: 'critical', message: 'System prompt is empty or missing from both model.systemPrompt and model.messages[0].content' },
   PLACEHOLDER_IN_PROMPT:    { severity: 'critical', message: 'Placeholder text found in system prompt — agent will speak raw template variables' },
   DOLLAR_SIGN_IN_PROMPT:    { severity: 'warning',  message: 'Dollar sign found in system prompt — causes speech distortion on dollar amounts' },
   ORDINAL_SUFFIX_IN_PROMPT: { severity: 'warning',  message: 'Ordinal suffix (st/nd/rd/th) found in system prompt — causes speech glitching' },
