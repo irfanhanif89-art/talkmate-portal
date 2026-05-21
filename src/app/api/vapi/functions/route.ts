@@ -690,6 +690,64 @@ async function scheduleCallback(
     })
   }
 
+  // Session 24 — close the loop on callback requests.
+  //
+  // Until this session the agent confirmed verbally and we logged the
+  // callback row, but no SMS reached either side. Result: callers
+  // walked away unsure whether their request had landed, and
+  // dispatchers had no inbox to triage. Both sends bypass plan
+  // limits (see BYPASS_PLAN_LIMIT_TYPES in sms.ts) so they always
+  // fire — these are operational guarantees, not marketing.
+  //
+  // Fire-and-forget: a Twilio failure here must not break the Vapi
+  // tool call response. We log errors but never throw upstream.
+  try {
+    const { data: businessRow } = await supabase
+      .from('businesses')
+      .select('name')
+      .eq('id', clientId)
+      .maybeSingle()
+    const businessName = (businessRow?.name as string | undefined) ?? 'us'
+
+    if (callerPhone) {
+      const callerSms = await sendSMS({
+        to: callerPhone,
+        message: `Hi, thanks for calling ${businessName}. We have noted your callback request and someone will be in touch with you shortly.`,
+        clientId,
+        smsType: 'callback_confirmation',
+      })
+      if (!callerSms.success) {
+        console.warn('[schedule_callback] caller SMS failed', { clientId, reason: callerSms.reason, error: callerSms.error })
+      }
+    }
+
+    const { data: notifConfig } = await supabase
+      .from('notifications_config')
+      .select('dispatcher_number, dispatcher_alerts')
+      .eq('client_id', clientId)
+      .maybeSingle()
+
+    const dispatcherNumber = (notifConfig?.dispatcher_number as string | undefined) ?? null
+    const dispatcherAlerts = (notifConfig?.dispatcher_alerts as boolean | undefined) === true
+
+    if (dispatcherAlerts && dispatcherNumber) {
+      const reasonText = reason ?? 'no reason given'
+      const callbackNameText = callerName ?? 'A caller'
+      const callbackPhoneText = callerPhone ?? 'unknown number'
+      const dispatcherSms = await sendSMS({
+        to: dispatcherNumber,
+        message: `Callback request — ${callbackNameText} (${callbackPhoneText}) — ${reasonText}. Please call them back.`,
+        clientId,
+        smsType: 'dispatcher_callback_alert',
+      })
+      if (!dispatcherSms.success) {
+        console.warn('[schedule_callback] dispatcher SMS failed', { clientId, reason: dispatcherSms.reason, error: dispatcherSms.error })
+      }
+    }
+  } catch (e) {
+    console.error('[schedule_callback] SMS notification block failed', (e as Error).message)
+  }
+
   const when = preferredTime ?? 'a convenient time'
   return {
     result: {

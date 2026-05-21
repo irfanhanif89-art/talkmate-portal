@@ -154,3 +154,97 @@ export async function notifyAdminOfQualityIssue(params: {
     console.error('[notifyAdminOfQualityIssue]', (e as Error).message)
   }
 }
+
+// Session 24 — agent health alerts.
+//
+// Fires when the agent-health-check cron finds a critical config issue,
+// when the transcript scanner finds a critical speech pattern, or when
+// a webhook gap is detected. Goes to the same admin Telegram chat as
+// quality issues but with a distinct emoji + format so Irfan can triage
+// at a glance. Like the others, fire-and-forget.
+
+export type AgentHealthAlertKind = 'config_issue' | 'transcript_violation' | 'webhook_gap'
+
+export async function sendAgentHealthAlert(params: {
+  kind: AgentHealthAlertKind
+  businessName: string
+  businessId: string
+  vapiAssistantId: string | null
+  title: string
+  detail: string
+  // Optional structured fields rendered when present.
+  field?: string
+  expected?: unknown
+  actual?: unknown
+  callTimestamp?: string
+  contextSnippet?: string
+}): Promise<void> {
+  try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID
+    if (!botToken || !chatId) return
+
+    const emoji =
+      params.kind === 'config_issue' ? '🔴' :
+      params.kind === 'transcript_violation' ? '⚠️' :
+      '📵'
+
+    const headline =
+      params.kind === 'config_issue' ? 'AGENT CONFIG ALERT' :
+      params.kind === 'transcript_violation' ? 'SPEECH PATTERN' :
+      'NO CALLS RECEIVED'
+
+    const lines: string[] = []
+    lines.push(`${emoji} ${headline} — ${params.businessName}`)
+    lines.push(`Issue: ${params.title}`)
+    if (params.detail) lines.push(params.detail)
+
+    if (params.field) lines.push(`Field: ${params.field}`)
+    if (params.expected !== undefined) {
+      lines.push(`Expected: ${formatJsonish(params.expected)}`)
+    }
+    if (params.actual !== undefined) {
+      lines.push(`Actual: ${formatJsonish(params.actual)}`)
+    }
+    if (params.contextSnippet) {
+      lines.push(`Context: "${params.contextSnippet}"`)
+    }
+    if (params.callTimestamp) {
+      lines.push(`Call: ${params.callTimestamp}`)
+    }
+    if (params.vapiAssistantId) {
+      lines.push(``)
+      lines.push(`Assistant ID: ${params.vapiAssistantId}`)
+    }
+
+    if (params.kind === 'config_issue' && params.vapiAssistantId && params.field) {
+      lines.push(``)
+      lines.push(`Donna fix: PATCH assistant ${params.vapiAssistantId}`)
+      lines.push(`Set ${params.field} to ${formatJsonish(params.expected)}`)
+      lines.push(`GET full assistant first. Send complete model object in PATCH. Never partial.`)
+    }
+
+    await fetch(`${TG_BASE}${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: lines.join('\n'),
+        disable_web_page_preview: true,
+      }),
+    })
+  } catch (e) {
+    console.error('[sendAgentHealthAlert]', (e as Error).message)
+  }
+}
+
+function formatJsonish(value: unknown): string {
+  if (value === null || value === undefined) return String(value)
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}

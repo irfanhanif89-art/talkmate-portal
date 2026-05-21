@@ -31,6 +31,27 @@ interface ScoredCallRow {
   intelligence_flags: unknown
   intelligence_scored_at: string | null
   vapi_call_id: string | null
+  // Session 24 — needed to identify genuine dropped calls so we can
+  // exclude them from the score average. A call with duration < 10s
+  // and only the short_call flag is a caller hang-up, not an agent
+  // failure — including it in the average is unfairly punitive.
+  duration_seconds: number | null
+}
+
+// Session 24 — a row qualifies as a "dropped call" when the caller
+// barely engaged (under 10 seconds) and the only flag the scorer
+// raised was short_call. Anything else (no_resolution, agent_error,
+// missed_lead, sms_mismatch, etc.) still counts toward the average
+// because it represents real agent behaviour worth measuring.
+function isDroppedCall(row: ScoredCallRow): boolean {
+  const duration = row.duration_seconds ?? 0
+  if (duration >= 10) return false
+  const flags = Array.isArray(row.intelligence_flags) ? row.intelligence_flags : []
+  if (flags.length === 0) return true // ultra-short, scorer saw nothing worth flagging
+  if (flags.length !== 1) return false
+  const onlyFlag = flags[0] as { type?: string } | string
+  const type = typeof onlyFlag === 'string' ? onlyFlag : onlyFlag?.type
+  return type === 'short_call'
 }
 
 interface BusinessLookup {
@@ -71,7 +92,7 @@ export async function GET(request: Request) {
 
   const { data: calls, error } = await supabase
     .from('calls')
-    .select('id, business_id, caller_number, intelligence_score, intelligence_status, intelligence_flags, intelligence_scored_at, vapi_call_id')
+    .select('id, business_id, caller_number, intelligence_score, intelligence_status, intelligence_flags, intelligence_scored_at, vapi_call_id, duration_seconds')
     .gte('intelligence_scored_at', start)
     .lt('intelligence_scored_at', end)
     .not('intelligence_score', 'is', null)
@@ -92,21 +113,36 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, total: 0, label })
   }
 
-  const scores = rows.map(r => r.intelligence_score ?? 0)
-  const avg = scores.reduce((s, n) => s + n, 0) / total
-  const flaggedCount = rows.filter(r => {
+  // Session 24 — split rows into scoreable vs dropped before averaging.
+  // Dropped calls (sub-10s with only short_call) are surfaced as a
+  // separate count so the operator still sees them, but they don't
+  // drag the average down. This was the calibration bug Glen and
+  // Chris complained about — silent hang-ups scoring 3/10 made the
+  // weekly average look catastrophic when nothing was actually wrong.
+  const scoreable = rows.filter(r => !isDroppedCall(r))
+  const droppedCount = rows.length - scoreable.length
+  const scoreableTotal = scoreable.length
+  const scores = scoreable.map(r => r.intelligence_score ?? 0)
+  const avg = scoreableTotal > 0
+    ? scores.reduce((s, n) => s + n, 0) / scoreableTotal
+    : 0
+  const flaggedCount = scoreable.filter(r => {
     const flags = Array.isArray(r.intelligence_flags) ? r.intelligence_flags : []
     return flags.length > 0 || (r.intelligence_score ?? 10) < 5
   }).length
 
-  // Per-business rollups.
-  const byBiz = new Map<string, { count: number; sum: number; flagged: number }>()
+  // Per-business rollups — also excludes dropped calls from per-client averages.
+  const byBiz = new Map<string, { count: number; sum: number; flagged: number; dropped: number }>()
   for (const r of rows) {
-    const slot = byBiz.get(r.business_id) ?? { count: 0, sum: 0, flagged: 0 }
-    slot.count += 1
-    slot.sum += r.intelligence_score ?? 0
-    const flags = Array.isArray(r.intelligence_flags) ? r.intelligence_flags : []
-    if (flags.length > 0 || (r.intelligence_score ?? 10) < 5) slot.flagged += 1
+    const slot = byBiz.get(r.business_id) ?? { count: 0, sum: 0, flagged: 0, dropped: 0 }
+    if (isDroppedCall(r)) {
+      slot.dropped += 1
+    } else {
+      slot.count += 1
+      slot.sum += r.intelligence_score ?? 0
+      const flags = Array.isArray(r.intelligence_flags) ? r.intelligence_flags : []
+      if (flags.length > 0 || (r.intelligence_score ?? 10) < 5) slot.flagged += 1
+    }
     byBiz.set(r.business_id, slot)
   }
 
@@ -124,32 +160,45 @@ export async function GET(request: Request) {
   const perClientLines = Array.from(byBiz.entries())
     .map(([id, s]) => {
       const name = bizNameById.get(id) ?? 'Unknown'
+      if (s.count === 0) {
+        // Only dropped calls — show the dropped count without an avg.
+        return `• ${escapeMarkdown(name)}: 0 scoreable calls, ${s.dropped} dropped (excluded)`
+      }
       const a = (s.sum / s.count).toFixed(1)
-      return `• ${escapeMarkdown(name)}: ${s.count} call${s.count === 1 ? '' : 's'}, avg ${a}/10, ${s.flagged} flagged`
+      const droppedSuffix = s.dropped > 0 ? `, ${s.dropped} dropped (excluded)` : ''
+      return `• ${escapeMarkdown(name)}: ${s.count} call${s.count === 1 ? '' : 's'}, avg ${a}/10, ${s.flagged} flagged${droppedSuffix}`
     })
     .sort()
     .join('\n')
 
-  // All-clear shortcut when nothing scored under 7.
-  const allClear = rows.every(r => (r.intelligence_score ?? 0) >= 7)
+  // All-clear shortcut when nothing scoreable was below 7.
+  const allClear = scoreable.length > 0 && scoreable.every(r => (r.intelligence_score ?? 0) >= 7)
   if (allClear) {
+    const droppedSuffix = droppedCount > 0
+      ? ` (${droppedCount} dropped call${droppedCount === 1 ? '' : 's'} excluded from average.)`
+      : ''
     await sendTelegram(botToken, chatId,
-      `📊 *TalkMate Daily Quality Report — ${label}*\n\nAll clear — ${total} call${total === 1 ? '' : 's'} scored, all above 7/10.`,
+      `📊 *TalkMate Daily Quality Report — ${label}*\n\nAll clear — ${scoreableTotal} call${scoreableTotal === 1 ? '' : 's'} scored, all above 7/10.${droppedSuffix}`,
     )
-    return NextResponse.json({ ok: true, total, all_clear: true, label })
+    return NextResponse.json({ ok: true, total, scoreable: scoreableTotal, dropped: droppedCount, all_clear: true, label })
   }
 
-  // Lowest-scoring call (rows are ordered ascending by score).
-  const worst = rows[0]
+  // Lowest-scoring call — pick the worst scoreable call, not a dropped one.
+  // Fall back to the worst row only when every call was dropped.
+  const worst = scoreable[0] ?? rows[0]
   const worstName = bizNameById.get(worst.business_id) ?? 'Unknown'
   const worstLink = `${PORTAL_BASE}/admin/clients/${worst.business_id}/portal/calls`
   const worstLine = `${escapeMarkdown(worst.caller_number ?? 'Unknown caller')} at ${escapeMarkdown(worstName)} — ${worst.intelligence_score}/10`
 
+  const droppedNote = droppedCount > 0
+    ? `\n${droppedCount} dropped call${droppedCount === 1 ? '' : 's'} excluded from score average`
+    : ''
+
   const message = [
     `📊 *TalkMate Daily Quality Report — ${label}*`,
     ``,
-    `Calls scored yesterday: ${total}`,
-    `Average score: ${avg.toFixed(1)}/10`,
+    `Calls scored yesterday: ${scoreableTotal}${droppedNote}`,
+    scoreableTotal > 0 ? `Average score: ${avg.toFixed(1)}/10` : `Average score: n/a (only dropped calls)`,
     `Flagged calls: ${flaggedCount}`,
     ``,
     `*By client:*`,
@@ -161,7 +210,7 @@ export async function GET(request: Request) {
   ].join('\n')
 
   const sent = await sendTelegram(botToken, chatId, message)
-  return NextResponse.json({ ok: sent, total, flagged: flaggedCount, label })
+  return NextResponse.json({ ok: sent, total, scoreable: scoreableTotal, dropped: droppedCount, flagged: flaggedCount, label })
 }
 
 async function sendTelegram(token: string, chatId: string, text: string): Promise<boolean> {

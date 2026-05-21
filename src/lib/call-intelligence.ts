@@ -107,6 +107,13 @@ SCORING CALIBRATION:
 - Short calls (under 20 seconds) where the caller disconnected immediately are not agent failures. Score based on what the agent actually did, not on the outcome being incomplete.
 - "This response was wrong" should only be flagged when the agent's response was genuinely incorrect, harmful, or a policy violation, not when it was simply brief or the call ended early.
 
+DROPPED AND SILENT CALLS — DO NOT PENALISE THE AGENT:
+- If the caller said nothing or only said "Hello" and then the call ended, this is a dropped or silent call. The agent did nothing wrong. Score 7/10 minimum. Apply only the short_call flag.
+- If the call transcript shows only the agent greeting with zero caller response, score 8/10. The agent performed correctly. Apply short_call flag only.
+- Never apply no_resolution to a call where the caller did not state any need.
+- Never apply agent_error to a call that ended because the caller disconnected or had audio issues.
+- The short_call flag is informational only. It does not indicate agent failure.
+
 You will also be given a list of SMS messages sent within 10 minutes of this call ending.
 For each SMS, evaluate whether it was the correct response given the call transcript and outcome.
 

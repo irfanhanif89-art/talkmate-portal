@@ -26,17 +26,26 @@ export type SmsType =
   | 'dropped_call_recovery'
   | 'early_hangup_recovery'
   | 'missed_lead_recovery'
+  // Session 24 — Callback request confirmations. Until now,
+  // schedule_callback recorded the request silently — caller had no
+  // confirmation and dispatcher had no notification. Both directions
+  // are TalkMate-funded so the client's monthly quota is preserved.
+  | 'callback_confirmation'
+  | 'dispatcher_callback_alert'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
 // regardless of plan or sms_used_this_month, and they do NOT increment
 // the counter. Intelligence alerts go to the owner/dispatcher; recovery
-// SMS go to the caller as a save attempt.
+// SMS go to the caller as a save attempt; callback confirmations are
+// operational guarantees that shouldn't fail when a client hits quota.
 const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   'call_intelligence_alert',
   'dropped_call_recovery',
   'early_hangup_recovery',
   'missed_lead_recovery',
+  'callback_confirmation',
+  'dispatcher_callback_alert',
 ])
 
 export interface SendSMSOptions {

@@ -3674,3 +3674,154 @@ $ npm run build
 ```
 
 62 routes built, zero errors. Ready to deploy.
+
+---
+
+# Session 24 — Agent Stability
+
+Branch: `feature/session-24-agent-stability` (off `dev`)
+Migration: `039_agent_health_monitoring.sql`
+Build status: `npm run build` passes — `✓ Compiled successfully in 16.5s`, 143 routes.
+
+## What this session ships
+
+Automated systems that catch the silent failures discovered during
+the 21 May 2026 audit of GM Towing + Spectrum Towing: missing
+`create_booking` tool, voice stability too high, `stopSpeakingPlan`
+missing, `responseDelaySeconds` cutting callers off,
+`schedule_callback` confirming nothing, and dropped calls being
+scored as agent failures.
+
+### New files
+
+| Path | Purpose |
+| --- | --- |
+| `src/lib/agent-config-standard.ts` | Canonical Vapi agent config constants + issue code catalogue |
+| `src/lib/agent-config-validator.ts` | `validateAgentConfig()` — returns `AgentIssue[]` for any assistant JSON |
+| `src/lib/transcript-scanner.ts` | `scanTranscript()` — flags dollar signs, ordinals, placeholders, TalkMate leaks in AI speech only |
+| `src/app/api/cron/agent-health-check/route.ts` | 30-min cron: validates every live agent, scans transcripts, detects webhook gaps |
+| `src/app/admin/agent-health/page.tsx` | Admin server page that loads health data |
+| `src/app/admin/agent-health/agent-health-view.tsx` | Client view: status cards, filterable violations, alert queue |
+| `src/app/api/admin/agent-health/resolve/route.ts` | POST endpoint for "Mark resolved" |
+| `supabase/migrations/039_agent_health_monitoring.sql` | New tables + columns |
+
+### Modified files
+
+| Path | Change |
+| --- | --- |
+| `src/lib/sms.ts` | Added `callback_confirmation` + `dispatcher_callback_alert` SMS types to `BYPASS_PLAN_LIMIT_TYPES` |
+| `src/app/api/vapi/functions/route.ts` | `schedule_callback` now sends caller confirmation SMS + dispatcher alert SMS |
+| `src/lib/call-intelligence.ts` | Scoring prompt explicitly does not penalise dropped/silent calls |
+| `src/app/api/cron/daily-quality-digest/route.ts` | Excludes dropped calls (<10s + only `short_call`) from average; reports them as a separate count |
+| `src/lib/score-call-async.ts` | After scoring, runs transcript scanner, persists violations, fires immediate Telegram on critical patterns |
+| `src/lib/notifications.ts` | Added `sendAgentHealthAlert()` helper for config / transcript / webhook-gap pings |
+| `src/lib/golive-checks.ts` | Added `check_agent_config_valid` + `check_no_placeholder_in_prompt` auto checks |
+| `vercel.json` | Added `/api/cron/agent-health-check` schedule `*/30 * * * *` |
+
+## Migration 039 schema
+
+New tables (all RLS deny-by-default; admin client bypasses via service role):
+- `agent_config_snapshots` — point-in-time copy of every assistant config the cron has fetched
+- `agent_health_alerts` — open alert queue, with `issue_code` for dedupe + `telegram_sent` flag
+- `transcript_violations` — every speech pattern hit with a 30-char context snippet either side
+
+New columns:
+- `businesses.last_health_check_at`, `businesses.health_status` (`healthy|warning|critical|unknown`), `businesses.health_issues_count`
+- `calls.scanned_for_patterns` (idempotency), `calls.pattern_violations_count`
+- `client_golive_checklist.check_agent_config_valid`, `client_golive_checklist.check_no_placeholder_in_prompt`
+
+Backfill: every call older than 60 minutes is marked
+`scanned_for_patterns = true` so the cron's first run doesn't try to
+re-scan history.
+
+## Behavioural changes operators should know
+
+### `schedule_callback` now sends two SMS
+
+1. **Caller**: `"Hi, thanks for calling {business_name}. We have noted your callback request and someone will be in touch with you shortly."`
+2. **Dispatcher** (only if `notifications_config.dispatcher_alerts = true` and `dispatcher_number` is set): `"Callback request — {name} ({phone}) — {reason}. Please call them back."`
+
+Both bypass plan SMS quota (operational guarantee, not marketing) and
+are logged in `sms_log` under the new types.
+
+### Scoring no longer penalises silent/dropped calls
+
+Updated `SYSTEM_PROMPT` in `call-intelligence.ts` instructs the
+scorer to give 7+/10 to silent callers, never apply `no_resolution`
+when the caller said nothing, and treat `short_call` as informational
+only.
+
+### Daily digest splits scoreable vs dropped
+
+`/api/cron/daily-quality-digest` excludes dropped calls (<10s + only
+`short_call`) from the average. Dropped count is surfaced as
+a separate line: `"X dropped calls excluded from score average"`.
+
+### Two new go-live blockers
+
+`computeAutoChecks()` fetches the Vapi assistant during go-live
+verification and runs `validateAgentConfig()`. Critical config issues
+or any prompt content violation (placeholder, dollar sign, ordinal)
+fail the new checks and block go-live.
+
+## Manual deployment steps for Donna
+
+1. Apply migration 039 on production Supabase SQL editor.
+2. Verify new tables and columns exist (queries in original brief).
+3. Confirm Vercel cron picked up `/api/cron/agent-health-check`
+   (`*/30 * * * *`).
+4. Trigger one manual run:
+   ```bash
+   curl -H "Authorization: Bearer $CRON_SECRET" \
+     https://app.talkmate.com.au/api/cron/agent-health-check
+   ```
+5. Confirm a Telegram message arrives in the admin chat if any
+   live agent has critical config drift.
+
+## Environment variables
+
+No new env vars. Uses existing:
+- `VAPI_API_KEY` (assistant fetches)
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID` (alert delivery)
+- `CRON_SECRET` (cron auth)
+- `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL` (admin client)
+
+## Schema + design decisions
+
+- **RLS strategy**: chose `USING (false)` deny-by-default over the
+  brief's `current_setting('app.admin_email')` pattern — the
+  codebase doesn't set that Postgres setting globally and the
+  service role used by the cron + admin pages bypasses RLS
+  regardless. Tighter surface with no runtime setting dependency.
+- **Validator tolerance**: `CONFIG_TOLERANCE = 0.001` for float
+  comparisons because Vapi sometimes re-emits `0.38` as
+  `0.38000000000001` after a JSON round-trip.
+- **Alert dedupe**: 2-hour window per `business_id + issue_code`
+  for config alerts; 24-hour per business for webhook gaps. Stored
+  on `issue_code` so resolving one alert doesn't suppress the next
+  legitimate occurrence.
+- **Webhook gap detection**: only fires 8am–8pm AEST. Skips
+  brand-new businesses with zero prior calls — the cron can't
+  distinguish "broken forward" from "new client not yet live."
+- **Go-live config check**: only critical issues block go-live;
+  warnings (slight stability drift, missing optional tool) pass.
+  Prompt-content issues of any severity block — they cause audible
+  failures on every call.
+- **Admin sidebar**: the spec called for adding to "admin sidebar
+  navigation" with a red badge. There is no global admin sidebar
+  in the current codebase (admin pages use a topbar only). The
+  new `/admin/agent-health` page renders the open-critical count
+  as a badge in its own topbar; cross-page navigation is a
+  follow-up if Irfan wants global chrome on every admin route.
+
+## What was deliberately not touched
+
+- Existing call scoring pipeline — only the scoring prompt's
+  KNOWN CORRECT BEHAVIOURS section was extended.
+- Existing SMS path — only the type union and bypass set were
+  extended; `sendSMS()` logic is unchanged.
+- Existing `create_booking` handler — out of scope. The 21 May
+  audit fix was applied manually to live agents via Donna.
+- Live Vapi agents — this session adds **monitoring** of agents,
+  it does not modify any agent config. Donna remains the only
+  path that pushes config changes to Vapi.

@@ -26,6 +26,7 @@
 //     'sent'. No 'delivered' state exists in our system.
 
 import type { createAdminClient } from '@/lib/supabase/server'
+import { validateAgentConfig } from '@/lib/agent-config-validator'
 
 export const AUTO_CHECK_KEYS = [
   'check_escalation_number',
@@ -40,6 +41,11 @@ export const AUTO_CHECK_KEYS = [
   'check_first_booking_created',
   'check_first_sms_sent',
   'check_intelligence_scored',
+  // Session 24 — config validation against AGENT_CONFIG_STANDARD.
+  // Both require a live Vapi network call so they short-circuit to
+  // false when vapi_agent_id is missing.
+  'check_agent_config_valid',
+  'check_no_placeholder_in_prompt',
 ] as const
 
 export type AutoCheckKey = (typeof AUTO_CHECK_KEYS)[number]
@@ -74,6 +80,8 @@ export const AUTO_CHECK_LABELS: Record<AutoCheckKey, string> = {
   check_first_booking_created:     'First booking created',
   check_first_sms_sent:            'First SMS delivered to owner',
   check_intelligence_scored:       'First call intelligence score generated',
+  check_agent_config_valid:        'Agent config matches TalkMate standard (voice, tools, timing)',
+  check_no_placeholder_in_prompt:  'System prompt has no placeholder text or speech-distorting characters',
 }
 
 export const MANUAL_CHECK_LABELS: Record<ManualCheckKey, string> = {
@@ -105,6 +113,8 @@ export const AUTO_CHECK_REMEDIES: Record<AutoCheckKey, string> = {
   check_first_booking_created:     'No booking exists yet. Make a test booking through the agent.',
   check_first_sms_sent:            'No SMS has been delivered for this client. Confirm Vapi functions are registered and make a test booking.',
   check_intelligence_scored:       'No call has been scored by Call Intelligence yet. Confirm ANTHROPIC_API_KEY is set and make a >30s test call.',
+  check_agent_config_valid:        'Vapi assistant config deviates from AGENT_CONFIG_STANDARD. Check /admin/agent-health for the field-level issue list.',
+  check_no_placeholder_in_prompt:  'System prompt contains placeholder text, dollar signs, or ordinal suffixes. Fix the prompt in Vapi and resync.',
 }
 
 // E.164 AU mobile: +61 then 9 digits (mobile) or +61 then 9 digits
@@ -184,6 +194,13 @@ export async function computeAutoChecks(
   // Brief: Starter plan auto-passes the intelligence_scored check.
   const isStarter = business.plan === 'starter'
 
+  // Session 24 — Vapi agent config validation. Requires a live network
+  // call so we only attempt it when we have a vapi_agent_id and an API
+  // key. Failures (no key, Vapi 5xx, missing assistant) leave both
+  // checks at false rather than throwing — go-live is the caller and
+  // shouldn't see a 500 from this helper.
+  const { configValid, promptClean } = await validateVapiConfig(business.vapi_agent_id)
+
   const result: AutoCheckResult = {
     check_escalation_number:
       isE164Au(business.escalation_number),
@@ -226,7 +243,54 @@ export async function computeAutoChecks(
 
     check_intelligence_scored:
       isStarter || scoredCount > 0,
+
+    check_agent_config_valid:
+      configValid,
+
+    check_no_placeholder_in_prompt:
+      promptClean,
   }
 
   return { business, result }
+}
+
+// Fetch the assistant from Vapi and run the validator. Returns two
+// flags: `configValid` is true when every critical issue is absent
+// (warnings don't block go-live); `promptClean` is true when none of
+// the prompt-content critical/warning codes fired. Both default to
+// false when the network call can't complete.
+async function validateVapiConfig(vapiAgentId: string | null): Promise<{ configValid: boolean; promptClean: boolean }> {
+  const apiKey = process.env.VAPI_API_KEY
+  if (!vapiAgentId || !apiKey) return { configValid: false, promptClean: false }
+
+  try {
+    const res = await fetch(`https://api.vapi.ai/assistant/${vapiAgentId}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+    if (!res.ok) return { configValid: false, promptClean: false }
+    const assistant = await res.json() as Record<string, unknown>
+    const issues = validateAgentConfig(assistant)
+
+    // configValid = no CRITICAL config issues. We allow warnings
+    // (slight stability drift, missing optional tool) through so a
+    // client with a 0.39 stability doesn't fail go-live.
+    const criticalNonPrompt = issues.filter(i =>
+      i.severity === 'critical' &&
+      i.code !== 'PLACEHOLDER_IN_PROMPT' &&
+      i.code !== 'NO_SYSTEM_PROMPT',
+    )
+    const configValid = criticalNonPrompt.length === 0
+
+    // promptClean = none of the prompt content codes fired (either
+    // severity). The brief is explicit: any placeholder, dollar sign,
+    // or ordinal suffix in the prompt is a go-live blocker.
+    const promptCodes = new Set(['PLACEHOLDER_IN_PROMPT', 'DOLLAR_SIGN_IN_PROMPT', 'ORDINAL_SUFFIX_IN_PROMPT', 'NO_SYSTEM_PROMPT'])
+    const promptClean = !issues.some(i => promptCodes.has(i.code))
+
+    return { configValid, promptClean }
+  } catch (e) {
+    console.error('[golive-checks] Vapi validation failed', (e as Error).message)
+    return { configValid: false, promptClean: false }
+  }
 }

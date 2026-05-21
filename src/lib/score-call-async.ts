@@ -28,7 +28,8 @@ import {
   templateMissedLeadRecovery,
   type SmsType,
 } from '@/lib/sms'
-import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue } from '@/lib/notifications'
+import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue, sendAgentHealthAlert } from '@/lib/notifications'
+import { scanTranscript, TRANSCRIPT_PATTERN_LABELS } from '@/lib/transcript-scanner'
 
 interface CallRow {
   id: string
@@ -400,6 +401,61 @@ export async function scoreCallAsync(
         vapiCallId,
         callId: call.id,
       }).catch(err => console.error('[score-call-async] admin quality alert error', (err as Error).message))
+    }
+
+    // 8. Session 24 — transcript pattern scan.
+    //
+    // Runs after scoring so the AI/User line split is the same data the
+    // scorer just consumed. Only AI lines are scanned (see scanTranscript).
+    // Persists every violation to transcript_violations for the admin
+    // dashboard; critical violations also fire an immediate Telegram
+    // alert so we can fix the prompt before more calls land. Always
+    // marks scanned_for_patterns = true on the call row so the cron's
+    // backfill sweep doesn't re-process it.
+    try {
+      const violations = scanTranscript(transcript, call.id, business.id)
+      if (violations.length > 0) {
+        const { error: insertErr } = await supabase
+          .from('transcript_violations')
+          .insert(violations.map(v => ({
+            call_id: v.call_id,
+            business_id: v.business_id,
+            pattern_code: v.pattern_code,
+            severity: v.severity,
+            pattern_match: v.pattern_match,
+            context_snippet: v.context_snippet,
+          })))
+        if (insertErr) {
+          console.error('[score-call-async] transcript_violations insert failed', { vapiCallId, error: insertErr.message })
+        }
+
+        const critical = violations.filter(v => v.severity === 'critical')
+        const callTs = call.ended_at ?? call.created_at
+        for (const v of critical) {
+          sendAgentHealthAlert({
+            kind: 'transcript_violation',
+            businessName: business.name ?? 'TalkMate client',
+            businessId: business.id,
+            vapiAssistantId: null,
+            title: TRANSCRIPT_PATTERN_LABELS[v.pattern_code] ?? v.pattern_code,
+            detail: `Pattern: ${v.pattern_code}\nFound: "${v.pattern_match}"`,
+            contextSnippet: v.context_snippet,
+            callTimestamp: callTs,
+          }).catch(err => console.error('[score-call-async] transcript alert error', (err as Error).message))
+        }
+      }
+
+      await supabase
+        .from('calls')
+        .update({
+          scanned_for_patterns: true,
+          pattern_violations_count: violations.length,
+        })
+        .eq('id', call.id)
+    } catch (e) {
+      console.error('[score-call-async] transcript scan failed', {
+        vapiCallId, error: (e as Error).message,
+      })
     }
   } catch (e) {
     // Never let an unexpected throw escape — webhook caller does not
