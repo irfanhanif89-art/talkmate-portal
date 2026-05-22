@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getPlan } from '@/lib/plan'
 import PlanComparison from '@/components/portal/plan-comparison'
+import { INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
 
 interface StripeInvoice {
   id: string
@@ -143,15 +144,29 @@ export default function BillingPage() {
       }
 
       const { data: allCalls } = await supabase.from('calls').select('id').eq('business_id', biz.id)
-      // Estimate lifetime revenue at $85/call as a fallback when no jobs table values exist.
+      // Estimate lifetime revenue at industry-avg call value as a fallback when no jobs table values exist.
       const totalCalls = allCalls?.length ?? 0
-      setLifetimeRevenue(totalCalls * 85)
+      setLifetimeRevenue(totalCalls * INDUSTRY_AVG_CALL_VALUE)
 
-      // Months active × monthly price
+      // Months active × monthly price (annual subscribers pay upfront — count complete years)
       if (biz.signup_at) {
         const months = Math.max(1, Math.floor((Date.now() - new Date(biz.signup_at).getTime()) / (30 * 24 * 60 * 60 * 1000)))
-        const monthly = biz.plan === 'pro' || biz.plan === 'professional' ? 799 : biz.plan === 'growth' ? 499 : 299
-        setTotalPaid(months * monthly)
+        const billingCycleForCalc = (biz.billing_cycle as string) ?? 'monthly'
+        const monthlyPrice = biz.plan === 'pro' || biz.plan === 'professional'
+          ? 799
+          : biz.plan === 'growth'
+          ? 499
+          : 299
+        const annualPrice = monthlyPrice * 10  // $2990/$4990/$7990
+
+        let totalPaidAmount: number
+        if (billingCycleForCalc === 'annual') {
+          const years = Math.max(1, Math.ceil(months / 12))
+          totalPaidAmount = years * annualPrice
+        } else {
+          totalPaidAmount = months * monthlyPrice
+        }
+        setTotalPaid(totalPaidAmount)
       }
 
       try {

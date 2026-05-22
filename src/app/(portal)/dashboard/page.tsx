@@ -5,6 +5,7 @@ import { DashboardClient } from './dashboard-client'
 import { estimateRevenueProtected, daysActiveThisMonth, getBenchmark } from '@/lib/roi'
 import { getPlan } from '@/lib/plan'
 import { pendingDocsForBusiness } from '@/lib/legal-docs'
+import { INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -27,14 +28,21 @@ export default async function DashboardPage() {
 
   const { data: monthCalls } = await supabase
     .from('calls')
-    .select('id, outcome, transferred, duration_seconds, created_at, caller_number')
+    .select('id, outcome, transferred, duration_seconds, created_at, caller_number, intelligence_status')
     .eq('business_id', business.id)
     .gte('created_at', startOfMonth.toISOString())
 
   const all = monthCalls ?? []
   const totalMonth = all.length
   const transferredMonth = all.filter(c => c.transferred).length
-  const missedMonth = all.filter(c => !c.outcome || c.outcome === 'Missed').length
+  const SCORED_STATUSES = new Set(['resolved', 'review', 'critical'])
+  const missedMonth = all.filter(c =>
+    c.outcome === 'Missed' ||
+    (c.outcome === null &&
+     SCORED_STATUSES.has((c.intelligence_status as string) ?? '') &&
+     c.duration_seconds !== null &&
+     c.duration_seconds < 5)
+  ).length
   const resolvedByAI = all.filter(c => c.outcome && c.outcome !== 'Missed' && !c.transferred).length
   const aiResolutionRate = totalMonth > 0 ? Math.round((resolvedByAI / totalMonth) * 100) : 0
 
@@ -54,15 +62,15 @@ export default async function DashboardPage() {
       .from('jobs').select('job_value')
       .eq('business_id', business.id).gte('created_at', startOfMonth.toISOString())
     if (error || !jobs || jobs.length === 0) {
-      revenueRecoveredThisMonth = totalMonth * 85
+      revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE
       revenueIsEstimate = true
     } else {
       const total = jobs.reduce((sum: number, j: { job_value?: number | null }) => sum + (j.job_value || 0), 0)
-      if (total === 0) { revenueRecoveredThisMonth = totalMonth * 85; revenueIsEstimate = true }
+      if (total === 0) { revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE; revenueIsEstimate = true }
       else revenueRecoveredThisMonth = total
     }
   } catch {
-    revenueRecoveredThisMonth = totalMonth * 85
+    revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE
     revenueIsEstimate = true
   }
 

@@ -1,8 +1,8 @@
 # TalkMate Portal — System Map
 
 **Last updated:** 2026-05-22
-**Last session:** 31
-**Main SHA:** f77cc79
+**Last session:** 32
+**Main SHA:** (pending)
 **Next migration number:** 046
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
@@ -39,11 +39,11 @@
 | 25 | 2026 | feature/session-25-unified-rep-lifecycle | — | 040 | Unified rep lifecycle — contractor → sales_rep provisioning, portal access |
 | 26 | 2026-05-21 | feature/fix-contractor-signature-panel | 9674bd1 | 041 | Contractor signature panel — ABN mandatory, hard-fail upload, clawback, resend invite, Telegram alerts |
 | 27 | 2026-05-22 | feature/session-27-revenue-fixes | e612c9b | 042 | Revenue fixes — Stripe real payment, /wl-preview public, SMS type constraint, clawback enforcement, sales rep add lead, hardcoded secrets removed |
-<<<<<<< HEAD
 | 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | da63120 | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
 | 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | 7508b4b | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
 | 30 | 2026-05-22 | feature/session-30-fixes | d987bdc | 045 | Session 30 fixes — sync routes write `/api/vapi/functions` (not `/api/webhooks/vapi`), one-shot `/api/cron/backfill-server-url` cron to repair existing assistants, calls page loading fix, comma-separated ADMIN_EMAIL allowlist, dollar-sign validator exception for plan prices ($299/$499/$799 + 10× annual variants), admin PATCH whitelist expanded (7 account_status values + billing_cycle/setup_fee_waived/setup_fee_amount) + edit modal billing section, SMS failure Telegram alerts (twilio_error/config_missing/invalid_phone only), owner booking notification SMS type + template + createBooking call site, welcome email moved from onboarding/complete → admin/approve-agent (non-override path only), impersonate route gains `?redirect=1` + `?next=` modes, 7 admin stub pages collapsed into impersonation redirects |
 | 31 | 2026-05-22 | feature/session-31-bookings-cleanup | 2ea89fb | — | Bookings cleanup — backfill cron retired (`/api/cron/backfill-server-url` + vercel.json entry deleted; both live Vapi agents verified by Donna), legacy Stripe routes deleted (`/api/stripe/checkout`, `/api/stripe/create-checkout-session` — zero callers), bookings UI rewritten to modern schema (scheduled_start/truck_type/description/pickup_address/dropoff_address/confirmation_ref/sms_confirmation_sent), route line + REF badge added, ConfirmModal date fixed, New Booking modal posts to existing `/api/portal/bookings` |
+| 32 | 2026-05-22 | feature/session-32-dashboard-fixes | b1a08f1 | — | Dashboard fixes bundle — M34 nurture column added to `LEAD_STATUS_COLUMNS`, M5 dashboard label corrected to "Calls missed this month", M8 missed-call filter rewritten (dashboard query now selects `intelligence_status`; counts only `outcome === 'Missed'` OR null-outcome calls with terminal scored status `IN ('resolved','review','critical')` AND duration < 5s — pending/error are excluded), L5 annual ROI uses `biz.billing_cycle` for years × annual-price ($2990/$4990/$7990), M35 `commissionPaidEmailHtml` template + send on `/api/admin/commissions/[id]` pay action (rep + business via existing JOIN — no separate `businesses` query), M6 mailto Help link added to sidebar (rendered as `<a>` not `<Link>`), L1 hardcoded `+$6.20` and `$85` estimates centralised into `src/lib/dashboard-defaults.ts` |
 
 ---
 
@@ -250,8 +250,19 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H19, H20** — Bookings page schema modernized to read `scheduled_start`, `truck_type`, `description`, `pickup_address`, `dropoff_address`, `confirmation_ref`, `sms_confirmation_sent`. Legacy fields kept as optional fallbacks; pickup → dropoff route line + REF badge + New Booking modal added.
 - **Backfill cron** — `/api/cron/backfill-server-url` route + `vercel.json` entry removed (both live Vapi agents verified by Donna to have the correct `serverUrl`).
 
-### Follow-on cleanup (Session 32)
+### Closed in Session 32
+- **M34** — `LEAD_STATUS_COLUMNS` now includes `'nurture'`. Leads moved to Nurture appear on the kanban instead of vanishing.
+- **M5** — Dashboard "Calls missed this week" label corrected to "Calls missed this month".
+- **M8** — Missed-call filter fixed. Dashboard query now selects `intelligence_status`; counts only `outcome === 'Missed'` OR null-outcome calls where `intelligence_status IN ('resolved','review','critical')` AND `duration_seconds < 5`. In-progress calls (`pending`/`error`) are correctly excluded.
+- **L5** — Annual ROI calculation uses `biz.billing_cycle`; annual subscribers see years × $2990/$4990/$7990 instead of months × monthly price.
+- **M35** — `commissionPaidEmailHtml` template added to `sales-notify.ts`; `/api/admin/commissions/[id]` PATCH fires the email on pay. Rep + business pulled from existing JOIN — no separate `businesses` query.
+- **M6** — Help link added to portal sidebar — `<a href="mailto:hello@talkmate.com.au?subject=TalkMate%20Portal%20Help">`, `HelpCircle` icon, rendered outside the section loop because mailto cannot use Next.js `<Link>`. Never highlights as active.
+- **L1** — Hardcoded estimates centralised. `src/lib/dashboard-defaults.ts` exports `INDUSTRY_AVG_UPSELL_PER_CALL` (6.20) and `INDUSTRY_AVG_CALL_VALUE` (85). Five literal occurrences replaced across dashboard-client / dashboard page / billing page.
+
+### Follow-on cleanup (Session 33)
 - Drop legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) once a backfill migration has copied any remaining values into the modern columns. UI already handles their absence via the optional-fallback schema landed in Session 31.
+- **Proxima demo** — partnership demo deferred pending scope.
+- **L7** — Stripe pagination uses default page size; not a problem at current scale, revisit when invoice/payment lists outgrow one page.
 
 ### Infrastructure
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used

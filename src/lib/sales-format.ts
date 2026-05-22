@@ -25,7 +25,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, StatusStyle> = {
 
 export const LEAD_STATUS_COLUMNS: LeadStatus[] = [
   'new', 'contacted', 'demo_booked', 'demo_done',
-  'proposal_sent', 'won', 'lost', 'bad_lead',
+  'proposal_sent', 'won', 'lost', 'nurture', 'bad_lead',
 ]
 
 export const LOST_REASONS: Array<{ value: string; label: string }> = [

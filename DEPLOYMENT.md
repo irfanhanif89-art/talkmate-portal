@@ -6,6 +6,33 @@
 
 ---
 
+## SESSION 32 — Dashboard Fixes Bundle (2026-05-22)
+
+### Branch
+`feature/session-32-dashboard-fixes` (from `dev`)
+
+### What ships
+1. **M34 — Nurture column on Sales kanban.** `LEAD_STATUS_COLUMNS` in `src/lib/sales-format.ts` now includes `'nurture'` between `'lost'` and `'bad_lead'`. Leads moved to Nurture via the lead drawer no longer disappear from the board.
+2. **M5 — Dashboard label fix.** Card now reads `Calls missed this month` (the underlying data was always `stats.missedMonth` — only the label was wrong).
+3. **M8 — Missed-call over-count fixed.** `src/app/(portal)/dashboard/page.tsx` now selects `intelligence_status` and filters with the three terminal scored states (`'resolved' | 'review' | 'critical'`). In-progress calls (`intelligence_status IN ('pending', 'error')`) are no longer counted as missed. Filter requires both a finalised scoring status AND a sub-5-second duration for the null-outcome path.
+4. **L5 — Annual ROI calculation.** `/billing` page now derives `totalPaid` from `biz.billing_cycle`. Annual subscribers ($2990/$4990/$7990 upfront) get years × annual price; monthly subscribers keep months × monthly price. New local var named `billingCycleForCalc` to avoid shadowing the `billingCycle` state at line 120.
+5. **M35 — Commission paid email.** New `commissionPaidEmailHtml` template in `src/lib/sales-notify.ts` (mirrors the existing `commissionRevokedEmailHtml` structure, uses `emailWrap` + `escapeHtml`). `/api/admin/commissions/[id]` PATCH fires the email to the rep on `action === 'pay'`. Rep name + business name come from the existing `sales_reps` + `leads` JOIN — **no separate `businesses` table query** (there is no `business_name` column on `businesses`; it lives on `leads`).
+6. **M6 — Help link in sidebar.** `<a href="mailto:hello@talkmate.com.au?subject=TalkMate%20Portal%20Help">` rendered as a one-off inside the sidebar `<nav>` below the section loop (so `mailto:` doesn't go through Next.js `<Link>`/`router.push`). Uses `HelpCircle` from `lucide-react`. Never highlights as active.
+7. **L1 — Centralised hardcoded estimates.** New `src/lib/dashboard-defaults.ts` exports `INDUSTRY_AVG_UPSELL_PER_CALL = 6.20` and `INDUSTRY_AVG_CALL_VALUE = 85`. Five literal occurrences replaced across `dashboard-client.tsx`, `dashboard/page.tsx`, and `billing/page.tsx`. The `+$6.20` was a JSX string literal — replaced with a template expression; the `$85` cases were numeric literals and substituted directly.
+
+### Migrations
+None.
+
+### Build status
+`npm run build` — clean. 146/146 pages generated, 0 TypeScript errors.
+
+### Known follow-up
+- Legacy bookings column drop (Session 31 deferred item) remains open.
+- Stripe pagination (L7) still uses default page size — not a problem at current scale.
+- Proxima partnership demo still deferred pending scope.
+
+---
+
 ## SESSION 31 — Bookings Cleanup + Legacy Removal (2026-05-22)
 
 ### Branch

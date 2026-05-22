@@ -238,6 +238,18 @@ export function terminationEmailHtml(opts: { repName: string; terminationDate: s
   `)
 }
 
+export function commissionPaidEmailHtml(opts: { repName: string; businessName: string; amount: number; paymentReference?: string }) {
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800; color: #E8622A;">Commission Payment Confirmed</h2>
+    <p>Hi ${escapeHtml(opts.repName)},</p>
+    <p>Your commission for <strong>${escapeHtml(opts.businessName)}</strong> has been paid.</p>
+    <p><strong>Amount:</strong> $${opts.amount.toFixed(2)}</p>
+    ${opts.paymentReference ? `<p><strong>Payment reference:</strong> ${escapeHtml(opts.paymentReference)}</p>` : ''}
+    <p>Thank you for your work with TalkMate.</p>
+    <p>— The TalkMate Team</p>
+  `)
+}
+
 export function commissionRevokedEmailHtml(opts: { repName: string; businessName: string; amount: number; reason: string }) {
   return emailWrap(`
     <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Commission revoked — ${escapeHtml(opts.businessName)}</h2>
