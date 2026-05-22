@@ -281,10 +281,10 @@ interface AdminBooking {
   id: string
   caller_name: string | null
   caller_phone: string
-  service_requested: string | null
+  truck_type: string | null
+  description: string | null
+  scheduled_start: string | null
   status: string
-  preferred_date: string | null
-  preferred_time: string | null
   created_at: string
 }
 
@@ -342,8 +342,11 @@ export function AdminBookingsTab({ business }: { business: AdminBusiness }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, color: 'white', fontSize: 13 }}>{b.caller_name ?? 'Unknown'}</div>
             <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>
-              {b.caller_phone} · {b.service_requested ?? '—'}
-              {b.preferred_date && ` · ${b.preferred_date}${b.preferred_time ? ' ' + b.preferred_time : ''}`}
+              {b.caller_phone} · {b.truck_type ?? b.description ?? '—'}
+              {b.scheduled_start && ` · ${new Date(b.scheduled_start).toLocaleString('en-AU', {
+                day: 'numeric', month: 'short',
+                hour: '2-digit', minute: '2-digit',
+              })}`}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -361,7 +364,7 @@ export function AdminBookingsTab({ business }: { business: AdminBusiness }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, color: 'white', fontSize: 13 }}>{b.caller_name ?? 'Unknown'}</div>
                 <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>
-                  {b.caller_phone} · {b.service_requested ?? '—'} · {b.status}
+                  {b.caller_phone} · {b.truck_type ?? b.description ?? '—'} · {b.status}
                 </div>
               </div>
             </div>

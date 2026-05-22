@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 
 interface Booking {
   id: string
-  // Modern fields (agent-written)
   caller_name: string | null
   caller_phone: string | null
   scheduled_start: string | null
@@ -21,13 +20,6 @@ interface Booking {
   status: 'pending' | 'confirmed' | 'declined' | 'cancelled' | 'completed' | 'no_show'
   created_at: string
   call_id: string | null
-  // Legacy fields — optional, for old rows only
-  booking_type?: string | null
-  service_requested?: string | null
-  preferred_date?: string | null
-  preferred_time?: string | null
-  notes?: string | null
-  confirmation_sms_sent?: boolean | null
 }
 
 type Tab = 'pending' | 'confirmed' | 'all'
@@ -57,16 +49,12 @@ function formatTruckLabel(t: string | null | undefined): string | null {
   return t
 }
 
-function formatScheduled(b: Pick<Booking, 'scheduled_start' | 'preferred_date' | 'preferred_time'>): string {
-  if (b.scheduled_start) {
-    return new Date(b.scheduled_start).toLocaleString('en-AU', {
-      weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-    })
-  }
-  if (b.preferred_date) {
-    return `${b.preferred_date}${b.preferred_time ? ' ' + b.preferred_time : ''}`
-  }
-  return 'Time TBC'
+function formatScheduled(booking: Booking): string {
+  if (!booking.scheduled_start) return 'Time TBC'
+  return new Date(booking.scheduled_start).toLocaleString('en-AU', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 export default function BookingsView({ businessName }: { businessName: string }) {
@@ -171,8 +159,8 @@ export default function BookingsView({ businessName }: { businessName: string })
             )}
             {filtered.map((b, i) => {
               const s = STATUS_STYLE[b.status]
-              const truckLabel = formatTruckLabel(b.truck_type) ?? b.service_requested ?? b.booking_type ?? '—'
-              const hasNotesAction = !!(b.description ?? b.notes)
+              const truckLabel = formatTruckLabel(b.truck_type) ?? '—'
+              const hasNotesAction = !!b.description
               return (
                 <tr key={b.id} style={rowStyle(i)}>
                   <td style={td()}>
@@ -269,7 +257,7 @@ function ConfirmModal({ booking, businessName, busy, onCancel, onConfirm }: {
     ? new Date(booking.scheduled_start).toLocaleString('en-AU', {
         weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
       })
-    : [booking.preferred_date, booking.preferred_time].filter(Boolean).join(' at ') || 'the time discussed'
+    : 'the time discussed'
   return (
     <ModalShell onClose={onCancel}>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: 'white', margin: 0, marginBottom: 12 }}>Send confirmation SMS</h2>
@@ -288,7 +276,7 @@ function ConfirmModal({ booking, businessName, busy, onCancel, onConfirm }: {
 }
 
 function NotesModal({ booking, onClose }: { booking: Booking; onClose: () => void }) {
-  const text = booking.description ?? booking.notes ?? ''
+  const text = booking.description ?? ''
   return (
     <ModalShell onClose={onClose}>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: 'white', margin: 0, marginBottom: 12 }}>Booking notes</h2>
