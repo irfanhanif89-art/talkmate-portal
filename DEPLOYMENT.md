@@ -4499,3 +4499,195 @@ Pushed to `feature/session-28-vapi-lifecycle` (branched from `dev`).
 - [ ] `POST /api/admin/approve-agent?override=true` → approves and
       fires a Telegram alert with the failing checks.
 - [ ] `npm run build` passes with zero errors. (Confirmed.)
+
+---
+
+## SESSION 29 — Hayden SMS Confirmation Loop (2026-05-22)
+
+Adds the dispatcher-confirmation SMS loop GM Towing's owner (Hayden)
+has been asking for: every agent-booked job now sends the caller a
+"received" SMS and texts the dispatcher YES/NO from a dedicated
+Twilio number. YES confirms the booking and texts the caller; NO
+declines and texts the caller. A 15-minute reminder fires if the
+dispatcher hasn't replied.
+
+### Branch
+Pushed to `feature/session-29-sms-confirmation-loop` (branched from
+`dev` after Session 28 had merged).
+
+### What ships
+
+**Part 1 — Migration 044 (`supabase/migrations/044_sms_confirmation_loop.sql`)**
+- Extends `bookings_status_check` to include `'declined'`.
+- Extends `sms_log_sms_type_check` with five new types:
+  `dispatcher_job_notification`, `booking_received`,
+  `booking_confirmed`, `booking_declined`, `dispatcher_reminder`.
+- Adds four columns to `bookings`: `confirmation_ref`,
+  `dispatcher_notified_at`, `reminder_sent_at`, `confirmed_by_phone`.
+  `confirmed_at` already exists (Session 15) and is reused.
+- Unique partial index on `bookings.confirmation_ref` and a partial
+  index on `(dispatcher_notified_at, reminder_sent_at, status)` for
+  the cron sweep.
+
+**Part 2 — `src/lib/sms.ts`**
+- `SendSMSOptions` gains an optional `from?: string`. When set, that
+  number is used as the Twilio `From`; otherwise `TWILIO_PHONE_NUMBER`
+  is the default. Existing callers don't change.
+- `SmsType` union extended with the five new types.
+- `BYPASS_PLAN_LIMIT_TYPES` adds four — `dispatcher_job_notification`,
+  `booking_confirmed`, `booking_declined`, `dispatcher_reminder`.
+  `booking_received` is **not** in the bypass list: it is the
+  caller-facing receipt SMS and counts against the client's monthly
+  quota (same billing slot as the old `booking_confirmation` had).
+- Five new template functions: `templateBookingReceived`,
+  `templateBookingConfirmed`, `templateBookingDeclined`,
+  `templateDispatcherNotification`, `templateDispatcherReminder`.
+- `templateBookingConfirmation` is intentionally **unchanged** — it
+  has four other callers (portal /confirm route, manual booking
+  POST, etc.) that legitimately fire confirmed-state messages.
+
+**Part 3 — `createBooking` in `src/app/api/vapi/functions/route.ts`**
+- Generates a 6-char ref (first 6 chars of the booking UUID, minus
+  hyphens, uppercased) stored on the booking row as
+  `confirmation_ref`. The dispatcher quotes it back in YES/NO
+  replies.
+- Pulls the business row once (was previously fetched only inside
+  the SMS branch). Reuses it for both the dispatcher and caller
+  sends.
+- When `notifications_config.dispatcher_alerts` is on, texts the
+  dispatcher from `TWILIO_CONFIRMATION_NUMBER` with the new
+  `dispatcher_job_notification` type. The from-override lets Twilio
+  route the reply webhook on the dedicated number.
+- Stamps `dispatcher_notified_at` only when the dispatcher SMS
+  actually goes out.
+- Caller SMS changed from `templateBookingConfirmation` /
+  `booking_confirmation` to `templateBookingReceived` /
+  `booking_received`. The booking now starts at `pending` instead of
+  being announced as confirmed before the dispatcher has seen it.
+
+**Part 4 — `src/app/api/twilio/sms-reply/route.ts` (new)**
+- Manual Twilio signature validation via Node `crypto` (HMAC-SHA1 of
+  full URL + sorted POST params, base64). The `twilio` npm package
+  is deliberately not installed.
+- YES → flips the booking to `confirmed` and texts the caller via
+  `templateBookingConfirmed`. NO → `declined` + `templateBookingDeclined`.
+  Other replies log and return 200 with empty TwiML.
+- Matches `From` phone against
+  `notifications_config->>dispatcher_number`. Looks for the most
+  recent pending booking within the last 2 hours so a stale YES
+  cannot confirm an old job the dispatcher has forgotten.
+- Stamps `confirmed_at` + `confirmed_by_phone` on the booking row.
+- Caller SMS uses `businesses.phone_number` as the caller-facing
+  contact (per production-verified GM Towing data — never
+  `escalation_number`, never `notifications_config.*`).
+- Always returns 200 with empty TwiML on a valid Twilio request so
+  Twilio doesn't retry on no-op outcomes.
+
+**Part 5 — `src/app/api/cron/sms-reminders/route.ts`**
+- New dispatcher reminder sweep appended after the 24h/2h sweeps.
+- Picks bookings still `pending` with `dispatcher_notified_at`
+  between 15 and 30 minutes ago and `reminder_sent_at IS NULL`.
+- Uses a Map cache (mirroring the existing `settingsCache` pattern)
+  to avoid one businesses-table read per pending booking.
+- Sends `templateDispatcherReminder` from
+  `TWILIO_CONFIRMATION_NUMBER` with type `dispatcher_reminder`.
+- Only stamps `reminder_sent_at` when the SMS succeeds — failure
+  keeps the row eligible for the next cron tick.
+- Return JSON gains `dispatcher_reminders_sent: number`.
+
+**Part 6 — Admin booking view (`src/components/portal/scheduler-view.tsx`)**
+- `Booking` interface extended with `'declined'` status and the
+  four new columns.
+- New `statusBadgeColor()` mapping matches the brief's palette:
+  pending #F59E0B, confirmed #22C55E, declined #EF4444,
+  cancelled #9CA3AF, completed #4A9FE8.
+- Modal shows a REF: badge when `confirmation_ref` is set and a
+  "Confirmation loop" section listing dispatcher_notified_at,
+  reminder_sent_at, and confirmed_at when those are populated.
+- List view status column now uses the new palette and shows the
+  REF underneath. List status filter adds a "Declined" option.
+- `sourceColor()` learns about `'declined'` for tile/list tints.
+- The simpler `src/app/(portal)/bookings/bookings-view.tsx`
+  STATUS_STYLE map gains a `declined` entry as well (different
+  surface used by non-towing receptionist clients).
+
+### New environment variable
+
+```
+TWILIO_CONFIRMATION_NUMBER=+61480847945
+```
+
+The dedicated Twilio number for outbound dispatcher SMS. Its
+inbound SMS webhook must point at
+`https://app.talkmate.com.au/api/twilio/sms-reply` so YES/NO replies
+land in our handler. The voice webhook on this number is unchanged.
+
+### Decisions / deviations from brief
+
+- The brief expected `biz` to be in outer scope inside `createBooking`.
+  It wasn't — `biz` lived inside the `if (shouldSendSms)` branch.
+  Hoisted the fetch above both the dispatcher and caller SMS paths,
+  so we do exactly one businesses-table read per booking, and
+  removed the now-unused `templateBookingConfirmation` import from
+  `vapi/functions/route.ts`.
+- The brief said the admin booking page lives at
+  `src/app/admin/clients/[clientId]/portal/bookings/page.tsx`. It
+  does — but it is an `AdminPagePlaceholder` that defers to the
+  shared client view. The real booking surface is
+  `src/components/portal/scheduler-view.tsx`. All Part 6 changes
+  landed there.
+- The brief's full sms-reply template referenced `business.id` as
+  the `clientId` argument. Confirmed that's correct against the
+  schema (`bookings.client_id` foreign key) and used it verbatim.
+
+### Manual handoff for Donna
+
+These cannot be done in code — Donna runs them after merge:
+
+1. Apply `supabase/migrations/044_sms_confirmation_loop.sql` on
+   production Supabase.
+2. Add `TWILIO_CONFIRMATION_NUMBER=+61480847945` to Vercel
+   production, preview, and development env.
+3. Configure the Twilio SMS webhook on **+61 480 847 945** only:
+   - Messaging webhook URL:
+     `https://app.talkmate.com.au/api/twilio/sms-reply`
+   - Method: HTTP POST
+   - Leave the Voice webhook unchanged.
+4. **Do NOT touch the webhooks on +61 468 024 020.** That is the
+   shared outbound number (`TWILIO_PHONE_NUMBER`) that points at
+   Vapi; changing it breaks every call.
+5. Verify the migration: confirm `bookings_status_check` now
+   includes `'declined'`, the four new columns exist, the two new
+   indexes are present.
+6. Smoke test: book a job on the GM Towing demo line, watch
+   Hayden's phone for the dispatcher SMS from +61 480 847 945,
+   reply YES, watch the caller receive a confirmation.
+
+### Testing checklist
+
+- [ ] Migration 044 runs clean.
+- [ ] `'declined'` accepted by `bookings_status_check`.
+- [ ] All five new types accepted by `sms_log_sms_type_check`.
+- [ ] `bookings.confirmation_ref`, `dispatcher_notified_at`,
+      `reminder_sent_at`, `confirmed_by_phone` exist.
+- [ ] `confirmed_at` was NOT duplicated.
+- [ ] `sendSMS({ from })` overrides the default From number.
+- [ ] `createBooking` generates a 6-char ref and stores it.
+- [ ] `createBooking` sends dispatcher SMS from +61 480 847 945
+      when `dispatcher_alerts` is on.
+- [ ] `createBooking` caller SMS says "received" not "confirmed"
+      and logs as `sms_type='booking_received'`.
+- [ ] `templateBookingConfirmation` unchanged — four other callers
+      keep working.
+- [ ] `POST /api/twilio/sms-reply` with bad signature → 403.
+- [ ] `POST /api/twilio/sms-reply` with valid YES → 200 empty
+      TwiML; booking → `confirmed`; caller SMS fires.
+- [ ] `POST /api/twilio/sms-reply` with valid NO → 200 empty
+      TwiML; booking → `declined`; caller decline SMS fires.
+- [ ] Unrecognised reply → 200 empty TwiML, no DB change.
+- [ ] sms-reminders cron picks up bookings 15-30 min old without
+      a reminder and stamps `reminder_sent_at` on success only.
+- [ ] No second reminder ever fires on the same booking.
+- [ ] Scheduler view modal shows REF badge + confirmation-loop
+      timestamps when set; status badge colours match the spec.
+- [ ] `npm run build` passes with zero errors. (Confirmed.)
