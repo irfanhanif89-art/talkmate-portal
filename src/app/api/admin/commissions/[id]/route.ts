@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { sendEmail } from '@/lib/resend'
-import { commissionRevokedEmailHtml } from '@/lib/sales-notify'
+import { commissionRevokedEmailHtml, commissionPaidEmailHtml } from '@/lib/sales-notify'
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -84,6 +84,26 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const { error } = await admin.from('commissions').update(updates).eq('id', id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  // On paid, email the rep so they know.
+  if (action === 'pay') {
+    const repField = commission.sales_reps as { full_name?: string; email?: string } | Array<{ full_name?: string; email?: string }> | null
+    const rep = Array.isArray(repField) ? repField[0] : repField
+    const leadField = commission.leads as { business_name?: string } | Array<{ business_name?: string }> | null
+    const lead = Array.isArray(leadField) ? leadField[0] : leadField
+    if (rep?.email) {
+      sendEmail({
+        to: rep.email,
+        subject: `Commission paid — ${lead?.business_name ?? 'deal'}`,
+        html: commissionPaidEmailHtml({
+          repName: rep.full_name ?? 'Rep',
+          businessName: lead?.business_name ?? 'this deal',
+          amount: Number(commission.commission_amount ?? 0),
+          paymentReference: payment_reference ?? undefined,
+        }),
+      }).catch(() => {})
+    }
+  }
 
   // On revoke, email the rep so they know.
   if (action === 'revoke') {

@@ -9,7 +9,7 @@ import {
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
-  Truck, Car, ClipboardList, Tag, MapPin, CalendarDays,
+  Truck, Car, ClipboardList, Tag, MapPin, CalendarDays, HelpCircle,
 } from 'lucide-react'
 
 interface Props {
@@ -311,6 +311,28 @@ export default function PortalSidebar(props: Props) {
             ))}
           </div>
         ))}
+
+        {/* Help — mailto link, rendered outside the section loop because
+            Next.js <Link>/router.push don't handle mailto: URLs. Never
+            highlights as active since no route matches. */}
+        <a
+          href="mailto:hello@talkmate.com.au?subject=TalkMate%20Portal%20Help"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+            borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            background: 'transparent',
+            color: '#7BAED4',
+            border: '1px solid transparent',
+            width: '100%',
+            marginBottom: 2,
+            fontFamily: 'Outfit, sans-serif',
+            textDecoration: 'none',
+            boxSizing: 'border-box',
+          }}
+        >
+          <HelpCircle size={16} />
+          <span style={{ flex: 1, textAlign: 'left' }}>Help</span>
+        </a>
       </nav>
 
       <div style={{ padding: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>

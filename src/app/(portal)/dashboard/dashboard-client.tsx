@@ -14,6 +14,7 @@ import TrialProgressCard from '@/components/portal/trial-progress-card'
 import ReceptionistStats from '@/components/portal/receptionist-stats'
 import AgentQualityCard from '@/components/portal/agent-quality-card'
 import SmsUsageCard from '@/components/portal/sms-usage-card'
+import { INDUSTRY_AVG_UPSELL_PER_CALL, INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
 
 interface Call {
   id: string
@@ -247,13 +248,13 @@ export function DashboardClient({
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>this month</div>
         </div>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Calls missed this week</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Calls missed this month</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: stats.missedMonth === 0 ? '#22C55E' : '#EF4444', marginTop: 4 }}>{stats.missedMonth === 0 ? '0 🎉' : stats.missedMonth}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{stats.missedMonth === 0 ? 'Perfect answer rate' : 'Connect SMS Follow-Ups'}</div>
         </div>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Avg upsell / call</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#22C55E', marginTop: 4 }}>+$6.20</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#22C55E', marginTop: 4 }}>+${INDUSTRY_AVG_UPSELL_PER_CALL.toFixed(2)}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>industry benchmark</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -280,7 +281,7 @@ export function DashboardClient({
         <StatCard label="Calls Today" value={callsAnsweredToday} hint={vsLastMonthEl as unknown as string} accent="#4A9FE8" />
         <StatCard label="Revenue Captured" value={`$${revenueRecoveredThisMonth.toLocaleString()}`} hint={revenueIsEstimate ? 'estimated' : 'actual'} accent="#E8622A" />
         <StatCard label="Answer Rate" value={noData ? '—' : `${stats.aiResolutionRate}%`} hint="Industry avg 77%" accent={aiRateColor} hintColor="#22C55E" />
-        <StatCard label="Avg Order Value" value={revenueIsEstimate ? '$32' : `$${Math.max(85, Math.round(revenueRecoveredThisMonth / Math.max(stats.totalMonth, 1)))}`} hint="incl. upsell lift" accent="#8B5CF6" />
+        <StatCard label="Avg Order Value" value={revenueIsEstimate ? '$32' : `$${Math.max(INDUSTRY_AVG_CALL_VALUE, Math.round(revenueRecoveredThisMonth / Math.max(stats.totalMonth, 1)))}`} hint="incl. upsell lift" accent="#8B5CF6" />
         <StatCard
           label="New Contacts This Month"
           value={contactsThisMonth}
