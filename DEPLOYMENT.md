@@ -6,6 +6,38 @@
 
 ---
 
+## SESSION 31 — Bookings Cleanup + Legacy Removal (2026-05-22)
+
+### Branch
+`feature/session-31-bookings-cleanup` (from `dev`)
+
+### What ships
+1. **Backfill cron retired.** Both live Vapi agents (GM Towing `25443e10`, Spectrum Towing `8121a8b0`) verified by Donna in Session 30 to have the correct `serverUrl: /api/vapi/functions`. The one-shot `/api/cron/backfill-server-url` route is deleted; the entry is removed from `vercel.json`.
+2. **Legacy Stripe checkout routes removed.** `/api/stripe/checkout/route.ts` and `/api/stripe/create-checkout-session/route.ts` had zero in-repo callers (verified via grep) and were superseded by `/api/stripe/embedded-checkout` (session) and the billing portal. Both deleted.
+3. **Bookings page modernized.**
+   - `Booking` interface rewritten with the modern schema (`scheduled_start`, `truck_type`, `description`, `pickup_address`, `dropoff_address`, `confirmation_ref`, `dispatcher_notified_at`, `sms_confirmation_sent`). Legacy fields (`booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`, `confirmation_sms_sent`) kept as optional fallbacks so old rows still render.
+   - SMS flag references switched from the never-written `confirmation_sms_sent` to the modern `sms_confirmation_sent` in the optimistic update.
+   - Date column now reads `scheduled_start` with title-cased formatting (`Mon, 1 Jun, 09:30`) and falls back to legacy `preferred_date`/`preferred_time` for old rows, or `Time TBC` if neither exists.
+   - Service column now shows the formatted truck label (`Loaded tilt tray`, not `loaded_tilt_tray`) with fallback to legacy `service_requested`/`booking_type`. Route line (`pickup → dropoff`) renders underneath when either address exists.
+   - REF badge appears next to the caller name when `confirmation_ref` is set (monospace, blue-tinted pill).
+   - `ConfirmModal` SMS-preview line uses `scheduled_start` with a legacy date fallback.
+   - `NotesModal` now sources from `description` first, then legacy `notes`.
+4. **New Booking modal.** A `+ New Booking` button in the page header opens a modal that POSTs to the existing `/api/portal/bookings` endpoint. Fields: caller name, caller phone, truck type (dropdown — only the 3 enum values the endpoint accepts), pickup/dropoff addresses, scheduled date+time (`<input type="datetime-local">`), notes. On success the list reloads; on failure the error message surfaces in the toast. Inputs reuse the `ConfirmModal` palette (`#071829` background, `rgba(255,255,255,0.06)` border). No new API; the endpoint already handles optional SMS confirmation server-side. Built for Starter clients without scheduler access; usable by Growth/Pro too.
+
+### Migrations
+None. Legacy bookings column drop (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) deferred to Session 32 after a backfill migration is written.
+
+### vercel.json
+Removed the trailing `{ "path": "/api/cron/backfill-server-url", "schedule": "0 12 * * *" }` entry. Trailing comma on the previous (`expire-pending-payments`) entry removed to keep valid JSON.
+
+### Build status
+`npm run build` — clean. Turbopack reports 146/146 pages generated, 0 errors.
+
+### Known follow-up (Session 32)
+- Backfill any legacy `preferred_date`/`preferred_time`/`notes`/`service_requested`/`booking_type` into the modern columns, then DROP them. A migration file should be added once the backfill SQL is reviewed.
+
+---
+
 ## SESSION 30 — Operational Fixes Bundle (2026-05-22)
 
 ### Branch
