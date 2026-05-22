@@ -1,9 +1,9 @@
 # TalkMate Portal — System Map
 
 **Last updated:** 2026-05-22
-**Last session:** 28
+**Last session:** 29
 **Main SHA:** (pending merge)
-**Next migration number:** 044
+**Next migration number:** 045
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
@@ -40,6 +40,7 @@
 | 26 | 2026-05-21 | feature/fix-contractor-signature-panel | 9674bd1 | 041 | Contractor signature panel — ABN mandatory, hard-fail upload, clawback, resend invite, Telegram alerts |
 | 27 | 2026-05-22 | feature/session-27-revenue-fixes | e612c9b | 042 | Revenue fixes — Stripe real payment, /wl-preview public, SMS type constraint, clawback enforcement, sales rep add lead, hardcoded secrets removed |
 | 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | (pending) | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
+| 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | (pending) | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
 
 ---
 
@@ -82,6 +83,7 @@
 | 041 | 041_contractor_signature_metadata.sql | contractor_agreements.signature_method, signature_timestamp, ip_address |
 | 042 | 042_session27_fixes.sql | businesses.signup_at, welcome_email_sent; commissions.clawback_period_ends_at; sms_log CHECK extended; admin_sms_failures view widened |
 | 043 | 043_session28_fixes.sql | calls.intelligence_retry_count; partial index on (intelligence_status, created_at) WHERE status IN ('pending','error') |
+| 044 | 044_sms_confirmation_loop.sql | bookings 'declined' status; sms_log adds dispatcher_job_notification/booking_received/booking_confirmed/booking_declined/dispatcher_reminder; bookings.confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone; unique index on confirmation_ref; partial index for pending dispatcher sweep |
 
 ---
 
@@ -98,7 +100,7 @@
 | /api/cron/agent-health-check | `*/30 * * * *` | Every 30 min | Vapi agent health |
 | /api/cron/abandoned-signup | `0 * * * *` | Every hour :00 | Abandoned signup recovery |
 | /api/cron/email-triggers | `15 * * * *` | Every hour :15 | Lifecycle email triggers |
-| /api/cron/sms-reminders | `30 * * * *` | Every hour :30 | SMS reminders |
+| /api/cron/sms-reminders | `30 * * * *` | Every hour :30 | SMS reminders (24h, 2h, + Session 29 dispatcher 15-min reminder sweep) |
 | /api/cron/nps-check | `0 1 * * *` | 11:00 AEST | NPS check |
 | /api/cron/sync-public-holidays | `0 0 1 1 *` | Jan 1 annually | Sync public holidays |
 | /api/cron/data-retention | `0 0 1 * *` | 1st of month | Data retention cleanup |
@@ -162,6 +164,7 @@
 | POST | /api/stripe/portal | session | Open Stripe billing portal |
 | POST | /api/webhooks/stripe | Stripe sig | Stripe webhook handler |
 | POST | /api/webhooks/vapi | Vapi sig | Vapi call webhook |
+| POST | /api/twilio/sms-reply | Twilio sig (HMAC-SHA1) | Session 29 — dispatcher YES/NO reply for booking confirmation loop |
 | GET | /api/cron/* | CRON_SECRET | All cron endpoints (401 without secret) |
 | GET | /api/admin/* | admin | Admin-only API routes |
 | POST | /api/sales/leads | sales rep | Sales rep creates a lead |
@@ -194,6 +197,7 @@
 | NEXT_PUBLIC_APP_URL | ✅ | https://app.talkmate.com.au |
 | VAPI_API_KEY | ✅ | Vapi agent management |
 | VAPI_WEBHOOK_SECRET | ✅ | Vapi webhook verification — MANDATORY from Session 28; /api/vapi/functions returns 500 if unset |
+| TWILIO_CONFIRMATION_NUMBER | ✅ | Session 29 — dedicated Twilio number for dispatcher confirmation SMS (+61 480 847 945). Inbound webhook routes to /api/twilio/sms-reply |
 | ADMIN_EMAIL | recommended | Personal super-admin email alongside hello@talkmate.com.au |
 | INTERNAL_ALERT_EMAIL | optional | Fallback admin email for internal alerts |
 | CONTRACTOR_AGREEMENT_WEBHOOK_URL | optional | Make.com scenario A — contractor invite email |

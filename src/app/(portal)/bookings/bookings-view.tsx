@@ -11,7 +11,7 @@ interface Booking {
   preferred_date: string | null
   preferred_time: string | null
   notes: string | null
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show'
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show' | 'declined'
   confirmation_sms_sent: boolean
   created_at: string
 }
@@ -21,6 +21,8 @@ type Tab = 'pending' | 'confirmed' | 'all'
 const STATUS_STYLE: Record<Booking['status'], { bg: string; color: string }> = {
   pending: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B' },
   confirmed: { bg: 'rgba(34,197,94,0.15)', color: '#22C55E' },
+  // Session 29 — declined status added with the brief's red palette.
+  declined: { bg: 'rgba(239,68,68,0.15)', color: '#EF4444' },
   cancelled: { bg: 'rgba(107,114,128,0.15)', color: '#9CA3AF' },
   completed: { bg: 'rgba(74,159,232,0.15)', color: '#4A9FE8' },
   no_show: { bg: 'rgba(239,68,68,0.15)', color: '#EF4444' },

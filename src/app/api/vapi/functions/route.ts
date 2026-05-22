@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { sendSMS, templateBookingConfirmation } from '@/lib/sms'
+import {
+  sendSMS,
+  templateBookingReceived,
+  templateDispatcherNotification,
+} from '@/lib/sms'
 
 // The endpoint Vapi calls mid-conversation to get real-time data and
 // log call outcomes. Session 9.
@@ -549,57 +553,107 @@ async function createBooking(
       .eq('business_id', clientId)
   }
 
-  // Confirmation SMS via direct Twilio. Stamp sms_confirmation_sent on
-  // the booking row when the send succeeds so the SMS reminders cron
-  // does not double-fire confirmation.
+  // ─── Session 29 — Hayden SMS confirmation loop ───────────────────
+  //
+  // 1. Generate a 6-char booking ref (first six chars of the UUID,
+  //    minus hyphens, uppercased). Dispatcher quotes this back in
+  //    YES/NO replies so we can find the right booking in
+  //    /api/twilio/sms-reply.
+  // 2. Fetch the business row once for both the dispatcher and
+  //    caller SMS paths (previous code fetched it only inside the
+  //    confirmation-sms branch).
+  // 3. If notifications_config.dispatcher_alerts is on, text the
+  //    dispatcher from TWILIO_CONFIRMATION_NUMBER asking for YES/NO.
+  //    That number has its Twilio SMS webhook pointed at
+  //    /api/twilio/sms-reply.
+  // 4. Caller now gets a "received" SMS (not "confirmed") — the
+  //    booking is still pending until the dispatcher replies.
+  // 5. Persist confirmation_ref + dispatcher_notified_at in a single
+  //    update; sms_confirmation_sent stamps when the caller's SMS
+  //    succeeds (kept for compatibility with the reminders cron).
+  const confirmationRef = booking.id.replace(/-/g, '').substring(0, 6).toUpperCase()
+  const friendlyTime = formatFriendlyTime(scheduledStart)
+  const friendlyDate = formatFriendlyDate(scheduledStart)
+
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('name, notifications_config')
+    .eq('id', clientId)
+    .maybeSingle()
+  const notifConfig = (biz?.notifications_config ?? {}) as Record<string, unknown>
+  const dispatcherNumber = notifConfig.dispatcher_number as string | undefined
+  const dispatcherAlerts = notifConfig.dispatcher_alerts === true
+  const businessName = (biz?.name as string | undefined) || 'us'
+
+  const bookingUpdate: Record<string, unknown> = { confirmation_ref: confirmationRef }
+
+  // Dispatcher SMS — operational, bypasses plan limits in sendSMS.
+  if (dispatcherAlerts && dispatcherNumber) {
+    const dispatcherSms = await sendSMS({
+      to: dispatcherNumber,
+      from: process.env.TWILIO_CONFIRMATION_NUMBER,
+      message: templateDispatcherNotification({
+        confirmationRef,
+        callerName: callerName ?? 'Customer',
+        pickupAddress: pickupAddress ?? 'TBC',
+        dropoffAddress: dropoffAddress ?? 'TBC',
+        truckType: truckType ?? 'truck',
+        scheduledDate: friendlyDate,
+        scheduledTime: friendlyTime,
+      }),
+      clientId,
+      smsType: 'dispatcher_job_notification',
+      bookingId: booking.id,
+    })
+    if (dispatcherSms.success) {
+      bookingUpdate.dispatcher_notified_at = new Date().toISOString()
+    } else {
+      console.warn('[create_booking] dispatcher SMS failed', {
+        clientId, bookingId: booking.id, reason: dispatcherSms.reason, error: dispatcherSms.error,
+      })
+    }
+  }
+
+  // Caller-facing "received" SMS. Same gate as before
+  // (scheduler_settings.booking_confirmation_sms) — we are reusing
+  // that opt-in flag because the caller message replaces the old
+  // "confirmation" send. Counts against the client's monthly quota,
+  // same as booking_confirmation did before.
   let smsSent = false
   if (shouldSendSms) {
-    const { data: biz } = await supabase
-      .from('businesses')
-      .select('name, notifications_config')
-      .eq('id', clientId)
-      .maybeSingle()
-    const notif = (biz?.notifications_config ?? {}) as Record<string, unknown>
-    const businessPhone = (notif.live_transfer_number as string | undefined)
-      || (notif.phone_number as string | undefined)
-      || undefined
-    const friendlyTime = formatFriendlyTime(scheduledStart)
-    const friendlyDate = formatFriendlyDate(scheduledStart)
-    const message = templateBookingConfirmation({
-      caller_name: callerName,
-      business_name: (biz?.name as string | undefined) || undefined,
-      business_phone: businessPhone,
-      truck_type: truckType,
-      date: friendlyDate,
-      time: friendlyTime,
-      pickup_address: pickupAddress,
-      dropoff_address: dropoffAddress,
+    const message = templateBookingReceived({
+      callerName: callerName ?? 'there',
+      truckType: truckType ?? 'job',
+      businessName,
+      scheduledDate: friendlyDate,
+      scheduledTime: friendlyTime,
     })
     const sms = await sendSMS({
       to: callerPhone,
       message,
       clientId,
-      smsType: 'booking_confirmation',
+      smsType: 'booking_received',
       bookingId: booking.id,
     })
     if (sms.success) {
       smsSent = true
-      await supabase
-        .from('bookings')
-        .update({ sms_confirmation_sent: true })
-        .eq('id', booking.id)
+      bookingUpdate.sms_confirmation_sent = true
     }
   }
 
-  const friendlyTime = formatFriendlyTime(scheduledStart)
-  const friendlyDate = formatFriendlyDate(scheduledStart)
+  await supabase
+    .from('bookings')
+    .update(bookingUpdate)
+    .eq('id', booking.id)
+
   const confirmation = smsSent
-    ? `Booked for ${friendlyDate} at ${friendlyTime}. Confirmation SMS sent.`
+    ? `Booked for ${friendlyDate} at ${friendlyTime}. We've texted ${callerName ?? 'the caller'} that we've received the request and we'll confirm shortly.`
     : `Booked for ${friendlyDate} at ${friendlyTime}.`
 
   return {
     result: {
       booking_id: booking.id,
+      confirmation_ref: confirmationRef,
       scheduled_start: scheduledStart,
       sms_sent: smsSent,
       confirmation_message: confirmation,
