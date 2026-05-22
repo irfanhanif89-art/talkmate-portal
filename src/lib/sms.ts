@@ -32,6 +32,18 @@ export type SmsType =
   // are TalkMate-funded so the client's monthly quota is preserved.
   | 'callback_confirmation'
   | 'dispatcher_callback_alert'
+  // Session 29 — Hayden SMS confirmation loop. On booking creation
+  // the caller is texted "received" (counts against quota — same as
+  // booking_confirmation did before), and the dispatcher is texted
+  // from a dedicated confirmation Twilio number. YES/NO reply
+  // updates the booking and fires the appropriate caller follow-up.
+  // dispatcher_* + booking_confirmed/declined bypass plan limits
+  // because they are operational guarantees TalkMate funds.
+  | 'dispatcher_job_notification'
+  | 'booking_received'
+  | 'booking_confirmed'
+  | 'booking_declined'
+  | 'dispatcher_reminder'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -46,6 +58,16 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   'missed_lead_recovery',
   'callback_confirmation',
   'dispatcher_callback_alert',
+  // Session 29 — dispatcher-side messages plus the YES/NO follow-up
+  // SMS to the caller are operational. They must always fire even if
+  // the client has hit quota. booking_received is NOT in this list —
+  // it is the caller-facing "we got your request" SMS and counts
+  // against the client's monthly allowance, same as booking_confirmation
+  // did before.
+  'dispatcher_job_notification',
+  'booking_confirmed',
+  'booking_declined',
+  'dispatcher_reminder',
 ])
 
 export interface SendSMSOptions {
@@ -55,6 +77,12 @@ export interface SendSMSOptions {
   smsType: SmsType
   bookingId?: string
   waitlistId?: string
+  // Session 29 — optional override of the From number. When unset
+  // (existing callers), we fall back to TWILIO_PHONE_NUMBER. The
+  // confirmation-loop dispatcher messages pass
+  // TWILIO_CONFIRMATION_NUMBER so the Twilio webhook on that line
+  // can route YES/NO replies cleanly to /api/twilio/sms-reply.
+  from?: string
 }
 
 export interface SendSMSResult {
@@ -115,7 +143,10 @@ async function ensureMonthlyReset(
 export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER
+  // Session 29 — caller-supplied `from` wins, default to the
+  // shared outbound TWILIO_PHONE_NUMBER. Missing both is a config
+  // error (Twilio rejects an empty From).
+  const fromNumber = opts.from ?? process.env.TWILIO_PHONE_NUMBER
   if (!accountSid || !authToken || !fromNumber) {
     return { success: false, error: 'Twilio not configured', reason: 'config_missing' }
   }
@@ -350,4 +381,63 @@ export function templateMissedLeadRecovery(ctx: SmsTemplateContext): string {
   const biz = ctx.business_name ?? 'us'
   const phone = ctx.business_phone ? ` on ${ctx.business_phone}` : ''
   return `Hi, this is ${biz}. Thanks for your enquiry earlier. We would love to help, call us back${phone} when you are ready.`
+}
+
+// ────────────────────────── Session 29 confirmation loop ─────────────
+// New flow: booking → "received" SMS to caller + dispatcher gets the
+// job details on a dedicated Twilio number → dispatcher replies
+// YES/NO → caller gets a follow-up confirming or declining → if the
+// dispatcher doesn't reply in 15 minutes a reminder fires.
+//
+// These templates use named params instead of the SmsTemplateContext
+// blob because the confirmation-loop callsites already have the
+// individual fields in scope and the explicit shape avoids
+// stringifying nulls into the message body.
+
+export function templateBookingReceived(params: {
+  callerName: string
+  truckType: string
+  businessName: string
+  scheduledDate: string
+  scheduledTime: string
+}): string {
+  return `Hi ${params.callerName}, your ${params.truckType} job request with ${params.businessName} for ${params.scheduledDate} at ${params.scheduledTime} has been received. We will confirm with you shortly.`
+}
+
+export function templateBookingConfirmed(params: {
+  callerName: string
+  truckType: string
+  businessName: string
+  scheduledDate: string
+  scheduledTime: string
+  pickupAddress: string
+  dropoffAddress: string
+  businessPhone: string
+}): string {
+  return `Hi ${params.callerName}, great news — your ${params.truckType} job with ${params.businessName} is confirmed for ${params.scheduledDate} at ${params.scheduledTime}. ${params.pickupAddress} to ${params.dropoffAddress}. Questions? Call ${params.businessPhone}.`
+}
+
+export function templateBookingDeclined(params: {
+  callerName: string
+  businessPhone: string
+}): string {
+  return `Hi ${params.callerName}, unfortunately we are unable to accommodate your job request at this time. Please call ${params.businessPhone} to discuss alternatives.`
+}
+
+export function templateDispatcherNotification(params: {
+  confirmationRef: string
+  callerName: string
+  pickupAddress: string
+  dropoffAddress: string
+  truckType: string
+  scheduledDate: string
+  scheduledTime: string
+}): string {
+  return `New job [REF: ${params.confirmationRef}] — ${params.callerName}, ${params.pickupAddress} to ${params.dropoffAddress}, ${params.truckType}, ${params.scheduledDate} at ${params.scheduledTime}. Reply YES to confirm or NO to decline.`
+}
+
+export function templateDispatcherReminder(params: {
+  confirmationRef: string
+}): string {
+  return `Reminder — job [REF: ${params.confirmationRef}] is still awaiting your confirmation. Reply YES or NO.`
 }

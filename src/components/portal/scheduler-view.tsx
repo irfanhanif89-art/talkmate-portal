@@ -35,12 +35,32 @@ interface Booking {
   scheduled_end: string | null
   actual_start: string | null
   actual_end: string | null
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show'
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show' | 'declined'
   sms_confirmation_sent: boolean | null
   created_at: string
   waitlist_position?: number | null
   distance_km?: number | null
   duration_minutes?: number | null
+  // Session 29 — Hayden SMS confirmation loop
+  confirmation_ref?: string | null
+  dispatcher_notified_at?: string | null
+  reminder_sent_at?: string | null
+  confirmed_at?: string | null
+  confirmed_by_phone?: string | null
+}
+
+// Session 29 — status-only colour palette per brief. Separate from
+// sourceColor() because that function mixes status + booking_source +
+// in-progress signals; the brief wants a clean status badge.
+function statusBadgeColor(status: Booking['status']): { bg: string; color: string } {
+  switch (status) {
+    case 'pending':   return { bg: 'rgba(245,158,11,0.15)',  color: '#F59E0B' }
+    case 'confirmed': return { bg: 'rgba(34,197,94,0.15)',   color: '#22C55E' }
+    case 'declined':  return { bg: 'rgba(239,68,68,0.15)',   color: '#EF4444' }
+    case 'cancelled': return { bg: 'rgba(156,163,175,0.15)', color: '#9CA3AF' }
+    case 'completed': return { bg: 'rgba(74,159,232,0.15)',  color: '#4A9FE8' }
+    case 'no_show':   return { bg: 'rgba(239,68,68,0.15)',   color: '#EF4444' }
+  }
 }
 
 interface Driver {
@@ -144,6 +164,9 @@ function dayKey(d: Date): string {
 
 function sourceColor(b: Booking): { border: string; tint: string; label: string; pill: string } {
   if (b.status === 'cancelled') return { border: '#9CA3AF', tint: 'rgba(156,163,175,0.08)', label: 'Cancelled', pill: '#9CA3AF' }
+  // Session 29 — declined bookings get the red tint everywhere
+  // sourceColor is consulted (calendar tiles, list row tint).
+  if (b.status === 'declined')  return { border: '#EF4444', tint: 'rgba(239,68,68,0.10)',    label: 'Declined',  pill: '#EF4444' }
   if (b.actual_start && !b.actual_end) return { border: '#22C55E', tint: 'rgba(34,197,94,0.12)', label: 'In Progress', pill: '#22C55E' }
   if (b.booking_source === 'agent') return { border: ORANGE, tint: 'rgba(232,98,42,0.12)', label: 'Agent', pill: ORANGE }
   if (b.booking_source === 'walk_in') return { border: '#A855F7', tint: 'rgba(168,85,247,0.12)', label: 'Walk-in', pill: '#A855F7' }
@@ -730,6 +753,9 @@ function JobListTab({ bookings, drivers, onSelect }: { bookings: Booking[]; driv
           <option value="all" style={{ background: NAV_BG }}>All statuses</option>
           <option value="confirmed" style={{ background: NAV_BG }}>Upcoming</option>
           <option value="pending" style={{ background: NAV_BG }}>Pending</option>
+          {/* Session 29 — surfacing declined explicitly so the
+              dispatcher can review which bookings they bounced. */}
+          <option value="declined" style={{ background: NAV_BG }}>Declined</option>
           <option value="completed" style={{ background: NAV_BG }}>Completed</option>
           <option value="cancelled" style={{ background: NAV_BG }}>Cancelled</option>
         </select>
@@ -774,7 +800,20 @@ function JobListTab({ bookings, drivers, onSelect }: { bookings: Booking[]; driv
                   <td style={td}>{truckLabel(b.truck_type)}</td>
                   <td style={td}>{driver?.name ?? '—'}</td>
                   <td style={td}><span style={{ ...badgePill, background: `${src.pill}1A`, color: src.pill, border: `1px solid ${src.pill}55` }}>{src.label}</span></td>
-                  <td style={td}><span style={{ ...badgePill, background: `${src.pill}1A`, color: src.pill, border: `1px solid ${src.pill}55`, textTransform: 'capitalize' as const }}>{b.status}</span></td>
+                  <td style={td}>
+                    {(() => {
+                      // Session 29 — status badge uses the dedicated
+                      // palette so declined/pending/confirmed read
+                      // correctly even when the source pill is orange.
+                      const sb = statusBadgeColor(b.status)
+                      return (
+                        <span style={{ ...badgePill, background: sb.bg, color: sb.color, border: `1px solid ${sb.color}55`, textTransform: 'capitalize' as const }}>{b.status}</span>
+                      )
+                    })()}
+                    {b.confirmation_ref && (
+                      <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10, color: TEXT_DIM, marginTop: 4 }}>REF: {b.confirmation_ref}</div>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -993,11 +1032,20 @@ function JobDetailModal({ booking, drivers, baseUrl, onClose, onUpdated, isTowin
     if (res.ok) onUpdated()
   }
 
+  // Session 29 — status pill uses the dedicated status palette so
+  // pending/confirmed/declined are readable at a glance. Source
+  // pill stays driven by sourceColor (Agent / Manual / Walk-in).
+  const statusBg = statusBadgeColor(booking.status)
   return (
     <ModalShell onClose={onClose}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <span style={{ ...badgePill, background: `${color.pill}1A`, color: color.pill, border: `1px solid ${color.pill}55`, textTransform: 'capitalize' as const }}>{booking.status}</span>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
+        <span style={{ ...badgePill, background: statusBg.bg, color: statusBg.color, border: `1px solid ${statusBg.color}55`, textTransform: 'capitalize' as const }}>{booking.status}</span>
         <span style={{ ...badgePill, background: `${color.pill}1A`, color: color.pill, border: `1px solid ${color.pill}55` }}>{color.label}</span>
+        {booking.confirmation_ref && (
+          <span style={{ ...badgePill, background: 'rgba(74,159,232,0.12)', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.4)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+            REF: {booking.confirmation_ref}
+          </span>
+        )}
       </div>
       <h2 style={{ fontSize: 18, fontWeight: 800, color: 'white', margin: 0 }}>{booking.caller_name ?? 'Job'}{booking.truck_type ? ` — ${truckLabel(booking.truck_type)}` : ''}</h2>
       <div style={{ fontSize: 12, color: TEXT_DIM, marginBottom: 16 }}>
@@ -1040,6 +1088,27 @@ function JobDetailModal({ booking, drivers, baseUrl, onClose, onUpdated, isTowin
         <div style={agentBanner}>
           Booked by agent on {new Date(booking.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}. {booking.sms_confirmation_sent ? 'SMS confirmation sent.' : ''}
         </div>
+      )}
+
+      {/* Session 29 — Hayden SMS confirmation loop trail. Only renders
+          if at least one of the loop timestamps was set. */}
+      {(booking.dispatcher_notified_at || booking.reminder_sent_at || booking.confirmed_at) && (
+        <Section title="Confirmation loop">
+          <div style={{ ...infoBoxStyle, fontSize: 12, lineHeight: 1.7 }}>
+            {booking.dispatcher_notified_at && (
+              <div>Dispatcher notified · {new Date(booking.dispatcher_notified_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+            )}
+            {booking.reminder_sent_at && (
+              <div>Reminder sent · {new Date(booking.reminder_sent_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+            )}
+            {booking.confirmed_at && (
+              <div>
+                {booking.status === 'declined' ? 'Declined' : 'Confirmed'} · {new Date(booking.confirmed_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}
+                {booking.confirmed_by_phone ? ` · by ${booking.confirmed_by_phone}` : ''}
+              </div>
+            )}
+          </div>
+        </Section>
       )}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20, flexWrap: 'wrap' as const }}>

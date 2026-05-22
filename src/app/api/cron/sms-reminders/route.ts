@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { verifyCron } from '@/lib/cron-auth'
 import { createAdminClient } from '@/lib/supabase/server'
-import { sendSMS, templateReminder24h, templateReminder2h } from '@/lib/sms'
+import {
+  sendSMS,
+  templateReminder24h,
+  templateReminder2h,
+  templateDispatcherReminder,
+} from '@/lib/sms'
 
 // Runs every hour. Two passes:
 //  1. 24-hour reminders: bookings with scheduled_start ~24h away
@@ -119,7 +124,84 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, sent_24h: sent24, sent_2h: sent2 })
+  // ─── Session 29 — Dispatcher confirmation reminder sweep ─────────
+  //
+  // Bookings that were created in the last 15-30 minutes, are still
+  // pending (dispatcher hasn't replied YES/NO), and haven't already
+  // had a reminder sent. We text the dispatcher one more time from
+  // TWILIO_CONFIRMATION_NUMBER so they see it land on the same
+  // thread as the original notification.
+  //
+  // The 15-30 minute window guarantees:
+  //  - we never reminded sooner than 15 minutes (gives the
+  //    dispatcher a fair window to reply on their own),
+  //  - we never re-remind on bookings older than 30 minutes (avoids
+  //    a long-tail of reminders chasing forgotten bookings if the
+  //    cron is off for a while; reminder_sent_at IS NULL is the
+  //    real idempotency key, this just bounds the worst case).
+  //
+  // Cache business config in a Map — same pattern as settingsCache
+  // above — so a flood of pending bookings from one client doesn't
+  // trigger one businesses-table read per row.
+  let dispatcherRemindersSent = 0
+  const fifteenMinutesAgo = new Date(now - 15 * 60 * 1000).toISOString()
+  const thirtyMinutesAgo = new Date(now - 30 * 60 * 1000).toISOString()
+
+  const { data: pendingBookings } = await supabase
+    .from('bookings')
+    .select('id, confirmation_ref, client_id, dispatcher_notified_at')
+    .eq('status', 'pending')
+    .not('dispatcher_notified_at', 'is', null)
+    .lte('dispatcher_notified_at', fifteenMinutesAgo)
+    .gte('dispatcher_notified_at', thirtyMinutesAgo)
+    .is('reminder_sent_at', null)
+
+  const businessConfigCache = new Map<string, { dispatcherNumber?: string }>()
+  for (const b of pendingBookings ?? []) {
+    const clientId = b.client_id as string
+    let config = businessConfigCache.get(clientId)
+    if (!config) {
+      const { data: bizRow } = await supabase
+        .from('businesses')
+        .select('notifications_config')
+        .eq('id', clientId)
+        .maybeSingle()
+      const notif = (bizRow?.notifications_config ?? null) as Record<string, unknown> | null
+      config = { dispatcherNumber: notif?.dispatcher_number as string | undefined }
+      businessConfigCache.set(clientId, config)
+    }
+    if (!config.dispatcherNumber) continue
+
+    const reminderResult = await sendSMS({
+      to: config.dispatcherNumber,
+      from: process.env.TWILIO_CONFIRMATION_NUMBER,
+      message: templateDispatcherReminder({
+        confirmationRef: (b.confirmation_ref as string | null) ?? 'N/A',
+      }),
+      clientId,
+      smsType: 'dispatcher_reminder',
+      bookingId: b.id as string,
+    })
+
+    // Only stamp reminder_sent_at when the SMS actually went out —
+    // mirrors how the 24h/2h reminders above gate their own flags.
+    // Stamping on failure would suppress retries on the next cron
+    // tick.
+    if (reminderResult.success) {
+      await supabase
+        .from('bookings')
+        .update({ reminder_sent_at: new Date().toISOString() })
+        .eq('id', b.id as string)
+      dispatcherRemindersSent++
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    sent_24h: sent24,
+    sent_2h: sent2,
+    dispatcher_reminders_sent: dispatcherRemindersSent,
+  })
 }
 
 export const POST = GET
