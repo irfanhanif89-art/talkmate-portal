@@ -348,7 +348,7 @@ export async function POST() {
 
   // Ensure serverUrl and serverUrlSecret are configured on the assistant
   if (!agent.serverUrl) {
-    patchBody.serverUrl = appUrl + '/api/webhooks/vapi'
+    patchBody.serverUrl = appUrl + '/api/vapi/functions'
     fieldsUpdated.push('serverUrl')
   }
   if (!agent.serverUrlSecret && webhookSecret) {

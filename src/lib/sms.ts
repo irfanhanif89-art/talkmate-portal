@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
+import { sendAdminTelegram } from '@/lib/notifications'
 
 // Session 15 — direct Twilio SMS service. Replaces the Make.com Booking
 // SMS scenario for everything booking-related (confirmations, reminders,
@@ -44,6 +45,10 @@ export type SmsType =
   | 'booking_confirmed'
   | 'booking_declined'
   | 'dispatcher_reminder'
+  // Session 30 — owner booking notification. Fired when notifications_config
+  // has alert_owner=true + owner_number set. Bypasses plan limit because
+  // it's an operational alert the owner relies on.
+  | 'owner_booking_notification'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -68,7 +73,30 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   'booking_confirmed',
   'booking_declined',
   'dispatcher_reminder',
+  // Session 30 — owner notification always fires regardless of quota.
+  'owner_booking_notification',
 ])
+
+// Session 30 — Telegram alert on infrastructure-level SMS failures so we
+// see Twilio outages, missing credentials, or malformed numbers in real
+// time. Plan-limit rejections (plan_starter, plan_quota) are expected
+// business-rule outcomes and stay silent.
+const ALERT_ON_FAILURE_REASONS = new Set<NonNullable<SendSMSResult['reason']>>([
+  'twilio_error', 'config_missing', 'invalid_phone',
+])
+
+function maybeAlertSmsFailure(
+  reason: NonNullable<SendSMSResult['reason']>,
+  smsType: SmsType,
+  to: string,
+  clientId: string,
+  detail?: string,
+): void {
+  if (!ALERT_ON_FAILURE_REASONS.has(reason)) return
+  void sendAdminTelegram(
+    `⚠️ SMS failed\nType: ${smsType}\nTo: ${to}\nClient: ${clientId}\nReason: ${reason}${detail ? `\nDetail: ${detail}` : ''}`,
+  ).catch(() => {})
+}
 
 export interface SendSMSOptions {
   to: string
@@ -148,11 +176,13 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   // error (Twilio rejects an empty From).
   const fromNumber = opts.from ?? process.env.TWILIO_PHONE_NUMBER
   if (!accountSid || !authToken || !fromNumber) {
+    maybeAlertSmsFailure('config_missing', opts.smsType, opts.to, opts.clientId, 'Twilio env vars missing')
     return { success: false, error: 'Twilio not configured', reason: 'config_missing' }
   }
 
   const to = normaliseAuPhone(opts.to)
   if (!to) {
+    maybeAlertSmsFailure('invalid_phone', opts.smsType, opts.to, opts.clientId)
     return { success: false, error: 'Invalid Australian phone number', reason: 'invalid_phone' }
   }
 
@@ -245,6 +275,7 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
       error_message: twilioError,
     })
     if (logErr) console.error('[sms] sms_log insert (failed) failed', { clientId: opts.clientId, error: logErr.message })
+    maybeAlertSmsFailure('twilio_error', opts.smsType, to, opts.clientId, twilioError)
     return { success: false, error: twilioError, reason: 'twilio_error' }
   }
 
@@ -440,4 +471,23 @@ export function templateDispatcherReminder(params: {
   confirmationRef: string
 }): string {
   return `Reminder — job [REF: ${params.confirmationRef}] is still awaiting your confirmation. Reply YES or NO.`
+}
+
+// ────────────────────────── Session 30 owner notification ────────────
+// Fired on booking creation when notifications_config has alert_owner=true
+// + owner_number set. Lets the business owner see new jobs land in real
+// time — separate from the dispatcher-facing confirmation loop.
+
+export function templateOwnerBookingNotification(params: {
+  callerName: string
+  truckType: string
+  scheduledDisplay: string
+  pickupAddress: string
+  dropoffAddress: string
+  confirmationRef: string
+}): string {
+  const route = params.pickupAddress && params.dropoffAddress
+    ? `${params.pickupAddress} → ${params.dropoffAddress}`
+    : params.pickupAddress || params.dropoffAddress || ''
+  return `New booking: ${params.callerName}, ${params.truckType}, ${params.scheduledDisplay}.${route ? ` ${route}.` : ''} REF: ${params.confirmationRef}`
 }

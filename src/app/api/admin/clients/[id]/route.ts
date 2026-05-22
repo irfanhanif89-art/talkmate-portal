@@ -3,7 +3,10 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { isAdminPlan, requireAdmin } from '@/lib/admin-auth'
 import { logAdminAction, diffFields } from '@/lib/audit'
 
-const ALLOWED_ACCOUNT_STATUS = new Set(['active', 'pending', 'suspended', 'cancelled'])
+const ALLOWED_ACCOUNT_STATUS = new Set([
+  'active', 'pending', 'pending_payment', 'trial',
+  'expired', 'suspended', 'cancelled',
+])
 // Library-aligned keys (used by the current Create modal) PLUS legacy
 // keys that older businesses still carry. PATCH is a partial update so any
 // industry already in the database must remain accepted.
@@ -59,6 +62,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.billing_override_note === 'string') update.billing_override_note = body.billing_override_note.trim() || null
   if (typeof body.manual_next_billing_date === 'string') {
     update.manual_next_billing_date = body.manual_next_billing_date.trim() || null
+  }
+
+  if (body.billing_cycle !== undefined) {
+    if (!['monthly', 'annual'].includes(body.billing_cycle as string)) {
+      return NextResponse.json({ ok: false, error: 'Invalid billing_cycle' }, { status: 400 })
+    }
+    update.billing_cycle = body.billing_cycle
+  }
+  if (body.setup_fee_waived !== undefined) {
+    update.setup_fee_waived = Boolean(body.setup_fee_waived)
+  }
+  if (body.setup_fee_amount !== undefined) {
+    const amount = Number(body.setup_fee_amount)
+    if (Number.isNaN(amount) || amount < 0) {
+      return NextResponse.json({ ok: false, error: 'Invalid setup_fee_amount' }, { status: 400 })
+    }
+    update.setup_fee_amount = amount
   }
 
   // New industry service fields (migration 020). Top-level columns, not

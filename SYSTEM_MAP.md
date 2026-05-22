@@ -1,9 +1,9 @@
 # TalkMate Portal — System Map
 
 **Last updated:** 2026-05-22
-**Last session:** 29
-**Main SHA:** 7508b4b
-**Next migration number:** 045
+**Last session:** 30
+**Main SHA:** (pending merge)
+**Next migration number:** 046
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
@@ -41,6 +41,7 @@
 | 27 | 2026-05-22 | feature/session-27-revenue-fixes | e612c9b | 042 | Revenue fixes — Stripe real payment, /wl-preview public, SMS type constraint, clawback enforcement, sales rep add lead, hardcoded secrets removed |
 | 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | da63120 | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
 | 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | 7508b4b | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
+| 30 | 2026-05-22 | feature/session-30-fixes | (pending) | 045 | Session 30 fixes — sync routes write `/api/vapi/functions` (not `/api/webhooks/vapi`), one-shot `/api/cron/backfill-server-url` cron to repair existing assistants, calls page loading fix, comma-separated ADMIN_EMAIL allowlist, dollar-sign validator exception for plan prices ($299/$499/$799 + 10× annual variants), admin PATCH whitelist expanded (7 account_status values + billing_cycle/setup_fee_waived/setup_fee_amount) + edit modal billing section, SMS failure Telegram alerts (twilio_error/config_missing/invalid_phone only), owner booking notification SMS type + template + createBooking call site, welcome email moved from onboarding/complete → admin/approve-agent (non-override path only), impersonate route gains `?redirect=1` + `?next=` modes, 7 admin stub pages collapsed into impersonation redirects |
 
 ---
 
@@ -84,6 +85,7 @@
 | 042 | 042_session27_fixes.sql | businesses.signup_at, welcome_email_sent; commissions.clawback_period_ends_at; sms_log CHECK extended; admin_sms_failures view widened |
 | 043 | 043_session28_fixes.sql | calls.intelligence_retry_count; partial index on (intelligence_status, created_at) WHERE status IN ('pending','error') |
 | 044 | 044_sms_confirmation_loop.sql | bookings 'declined' status; sms_log adds dispatcher_job_notification/booking_received/booking_confirmed/booking_declined/dispatcher_reminder; bookings.confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone; unique index on confirmation_ref; partial index for pending dispatcher sweep |
+| 045 | 045_session30_fixes.sql | sms_log CHECK constraint extended with `owner_booking_notification` (22 total types) |
 
 ---
 
@@ -114,6 +116,7 @@
 | /api/cron/call-forward-check | `0 23 * * *` | 09:00 AEST | Call forwarding check |
 | /api/cron/trial-reminders | `15 23 * * *` | 09:15 AEST | Trial reminder emails |
 | /api/cron/clear-eligible-commissions | `30 23 * * *` | 09:30 AEST | Clear commissions past clawback |
+| /api/cron/backfill-server-url | `0 12 * * *` | 22:00 AEST | Session 30 — one-shot serverUrl backfill on Vapi assistants. Idempotent: after two consecutive `fixed: 0` runs, remove from `vercel.json` and delete the route (Session 31). |
 
 ---
 
@@ -198,8 +201,8 @@
 | VAPI_API_KEY | ✅ | Vapi agent management |
 | VAPI_WEBHOOK_SECRET | ✅ | Vapi webhook verification — MANDATORY from Session 28; /api/vapi/functions returns 500 if unset |
 | TWILIO_CONFIRMATION_NUMBER | ✅ | Session 29 — dedicated Twilio number for dispatcher confirmation SMS (+61 480 847 945). Inbound webhook routes to /api/twilio/sms-reply |
-| ADMIN_EMAIL | recommended | Personal super-admin email alongside hello@talkmate.com.au |
-| INTERNAL_ALERT_EMAIL | optional | Fallback admin email for internal alerts |
+| ADMIN_EMAIL | recommended | Personal super-admin email(s) alongside hello@talkmate.com.au. Comma-separated supported (Session 30). |
+| INTERNAL_ALERT_EMAIL | optional | Fallback admin email for internal alerts. Comma-separated supported (Session 30). |
 | CONTRACTOR_AGREEMENT_WEBHOOK_URL | optional | Make.com scenario A — contractor invite email |
 | CONTRACTOR_SIGNED_PDF_WEBHOOK_URL | optional | Make.com scenario B — signed PDF delivery |
 
@@ -225,15 +228,26 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H10** — Stripe `customer.subscription.updated` not handled
 - **H11** — Legacy checkout routes (`/api/stripe/checkout`, `/api/stripe/create-checkout-session`) not cleaned up
 - **H12–H15** — Vapi agent health alerts (note: Session 28 reused the H8–H15 labels for its own four parts; the original audit items here remain)
-- **H18–H21** — Bookings/legacy page schema issues
-- **H27–H28** — Admin tooling completeness gaps
-- **H30–H33** — Various deferred audit items
+- **H19, H20** — Remaining bookings/legacy page schema issues
+- **H29, H32** — Remaining deferred audit items
 
 ### Closed in Session 28
 - Vapi function endpoint auth — `VAPI_WEBHOOK_SECRET` is now mandatory, legacy `business_id` trust replaced with assistantId lookup.
 - Call intelligence resilience — outer catch stamps error status; error rows get 7-day retry window; dead CRITICAL_FLAG_TYPES entries removed.
 - Agent config standard — restructured into required / requiredForBookings / requiredForQuoting; shared TOOL_DEFS module; plan-aware validator; onboarding builds validator-clean agents on first try.
 - Approve-agent governance — switched to `requireAdmin()`; gated on the go-live checklist with `?override=true` escape hatch + Telegram alert.
+
+### Closed in Session 30
+- **H18** — Sync routes were writing the wrong `serverUrl` (`/api/webhooks/vapi` instead of `/api/vapi/functions`). Both sync routes fixed; `backfill-server-url` cron repairs the existing live assistants.
+- **H21** — Admin PATCH whitelist expanded to all 7 valid `account_status` values + `billing_cycle`, `setup_fee_waived`, `setup_fee_amount`. Edit modal exposes the new billing fields.
+- **H27** — SMS infrastructure failures (twilio_error, config_missing, invalid_phone) now fire a Telegram alert via `sendAdminTelegram`. Plan-rule rejections stay silent.
+- **H28** — Welcome email moved from `onboarding/complete` (premature — agent wasn't live yet) to `admin/approve-agent` non-override path (fires only when go-live checklist is clean).
+- **H30** — Owner booking notification SMS — new `owner_booking_notification` type + template + createBooking call site. Gated on `notifications_config.alert_owner=true` + `owner_number`.
+- **H31** — Impersonation route gains `?redirect=1` + `?next=` modes. 7 admin stub pages now redirect through impersonation into the real client portal pages.
+- **H33** — Calls page no longer hangs on "Loading…" for logged-out users (sets loading=false in the early-return).
+
+### Follow-on cleanup (Session 31)
+- Remove `/api/cron/backfill-server-url` from `vercel.json` and delete the route after two consecutive `fixed: 0` runs confirm all assistants are repaired.
 
 ### Infrastructure
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used
@@ -257,7 +271,7 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 ## Architecture Notes
 
 - **Auth:** Supabase Auth (email/password). Sessions via SSR cookies.
-- **Admin gate:** `requireAdmin()` checks email against `ADMIN_EMAILS` list (hello@talkmate.com.au + `process.env.ADMIN_EMAIL`).
+- **Admin gate:** `requireAdmin()` checks email against the super-admin allowlist (hello@talkmate.com.au + comma-split `process.env.ADMIN_EMAIL` + comma-split `process.env.INTERNAL_ALERT_EMAIL`).
 - **RLS bypass:** All server-side DB operations use `createAdminClient()` with service role key — `createClient` from `@supabase/supabase-js` direct, NOT `createServerClient` from `@supabase/ssr`.
 - **Stripe:** Live keys. EmbeddedCheckout for onboarding (step 9). Billing portal for plan changes. Webhooks verify signature.
 - **Vapi:** Agents provisioned per client. Webhook receives call events, triggers scoring, SMS, booking creation.

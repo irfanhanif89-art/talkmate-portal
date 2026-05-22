@@ -1,7 +1,6 @@
 import { requireAdmin } from '@/lib/admin-auth'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/server'
-import AdminPagePlaceholder from '@/components/admin/admin-page-placeholder'
 import LockedPreview from '@/components/portal/locked-preview'
 import CommandLockedDemo from '@/components/portal/command-locked-demo'
 
@@ -65,12 +64,7 @@ export default async function AdminCommandSettingsPage({
     )
   }
 
-  return (
-    <AdminPagePlaceholder
-      clientId={clientId}
-      pageLabel="Command Centre"
-      clientPath="/settings/command"
-      description="The client's Telegram-driven Command Centre status and history. For setup or token rotation, use the client view."
-    />
-  )
+  // Session 30 — eligible (towing + Growth/Pro) clients land directly
+  // in the client portal Settings via magic-link impersonation.
+  redirect(`/api/admin/clients/${clientId}/impersonate?redirect=1&next=/settings`)
 }

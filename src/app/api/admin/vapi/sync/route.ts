@@ -321,7 +321,7 @@ export async function POST(req: Request) {
   }
 
   if (!agent.serverUrl) {
-    patchBody.serverUrl = appUrl + '/api/webhooks/vapi'
+    patchBody.serverUrl = appUrl + '/api/vapi/functions'
     fieldsUpdated.push('serverUrl')
   }
   if (!agent.serverUrlSecret && webhookSecret) {
