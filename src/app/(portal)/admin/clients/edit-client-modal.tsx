@@ -465,7 +465,10 @@ function DetailsTab({
             onChange={v => setForm(f => ({ ...f, account_status: v as AdminBusiness['account_status'] }))}
             options={[
               { value: 'pending', label: 'Pending' },
+              { value: 'pending_payment', label: 'Pending payment' },
+              { value: 'trial', label: 'Trial' },
               { value: 'active', label: 'Active' },
+              { value: 'expired', label: 'Expired' },
               { value: 'suspended', label: 'Suspended' },
               { value: 'cancelled', label: 'Cancelled' },
             ]}
@@ -895,9 +898,16 @@ function BillingTab({ business, onUpdate }: { business: AdminBusiness; onUpdate:
   const [paymentLinkBusy, setPaymentLinkBusy] = useState(false)
   const [override, setOverride] = useState(business.billing_override_note ?? '')
   const [manualDate, setManualDate] = useState(business.manual_next_billing_date ?? '')
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>(business.billing_cycle ?? 'monthly')
+  const [setupFeeWaived, setSetupFeeWaived] = useState<boolean>(business.setup_fee_waived ?? false)
+  const [setupFeeAmount, setSetupFeeAmount] = useState<string>(
+    business.setup_fee_amount != null ? String(business.setup_fee_amount) : '',
+  )
   const [savingOverride, setSavingOverride] = useState(false)
+  const [savingBilling, setSavingBilling] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [billingSavedAt, setBillingSavedAt] = useState<string | null>(null)
 
   async function generateLink() {
     setPaymentLinkBusy(true); setErr(null)
@@ -938,6 +948,37 @@ function BillingTab({ business, onUpdate }: { business: AdminBusiness; onUpdate:
     }
   }
 
+  async function saveBilling() {
+    setSavingBilling(true); setErr(null)
+    try {
+      const amount = setupFeeAmount.trim() === '' ? 0 : Number(setupFeeAmount)
+      if (Number.isNaN(amount) || amount < 0) {
+        throw new Error('Setup fee amount must be a non-negative number')
+      }
+      const res = await fetch(`/api/admin/clients/${business.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_cycle: billingCycle,
+          setup_fee_waived: setupFeeWaived,
+          setup_fee_amount: amount,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'Failed')
+      onUpdate({
+        billing_cycle: billingCycle,
+        setup_fee_waived: setupFeeWaived,
+        setup_fee_amount: amount,
+      })
+      setBillingSavedAt(new Date().toLocaleTimeString('en-AU'))
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setSavingBilling(false)
+    }
+  }
+
   const ownerFirstName = (business.name.split(' ')[0] ?? 'there').replace(/[^a-zA-Z]/g, '') || 'there'
   const smsTemplate = paymentLink
     ? `Hi ${ownerFirstName}, here's your TalkMate payment link to get started: ${paymentLink}\n\nOnce payment is done everything goes live automatically. Any questions give me a call. — Irfan`
@@ -971,6 +1012,38 @@ function BillingTab({ business, onUpdate }: { business: AdminBusiness; onUpdate:
       <div style={{ background: '#071829', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)', padding: 14, marginBottom: 14 }}>
         <pre style={{ margin: 0, fontSize: 12, color: 'white', whiteSpace: 'pre-wrap' as const, fontFamily: 'monospace', lineHeight: 1.5, marginBottom: 10 }}>{smsTemplate}</pre>
         <CopyBtn text={smsTemplate} disabled={!paymentLink} />
+      </div>
+
+      <h4 style={subSection}>Billing cycle &amp; setup fee</h4>
+      <Grid>
+        <Field label="Billing cycle">
+          <Select
+            value={billingCycle}
+            onChange={v => setBillingCycle(v as 'monthly' | 'annual')}
+            options={[
+              { value: 'monthly', label: 'Monthly' },
+              { value: 'annual', label: 'Annual' },
+            ]}
+          />
+        </Field>
+        <Field label="Setup fee amount (AUD)">
+          <Input value={setupFeeAmount} onChange={setSetupFeeAmount} placeholder="e.g. 299" type="number" />
+        </Field>
+      </Grid>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, color: 'white', fontSize: 13, cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={setupFeeWaived}
+          onChange={e => setSetupFeeWaived(e.target.checked)}
+          style={{ width: 16, height: 16, accentColor: '#E8622A' }}
+        />
+        Setup fee waived
+      </label>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+        <span style={{ fontSize: 12, color: '#22C55E' }}>{billingSavedAt ? `Saved ${billingSavedAt}` : ''}</span>
+        <button onClick={saveBilling} disabled={savingBilling} style={primary(savingBilling)}>
+          {savingBilling ? 'Saving…' : 'Save billing'}
+        </button>
       </div>
 
       <h4 style={subSection}>Billing override</h4>

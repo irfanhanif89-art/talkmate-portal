@@ -143,47 +143,11 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
   // Mark onboarding complete
   await supabase.from('onboarding_responses').update({ completed_at: new Date().toISOString() }).eq('business_id', business.id)
 
-  // Send welcome email
-  try {
-    await getResend()?.emails.send({
-      from: 'Talkmate <hello@talkmate.com.au>',
-      to: user.email!,
-      subject: `🎉 You're live on Talkmate — ${business.name}`,
-      html: `
-        <div style="font-family:Outfit,sans-serif;max-width:600px;margin:0 auto;background:#061322;color:#F2F6FB;padding:40px;border-radius:16px;">
-          <div style="text-align:center;margin-bottom:32px">
-            <div style="display:inline-flex;align-items:center;gap:12px;">
-              <div style="width:48px;height:48px;background:#E8622A;border-radius:12px;display:inline-flex;align-items:center;justify-content:center">
-                <span style="color:white;font-size:24px;font-weight:900">T</span>
-              </div>
-              <span style="font-size:28px;font-weight:800;letter-spacing:-2px;color:white">talk</span><span style="font-size:28px;font-weight:300;letter-spacing:4px;color:#4A9FE8">mate</span>
-            </div>
-          </div>
-          <h1 style="color:white;font-size:28px;margin-bottom:16px">You're live! 🎉</h1>
-          <p style="color:#7BAED4;font-size:16px;line-height:1.6;margin-bottom:24px">
-            <strong style="color:white">${business.name}</strong> is now connected to Talkmate. Your AI agent is ready to answer calls 24/7.
-          </p>
-          ${twilioNumber ? `<div style="background:#0A1E38;border:1px solid rgba(232,98,42,0.3);border-radius:12px;padding:24px;margin-bottom:24px">
-            <p style="color:#4A7FBB;font-size:13px;margin-bottom:4px">YOUR TALKMATE NUMBER</p>
-            <p style="color:white;font-size:28px;font-weight:800;margin-bottom:8px;letter-spacing:1px">${twilioNumber}</p>
-            <p style="color:rgba(255,255,255,0.5);font-size:13px;margin:0">Forward your existing business number to this number to go live.</p>
-          </div>` : ''}
-          <div style="background:#0A1E38;border-radius:12px;padding:24px;margin-bottom:24px">
-            <p style="color:#4A7FBB;font-size:13px;margin-bottom:8px">NEXT STEPS</p>
-            <ul style="color:#F2F6FB;line-height:2">
-              <li>Forward your business number to <strong>${twilioNumber || 'your TalkMate number (see dashboard)'}</strong></li>
-              <li>Make a test call to hear your AI agent</li>
-              <li>Check your dashboard for live call data</li>
-            </ul>
-          </div>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="display:inline-block;background:#E8622A;color:white;padding:14px 32px;border-radius:8px;font-weight:700;text-decoration:none">
-            Go to Dashboard →
-          </a>
-          <p style="color:#4A7FBB;font-size:13px;margin-top:32px">Questions? Reply to this email or chat with us at hello@talkmate.com.au</p>
-        </div>
-      `,
-    })
-  } catch {}
+  // Session 30 — the "You're live" welcome email used to fire here, but
+  // onboarding completion only means the form is filled out. The real
+  // go-live moment is when an admin approves the agent and Twilio
+  // provisioning succeeds, so the welcome email now fires from
+  // /api/admin/approve-agent (non-override path only).
 
   // Notify Irfan (admin). ADMIN_EMAIL or INTERNAL_ALERT_EMAIL must be set in Vercel.
   const adminEmail = process.env.ADMIN_EMAIL || process.env.INTERNAL_ALERT_EMAIL

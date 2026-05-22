@@ -1,7 +1,6 @@
 import { requireAdmin } from '@/lib/admin-auth'
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/server'
-import AdminPagePlaceholder from '@/components/admin/admin-page-placeholder'
 import LockedPreview from '@/components/portal/locked-preview'
 import DispatchLockedDemo from '@/components/portal/dispatch-locked-demo'
 
@@ -48,12 +47,9 @@ export default async function AdminDispatchPage({
     )
   }
 
-  return (
-    <AdminPagePlaceholder
-      clientId={clientId}
-      pageLabel="Dispatch"
-      clientPath="/dispatch"
-      description="The Dispatch board for this client. Driver/job state updates flow through the live websocket -- use the client view to interact with jobs."
-    />
-  )
+  // Session 30 — non-towing or Pro towing clients land directly in the
+  // client portal via magic-link impersonation. The dispatch board is
+  // live + websocket-driven, so an inline admin view would diverge from
+  // what the client sees; punching through avoids that drift.
+  redirect(`/api/admin/clients/${clientId}/impersonate?redirect=1&next=/dashboard`)
 }

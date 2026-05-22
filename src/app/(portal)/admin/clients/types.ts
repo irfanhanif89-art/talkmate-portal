@@ -9,7 +9,7 @@ export interface AdminBusiness {
   abn: string | null
   industry: string | null
   plan: string | null
-  account_status: 'trial' | 'active' | 'pending' | 'expired' | 'suspended' | 'cancelled' | null
+  account_status: 'trial' | 'active' | 'pending' | 'pending_payment' | 'expired' | 'suspended' | 'cancelled' | null
   onboarded_by: 'self' | 'admin' | 'partner' | null
   // Session 6 — trial mode lifecycle
   trial_start_date: string | null

@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handle(req: NextRequest, params: Promise<{ id: string }>) {
   const auth = await requireAdmin()
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
@@ -20,8 +20,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ ok: false, error: 'Client owner has no email on file' }, { status: 400 })
   }
 
-  // Magic link lands the admin on /dashboard. The dashboard banner shows
-  // "admin view — impersonating X" because the URL carries ?impersonate=1.
+  // Magic link lands the admin on /dashboard (or whichever `next` path the
+  // caller specified). The dashboard banner shows "admin view —
+  // impersonating X" because the URL carries ?impersonate=1.
   // Generate a magic link and return the raw hashed_token.
   // We use verifyOtp(token_hash) on the client side — this avoids the PKCE
   // code_verifier problem that breaks exchangeCodeForSession for admin-minted links.
@@ -38,8 +39,22 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     note: `Admin impersonation session started by ${auth.user.email}.`,
   })
 
-  const next = encodeURIComponent(`/dashboard?impersonate=1&biz=${business.id}`)
+  // Session 30 — admin sub-pages (bookings/callbacks/contacts/etc.) can
+  // pass ?next=/path so the impersonation lands directly on that screen
+  // inside the client portal, not always on /dashboard.
+  const nextPath = req.nextUrl.searchParams.get('next') ?? '/dashboard'
+  const sep = nextPath.includes('?') ? '&' : '?'
+  const next = encodeURIComponent(`${nextPath}${sep}impersonate=1&biz=${business.id}`)
   const viewAsUrl = `https://app.talkmate.com.au/admin/view-as?token=${encodeURIComponent(data.properties.hashed_token)}&next=${next}`
+
+  // Session 30 — ?redirect=1 turns this endpoint into a 302 instead of a
+  // JSON payload. Used by the admin stub pages so a single click on
+  // "Open client bookings" in the admin shell takes us straight through
+  // the magic-link flow into the client portal.
+  const wantsRedirect = req.nextUrl.searchParams.get('redirect') === '1'
+  if (wantsRedirect) {
+    return NextResponse.redirect(viewAsUrl)
+  }
 
   return NextResponse.json({
     ok: true,
@@ -47,4 +62,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     business_name: business.name,
     business_id: business.id,
   })
+}
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return handle(req, params)
+}
+
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return handle(req, params)
 }

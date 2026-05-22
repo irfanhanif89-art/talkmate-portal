@@ -4,6 +4,7 @@ import {
   sendSMS,
   templateBookingReceived,
   templateDispatcherNotification,
+  templateOwnerBookingNotification,
 } from '@/lib/sms'
 
 // The endpoint Vapi calls mid-conversation to get real-time data and
@@ -612,6 +613,38 @@ async function createBooking(
         clientId, bookingId: booking.id, reason: dispatcherSms.reason, error: dispatcherSms.error,
       })
     }
+  }
+
+  // Session 30 — owner booking notification. Separate from the dispatcher
+  // confirmation loop: this fires whenever notifications_config.alert_owner
+  // is on and an owner_number is set. Both live clients currently have
+  // alert_owner=null so this is a no-op for them until they enable it.
+  const alertOwner = notifConfig?.alert_owner === true
+  const ownerNumber = notifConfig?.owner_number as string | undefined
+
+  if (alertOwner && ownerNumber) {
+    const scheduled = booking.scheduled_start ? new Date(booking.scheduled_start) : null
+    const scheduledDisplay = scheduled
+      ? scheduled.toLocaleString('en-AU', {
+          weekday: 'short', day: 'numeric', month: 'short',
+          hour: '2-digit', minute: '2-digit',
+        })
+      : 'time TBC'
+
+    await sendSMS({
+      to: ownerNumber,
+      message: templateOwnerBookingNotification({
+        callerName: booking.caller_name ?? 'Customer',
+        truckType: booking.truck_type ?? 'job',
+        scheduledDisplay,
+        pickupAddress: booking.pickup_address ?? '',
+        dropoffAddress: booking.dropoff_address ?? '',
+        confirmationRef,
+      }),
+      clientId,
+      smsType: 'owner_booking_notification',
+      bookingId: booking.id,
+    })
   }
 
   // Caller-facing "received" SMS. Same gate as before

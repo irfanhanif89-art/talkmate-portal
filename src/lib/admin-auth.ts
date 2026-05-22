@@ -9,12 +9,15 @@ export async function requireAdmin() {
   if (!user) return { ok: false as const, status: 401, error: 'Unauthorized' }
 
   const { data: userProfile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  // Super-admin allowlist. Set ADMIN_EMAIL in Vercel env to add a personal
-  // super-admin. INTERNAL_ALERT_EMAIL kept for backwards compatibility.
-  const isSuperAdmin =
-    user.email === process.env.INTERNAL_ALERT_EMAIL ||
-    user.email === process.env.ADMIN_EMAIL ||
-    user.email === 'hello@talkmate.com.au'
+  // Super-admin allowlist. ADMIN_EMAIL and INTERNAL_ALERT_EMAIL are both
+  // comma-separated so multiple super-admins can be added without code change.
+  const allowList = [
+    ...(process.env.ADMIN_EMAIL ?? '').split(','),
+    ...(process.env.INTERNAL_ALERT_EMAIL ?? '').split(','),
+    'hello@talkmate.com.au',
+  ].map(s => s.trim().toLowerCase()).filter(Boolean)
+
+  const isSuperAdmin = !!user.email && allowList.includes(user.email.toLowerCase())
 
   if (userProfile?.role !== 'admin' && !isSuperAdmin) {
     return { ok: false as const, status: 403, error: 'Admin only' }

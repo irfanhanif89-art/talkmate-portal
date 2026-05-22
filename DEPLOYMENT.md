@@ -6,6 +6,45 @@
 
 ---
 
+## SESSION 30 — Operational Fixes Bundle (2026-05-22)
+
+### Branch
+`feature/session-30-fixes` (from `dev`)
+
+### What ships
+1. **Sync routes write the correct `serverUrl`.** `/api/vapi/sync` and `/api/admin/vapi/sync` now point newly-stamped assistants at `/api/vapi/functions` (the live function endpoint), not the legacy `/api/webhooks/vapi`.
+2. **One-shot backfill cron** at `/api/cron/backfill-server-url` walks every active/trial/pending/pending_payment business with a `vapi_agent_id`, reads the assistant from Vapi, and PATCHes `serverUrl` if it doesn't match. Idempotent — re-runs as `skipped`.
+3. **Calls page no longer hangs on "Loading…"** when no Supabase user is present (sets `loading=false` in the early return).
+4. **Comma-separated `ADMIN_EMAIL` / `INTERNAL_ALERT_EMAIL`** in the super-admin allowlist. Both env vars now `.split(',').map(trim+lower)`.
+5. **Dollar-sign validator exception** for known plan prices (`$299`, `$499`, `$799` + 10× annual variants) — these no longer surface `DOLLAR_SIGN_IN_PROMPT` against pricing copy in agent prompts.
+6. **Admin PATCH whitelist expanded:** all 7 valid `account_status` values (`active`, `pending`, `pending_payment`, `trial`, `expired`, `suspended`, `cancelled`) + new fields `billing_cycle`, `setup_fee_waived`, `setup_fee_amount`. Edit modal exposes them in a new "Billing cycle & setup fee" section on the Billing tab.
+7. **SMS infrastructure-failure Telegram alerts.** `sendSMS` fires `sendAdminTelegram` on `twilio_error` / `config_missing` / `invalid_phone` (the three reasons that indicate something is broken, not a business-rule rejection). Plan-rule rejections (`plan_starter`, `plan_quota`) stay silent.
+8. **Owner booking notification.** New SMS type `owner_booking_notification` + template + call site in `createBooking`. Gated on `notifications_config.alert_owner === true` + `owner_number`. Bypasses plan quota (operational alert).
+9. **Welcome email moved to approve-agent.** Removed from `/api/onboarding/complete` (premature — agent wasn't live yet). Now fires from `/api/admin/approve-agent` after Twilio provisioning succeeds, **only when `failingChecks.length === 0`** (no override path).
+10. **Impersonation route redirect mode.** `/api/admin/clients/[id]/impersonate?redirect=1&next=/path` now 302s to the magic-link view-as URL instead of returning JSON. 7 admin stub pages (bookings, callbacks, contacts, dispatch fallback, settings, settings/command fallback, settings/security) now redirect through impersonation into the real client portal pages.
+
+### Migration 045
+`045_session30_fixes.sql` — drops + re-creates `sms_log_sms_type_check` with 22 types (21 existing + `owner_booking_notification`).
+
+### vercel.json
+Adds the daily backfill cron: `{ "path": "/api/cron/backfill-server-url", "schedule": "0 12 * * *" }`.
+
+### Cron cleanup (Session 31)
+`/api/cron/backfill-server-url` is idempotent. After two consecutive runs return `fixed: 0`, **remove from `vercel.json` and delete the route in Session 31** — it has done its job.
+
+### Env vars (no new ones)
+- `ADMIN_EMAIL` / `INTERNAL_ALERT_EMAIL` now accept comma-separated lists. Existing single-email values continue to work.
+
+### Behaviour summary
+- Both live clients have `notifications_config.alert_owner = null` — owner SMS is silently skipped for them until they opt in.
+- Twilio failures, missing config, or unparseable phone numbers now ping the admin Telegram chat in real time.
+- Admin stubs (e.g. `/admin/clients/<id>/portal/bookings`) take Irfan straight into the client's actual `/bookings` page via magic link.
+
+### Build status
+`npm run build` — clean. `npx tsc --noEmit` — exit 0.
+
+---
+
 ## SESSION 23 — Contractor Agreement Flow (2026-05-20)
 
 End-to-end contractor onboarding lifecycle: admin invites a sales contractor,

@@ -309,7 +309,11 @@ export function validateAgentConfig(
         break // one critical per prompt is enough — surface the first match
       }
     }
-    const dollarMatch = DOLLAR_PATTERN.exec(prompt)
+    // Strip known plan prices ($299, $499, $799 and 10× variants from agent
+    // pricing copy) before checking — these are intentional and should not
+    // surface as a critical issue.
+    const promptForDollarCheck = prompt.replace(/\$(299|499|799|2990|4990|7990)\b/g, '')
+    const dollarMatch = DOLLAR_PATTERN.exec(promptForDollarCheck)
     if (dollarMatch) {
       issues.push(makeIssue('DOLLAR_SIGN_IN_PROMPT', promptField, dollarMatch[0], 'spelled-out amount, e.g. "two hundred dollars"'))
     }

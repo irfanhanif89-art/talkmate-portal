@@ -322,7 +322,7 @@ export default function CallsPage() {
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) { setLoading(false); return }
       // The column on `businesses` is `phone_number`, not `phone`. Asking
       // for a non-existent column makes Supabase return `null` data and
       // the `.single()` errors — `biz` is null, this function early-returns,

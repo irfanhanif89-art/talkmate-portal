@@ -142,8 +142,11 @@ export async function POST(req: NextRequest) {
     ...(twilioNumber ? { phone_number: twilioNumber } : {}),
   }).eq('id', businessId)
 
-  // Send welcome email to client with their number
-  if (owner?.email) {
+  // Send welcome email to client with their number.
+  // Session 30 — only fire on the clean (non-override) path. If we
+  // got here via ?override=true the checklist had failing items and
+  // we shouldn't tell the client they're live until those are sorted.
+  if (owner?.email && failingChecks.length === 0) {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },

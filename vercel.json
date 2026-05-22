@@ -22,6 +22,7 @@
     { "path": "/api/cron/daily-quality-digest", "schedule": "30 22 * * *" },
     { "path": "/api/cron/agent-health-check", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/clear-eligible-commissions", "schedule": "30 23 * * *" },
-    { "path": "/api/cron/expire-pending-payments", "schedule": "45 22 * * *" }
+    { "path": "/api/cron/expire-pending-payments", "schedule": "45 22 * * *" },
+    { "path": "/api/cron/backfill-server-url", "schedule": "0 12 * * *" }
   ]
 }
