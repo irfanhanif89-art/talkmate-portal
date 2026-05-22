@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-05-22
 **Last session:** 29
-**Main SHA:** (pending merge)
+**Main SHA:** 7508b4b
 **Next migration number:** 045
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
@@ -39,8 +39,8 @@
 | 25 | 2026 | feature/session-25-unified-rep-lifecycle | — | 040 | Unified rep lifecycle — contractor → sales_rep provisioning, portal access |
 | 26 | 2026-05-21 | feature/fix-contractor-signature-panel | 9674bd1 | 041 | Contractor signature panel — ABN mandatory, hard-fail upload, clawback, resend invite, Telegram alerts |
 | 27 | 2026-05-22 | feature/session-27-revenue-fixes | e612c9b | 042 | Revenue fixes — Stripe real payment, /wl-preview public, SMS type constraint, clawback enforcement, sales rep add lead, hardcoded secrets removed |
-| 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | (pending) | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
-| 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | (pending) | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
+| 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | da63120 | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
+| 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | 7508b4b | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
 
 ---
 
