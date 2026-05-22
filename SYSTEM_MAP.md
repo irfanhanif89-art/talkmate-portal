@@ -1,7 +1,7 @@
 # TalkMate Portal — System Map
 
 **Last updated:** 2026-05-22
-**Last session:** 30
+**Last session:** 31
 **Main SHA:** (pending merge)
 **Next migration number:** 046
 **Repo:** irfanhanif89-art/talkmate-portal
@@ -42,6 +42,7 @@
 | 28 | 2026-05-22 | feature/session-28-vapi-lifecycle | (pending) | 043 | Vapi lifecycle + call intelligence resilience — mandatory VAPI_WEBHOOK_SECRET, legacy business_id trust fixed, error-call retry widened to 7d, agent config standard restructured (required/requiredForBookings/requiredForQuoting), shared vapi-tool-defs module, plan-aware validator, onboarding builds validator-clean agents, approve-agent gated on go-live checklist |
 | 29 | 2026-05-22 | feature/session-29-sms-confirmation-loop | (pending) | 044 | Hayden SMS confirmation loop — caller "received" SMS + dispatcher YES/NO loop on +61 480 847 945, /api/twilio/sms-reply with manual HMAC-SHA1, 15-min dispatcher reminder, new bookings columns (confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone), declined status, 5 new SMS types |
 | 30 | 2026-05-22 | feature/session-30-fixes | (pending) | 045 | Session 30 fixes — sync routes write `/api/vapi/functions` (not `/api/webhooks/vapi`), one-shot `/api/cron/backfill-server-url` cron to repair existing assistants, calls page loading fix, comma-separated ADMIN_EMAIL allowlist, dollar-sign validator exception for plan prices ($299/$499/$799 + 10× annual variants), admin PATCH whitelist expanded (7 account_status values + billing_cycle/setup_fee_waived/setup_fee_amount) + edit modal billing section, SMS failure Telegram alerts (twilio_error/config_missing/invalid_phone only), owner booking notification SMS type + template + createBooking call site, welcome email moved from onboarding/complete → admin/approve-agent (non-override path only), impersonate route gains `?redirect=1` + `?next=` modes, 7 admin stub pages collapsed into impersonation redirects |
+| 31 | 2026-05-22 | feature/session-31-bookings-cleanup | (pending) | — | Bookings cleanup — backfill cron retired (`/api/cron/backfill-server-url` + vercel.json entry deleted; both live Vapi agents verified by Donna), legacy Stripe routes deleted (`/api/stripe/checkout`, `/api/stripe/create-checkout-session` — zero callers), bookings UI rewritten to modern schema (scheduled_start/truck_type/description/pickup_address/dropoff_address/confirmation_ref/sms_confirmation_sent), route line + REF badge added, ConfirmModal date fixed, New Booking modal posts to existing `/api/portal/bookings` |
 
 ---
 
@@ -116,7 +117,6 @@
 | /api/cron/call-forward-check | `0 23 * * *` | 09:00 AEST | Call forwarding check |
 | /api/cron/trial-reminders | `15 23 * * *` | 09:15 AEST | Trial reminder emails |
 | /api/cron/clear-eligible-commissions | `30 23 * * *` | 09:30 AEST | Clear commissions past clawback |
-| /api/cron/backfill-server-url | `0 12 * * *` | 22:00 AEST | Session 30 — one-shot serverUrl backfill on Vapi assistants. Idempotent: after two consecutive `fixed: 0` runs, remove from `vercel.json` and delete the route (Session 31). |
 
 ---
 
@@ -226,9 +226,7 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H8** — Vapi lifecycle issues (agent not deprovisioned on cancel/trial-end) — separate from the Session 28 H8 governance gate
 - **H9** — SMS/bookings data integrity issues
 - **H10** — Stripe `customer.subscription.updated` not handled
-- **H11** — Legacy checkout routes (`/api/stripe/checkout`, `/api/stripe/create-checkout-session`) not cleaned up
 - **H12–H15** — Vapi agent health alerts (note: Session 28 reused the H8–H15 labels for its own four parts; the original audit items here remain)
-- **H19, H20** — Remaining bookings/legacy page schema issues
 - **H29, H32** — Remaining deferred audit items
 
 ### Closed in Session 28
@@ -246,8 +244,13 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H31** — Impersonation route gains `?redirect=1` + `?next=` modes. 7 admin stub pages now redirect through impersonation into the real client portal pages.
 - **H33** — Calls page no longer hangs on "Loading…" for logged-out users (sets loading=false in the early-return).
 
-### Follow-on cleanup (Session 31)
-- Remove `/api/cron/backfill-server-url` from `vercel.json` and delete the route after two consecutive `fixed: 0` runs confirm all assistants are repaired.
+### Closed in Session 31
+- **H11** — Legacy Stripe checkout routes (`/api/stripe/checkout`, `/api/stripe/create-checkout-session`) deleted after grep confirmed zero in-repo callers. Embedded checkout + billing portal cover all current flows.
+- **H19, H20** — Bookings page schema modernized to read `scheduled_start`, `truck_type`, `description`, `pickup_address`, `dropoff_address`, `confirmation_ref`, `sms_confirmation_sent`. Legacy fields kept as optional fallbacks; pickup → dropoff route line + REF badge + New Booking modal added.
+- **Backfill cron** — `/api/cron/backfill-server-url` route + `vercel.json` entry removed (both live Vapi agents verified by Donna to have the correct `serverUrl`).
+
+### Follow-on cleanup (Session 32)
+- Drop legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) once a backfill migration has copied any remaining values into the modern columns. UI already handles their absence via the optional-fallback schema landed in Session 31.
 
 ### Infrastructure
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used
