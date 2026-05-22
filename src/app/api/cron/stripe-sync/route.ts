@@ -16,44 +16,58 @@ export async function GET(req: Request) {
   const stats = { reviewed: 0, activated: 0, planFixed: 0, errors: [] as string[] }
 
   try {
-    const subs = await stripe.subscriptions.list({ status: 'active', limit: 100 })
-    for (const sub of subs.data) {
-      stats.reviewed++
-      try {
-        const customerId = sub.customer as string
-        const { data: business } = await supabase.from('businesses').select('id, plan, onboarding_completed').eq('stripe_customer_id', customerId).maybeSingle()
-        if (!business) continue
+    let startingAfter: string | undefined = undefined
+    let pageCount = 0
 
-        // Has a sub row?
-        const { data: existingSub } = await supabase.from('subscriptions').select('id, status, plan').eq('stripe_subscription_id', sub.id).maybeSingle()
-        if (!existingSub) {
-          await supabase.from('subscriptions').insert({
-            business_id: business.id,
-            stripe_subscription_id: sub.id,
-            stripe_customer_id: customerId,
-            plan: planFromStripePriceNickname(sub.items.data[0]?.price.nickname),
-            status: sub.status,
-            current_period_end: new Date((sub as unknown as { current_period_end: number }).current_period_end * 1000).toISOString(),
-          })
-          stats.activated++
-          await sendInternalAlert(supabase, {
-            type: 'stripe_sync_mismatch',
-            businessId: business.id,
-            severity: 'warning',
-            message: `Auto-activated subscription for business ${business.id} (webhook missed)`,
-          })
-        }
+    do {
+      const page = await stripe.subscriptions.list({
+        status: 'active',
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      })
 
-        // Reconcile plan name
-        const planFromStripe = planFromStripePriceNickname(sub.items.data[0]?.price.nickname)
-        if (planFromStripe && planFromStripe !== business.plan) {
-          await supabase.from('businesses').update({ plan: planFromStripe }).eq('id', business.id)
-          stats.planFixed++
+      for (const sub of page.data) {
+        stats.reviewed++
+        try {
+          const customerId = sub.customer as string
+          const { data: business } = await supabase.from('businesses').select('id, plan, onboarding_completed').eq('stripe_customer_id', customerId).maybeSingle()
+          if (!business) continue
+
+          // Has a sub row?
+          const { data: existingSub } = await supabase.from('subscriptions').select('id, status, plan').eq('stripe_subscription_id', sub.id).maybeSingle()
+          if (!existingSub) {
+            await supabase.from('subscriptions').insert({
+              business_id: business.id,
+              stripe_subscription_id: sub.id,
+              stripe_customer_id: customerId,
+              plan: planFromStripePriceNickname(sub.items.data[0]?.price.nickname),
+              status: sub.status,
+              current_period_end: new Date((sub as unknown as { current_period_end: number }).current_period_end * 1000).toISOString(),
+            })
+            stats.activated++
+            await sendInternalAlert(supabase, {
+              type: 'stripe_sync_mismatch',
+              businessId: business.id,
+              severity: 'warning',
+              message: `Auto-activated subscription for business ${business.id} (webhook missed)`,
+            })
+          }
+
+          // Reconcile plan name
+          const planFromStripe = planFromStripePriceNickname(sub.items.data[0]?.price.nickname)
+          if (planFromStripe && planFromStripe !== business.plan) {
+            await supabase.from('businesses').update({ plan: planFromStripe }).eq('id', business.id)
+            stats.planFixed++
+          }
+        } catch (e) {
+          stats.errors.push(`${sub.id}: ${(e as Error).message}`)
         }
-      } catch (e) {
-        stats.errors.push(`${sub.id}: ${(e as Error).message}`)
       }
-    }
+
+      startingAfter = page.has_more ? page.data[page.data.length - 1].id : undefined
+      pageCount++
+      if (pageCount > 50) break  // safety cap: max 5000 subs
+    } while (startingAfter)
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }

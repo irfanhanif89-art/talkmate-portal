@@ -5,13 +5,14 @@ import { sendSMS, templateCancellation } from '@/lib/sms'
 // Allowed PATCH fields. The scheduler UI uses this endpoint for status
 // changes, reschedule, mark complete, cancellation reason, etc.
 const ALLOWED_FIELDS = new Set([
-  'status', 'caller_name', 'caller_phone', 'booking_type',
-  'service_requested', 'preferred_date', 'preferred_time', 'notes',
+  'status', 'caller_name', 'caller_phone',
   'description', 'pickup_address', 'pickup_contact_name', 'pickup_contact_phone',
   'dropoff_address', 'dropoff_contact_name', 'dropoff_contact_phone',
   'truck_type', 'rate_type', 'driver_id', 'estimated_value',
   'scheduled_start', 'scheduled_end', 'actual_start', 'actual_end',
   'no_show', 'cancellation_reason',
+  // Removed: booking_type, service_requested, preferred_date, preferred_time, notes (Session 33)
+  // sms_confirmation_sent intentionally omitted — add only if admin override needed
 ])
 
 export async function PATCH(

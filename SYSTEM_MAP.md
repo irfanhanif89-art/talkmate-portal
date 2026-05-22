@@ -1,9 +1,9 @@
 # TalkMate Portal — System Map
 
-**Last updated:** 2026-05-22
-**Last session:** 32
-**Main SHA:** ee54889
-**Next migration number:** 046
+**Last updated:** 2026-05-23
+**Last session:** 33
+**Main SHA:** (pending — update after push)
+**Next migration number:** 047
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
@@ -44,6 +44,7 @@
 | 30 | 2026-05-22 | feature/session-30-fixes | d987bdc | 045 | Session 30 fixes — sync routes write `/api/vapi/functions` (not `/api/webhooks/vapi`), one-shot `/api/cron/backfill-server-url` cron to repair existing assistants, calls page loading fix, comma-separated ADMIN_EMAIL allowlist, dollar-sign validator exception for plan prices ($299/$499/$799 + 10× annual variants), admin PATCH whitelist expanded (7 account_status values + billing_cycle/setup_fee_waived/setup_fee_amount) + edit modal billing section, SMS failure Telegram alerts (twilio_error/config_missing/invalid_phone only), owner booking notification SMS type + template + createBooking call site, welcome email moved from onboarding/complete → admin/approve-agent (non-override path only), impersonate route gains `?redirect=1` + `?next=` modes, 7 admin stub pages collapsed into impersonation redirects |
 | 31 | 2026-05-22 | feature/session-31-bookings-cleanup | 2ea89fb | — | Bookings cleanup — backfill cron retired (`/api/cron/backfill-server-url` + vercel.json entry deleted; both live Vapi agents verified by Donna), legacy Stripe routes deleted (`/api/stripe/checkout`, `/api/stripe/create-checkout-session` — zero callers), bookings UI rewritten to modern schema (scheduled_start/truck_type/description/pickup_address/dropoff_address/confirmation_ref/sms_confirmation_sent), route line + REF badge added, ConfirmModal date fixed, New Booking modal posts to existing `/api/portal/bookings` |
 | 32 | 2026-05-22 | feature/session-32-dashboard-fixes | b1a08f1 | — | Dashboard fixes bundle — M34 nurture column added to `LEAD_STATUS_COLUMNS`, M5 dashboard label corrected to "Calls missed this month", M8 missed-call filter rewritten (dashboard query now selects `intelligence_status`; counts only `outcome === 'Missed'` OR null-outcome calls with terminal scored status `IN ('resolved','review','critical')` AND duration < 5s — pending/error are excluded), L5 annual ROI uses `biz.billing_cycle` for years × annual-price ($2990/$4990/$7990), M35 `commissionPaidEmailHtml` template + send on `/api/admin/commissions/[id]` pay action (rep + business via existing JOIN — no separate `businesses` query), M6 mailto Help link added to sidebar (rendered as `<a>` not `<Link>`), L1 hardcoded `+$6.20` and `$85` estimates centralised into `src/lib/dashboard-defaults.ts` |
+| 33 | 2026-05-23 | feature/session-33-bookings-cleanup | a7dc649 | 046 | Bookings cleanup atomic unit — 5 files updated to drop legacy column references (`command-executor.ts` viewBookings now selects `truck_type/description/scheduled_start`; `admin-feature-tabs.tsx` `AdminBooking` interface modernised + display blocks use `truck_type ?? description` and `scheduled_start` formatted; admin and portal PATCH `ALLOWED_FIELDS` whitelists strip the 5 legacy fields while keeping `actual_start/actual_end/no_show/cancellation_reason`; `bookings-view.tsx` `Booking` interface drops 6 legacy optional fields, `formatScheduled()` simplified to `(booking: Booking)` with single `scheduled_start` branch, fallback chains and `ConfirmModal` cleaned up), Migration 046 drops 6 legacy bookings columns (`confirmation_sms_sent/booking_type/service_requested/preferred_date/preferred_time/notes`) with `DROP COLUMN IF EXISTS`, idempotent backfills + 4 pre-migration check SQL comments for Donna, Stripe pagination fix in `/api/cron/stripe-sync` (do/while loop on `starting_after` with 50-page safety cap = 5000 subs max) |
 
 ---
 
@@ -88,6 +89,7 @@
 | 043 | 043_session28_fixes.sql | calls.intelligence_retry_count; partial index on (intelligence_status, created_at) WHERE status IN ('pending','error') |
 | 044 | 044_sms_confirmation_loop.sql | bookings 'declined' status; sms_log adds dispatcher_job_notification/booking_received/booking_confirmed/booking_declined/dispatcher_reminder; bookings.confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone; unique index on confirmation_ref; partial index for pending dispatcher sweep |
 | 045 | 045_session30_fixes.sql | sms_log CHECK constraint extended with `owner_booking_notification` (22 total types) |
+| 046 | 046_drop_legacy_bookings_columns.sql | Drop 6 legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) with idempotent backfill and 4 pre-migration safety checks documented in comments for Donna |
 
 ---
 
@@ -259,10 +261,12 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **M6** — Help link added to portal sidebar — `<a href="mailto:hello@talkmate.com.au?subject=TalkMate%20Portal%20Help">`, `HelpCircle` icon, rendered outside the section loop because mailto cannot use Next.js `<Link>`. Never highlights as active.
 - **L1** — Hardcoded estimates centralised. `src/lib/dashboard-defaults.ts` exports `INDUSTRY_AVG_UPSELL_PER_CALL` (6.20) and `INDUSTRY_AVG_CALL_VALUE` (85). Five literal occurrences replaced across dashboard-client / dashboard page / billing page.
 
-### Follow-on cleanup (Session 33)
-- Drop legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) once a backfill migration has copied any remaining values into the modern columns. UI already handles their absence via the optional-fallback schema landed in Session 31.
-- **Proxima demo** — partnership demo deferred pending scope.
-- **L7** — Stripe pagination uses default page size; not a problem at current scale, revisit when invoice/payment lists outgrow one page.
+### Closed in Session 33
+- **Legacy bookings columns dropped.** Migration 046 drops `confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, and `notes` after backfilling `sms_confirmation_sent` and `description` idempotently. Five code files (`command-executor.ts`, `admin-feature-tabs.tsx`, both bookings PATCH route handlers, `bookings-view.tsx`) updated in the same commit so the migration is safe to apply — no live reader of the legacy columns remains. Pre-migration checks documented as SQL comments for Donna.
+- **L7 — Stripe pagination.** `/api/cron/stripe-sync` now paginates with `starting_after`. Safety cap at 50 pages = 5,000 subscriptions per run.
+
+### Deferred
+- **Proxima demo** — partnership demo deferred pending timeline.
 
 ### Infrastructure
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used
