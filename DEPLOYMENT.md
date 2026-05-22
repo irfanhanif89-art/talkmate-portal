@@ -6,6 +6,55 @@
 
 ---
 
+## SESSION 33 — Bookings Cleanup + Stripe Pagination (2026-05-23)
+
+### Branch
+`feature/session-33-bookings-cleanup` (from `dev`)
+
+### What ships
+1. **Legacy bookings column references removed (5 files, atomic with Migration 046).**
+   - `src/lib/command-executor.ts` — `viewBookings()` selects `caller_name, truck_type, description, scheduled_start, status, created_at` and formats `scheduled_start` via `toLocaleString('en-AU')`. Display uses `truck_type.replace(/_/g, ' ')` (lowercase acceptable for Telegram admin command — `formatTruckLabel()` in `bookings-view.tsx` does the title-cased version for UI).
+   - `src/app/(portal)/admin/clients/admin-feature-tabs.tsx` — `AdminBooking` interface drops `service_requested`, `preferred_date`, `preferred_time` and adds `truck_type`, `description`, `scheduled_start`. Both display blocks (pending + other) show `truck_type ?? description ?? '—'`; the pending row's date now formats `scheduled_start` only when present (no `'Not scheduled'` fallback — matches the existing conditional-render pattern). GET list route in `src/app/api/admin/businesses/[id]/bookings/route.ts` uses `select('*')` — no change needed; Postgres simply omits the dropped columns.
+   - `src/app/api/admin/businesses/[id]/bookings/[bookingId]/route.ts` — `ALLOWED_FIELDS` whitelist no longer accepts `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`. `actual_start`, `actual_end`, `no_show`, `cancellation_reason` retained (would otherwise break mark-complete, no-show flow, and cancellation reason capture). `sms_confirmation_sent` intentionally omitted from admin whitelist.
+   - `src/app/api/portal/bookings/[id]/route.ts` — Same `ALLOWED_FIELDS` cleanup as the admin route.
+   - `src/app/(portal)/bookings/bookings-view.tsx` — `Booking` interface drops the six legacy optional fields. `formatScheduled()` signature changed from `Pick<Booking, 'scheduled_start' | 'preferred_date' | 'preferred_time'>` to `(booking: Booking)` (the Pick would have failed compilation after the field removals). Single `scheduled_start` branch; returns `'Time TBC'` if null. `truckLabel` drops the `service_requested`/`booking_type` fallbacks (now `formatTruckLabel(b.truck_type) ?? '—'`). `hasNotesAction` checks `description` only. `ConfirmModal` time fallback preserved as `'the time discussed'` — no `null` render. `NotesModal` reads `description` only.
+
+2. **Migration 046 — drop legacy bookings columns.**
+   - File: `supabase/migrations/046_drop_legacy_bookings_columns.sql`.
+   - Backfills `sms_confirmation_sent` from `confirmation_sms_sent` and `description` from `notes` (both idempotent — only update rows missing the modern value).
+   - Drops six columns with `DROP COLUMN IF EXISTS` in a single `ALTER TABLE` (idempotent, safe to re-run): `confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`.
+   - **Pre-migration safety checks (documented as SQL comments for Donna):**
+     1. `confirmation_sms_sent = true AND sms_confirmation_sent IS DISTINCT FROM true` should be 0.
+     2. `preferred_date IS NOT NULL AND scheduled_start IS NULL` should be 0.
+     3. `(service_requested OR booking_type) IS NOT NULL AND truck_type IS NULL AND description IS NULL` should be 0 — includes the `COALESCE` backfill statement to run if non-zero.
+     4. `notes IS NOT NULL AND description IS NULL` should be 0.
+   - For GM Towing and Spectrum Towing (the two live clients) every booking is agent-created post-Session-15 and already populates the modern columns; checks are expected to all return 0.
+
+3. **L7 — Stripe pagination fix.** `src/app/api/cron/stripe-sync/route.ts` now wraps the existing per-subscription loop in a `do { ... } while (startingAfter)` that pages 100 at a time via `starting_after`. Loop body unchanged — verbatim copy into the new structure. Safety cap of `pageCount > 50` stops after 5,000 subscriptions in a single run.
+
+### Migration application order
+
+Parts 1 (code) and 2 (Migration 046) **must ship as a single atomic unit.** The legacy columns are still being read by old code paths; pushing the migration without the code update would 500 the Telegram command `view bookings` and the admin/portal bookings UI. Vercel's deploy pipeline gives the migration roughly 30–60 seconds after the code lands — within that window only a few requests are exposed. Donna applies the migration only **after** the deploy has gone green.
+
+### Donna's run book
+1. Pull `feature/session-33-bookings-cleanup`, verify the build (`npm run build`) — should be clean.
+2. Merge into `dev`, push, wait for the Vercel preview to go green.
+3. Run the four pre-migration SQL checks against production Supabase (each should return `0`).
+4. If any check returns > 0, run the backfill statement in the comment above that check, re-run, confirm `0`.
+5. Apply `046_drop_legacy_bookings_columns.sql` to production via the Supabase SQL editor or `mcp__supabase__apply_migration`. The migration is idempotent (`DROP COLUMN IF EXISTS`) and safe to re-run.
+6. Smoke test: Telegram `/view bookings`, admin client modal Bookings tab, portal `/bookings` page (pending + confirmed + all tabs), create new booking via the New Booking modal, confirm SMS still sends.
+
+### Migrations
+- `046_drop_legacy_bookings_columns.sql`
+
+### Build status
+`npm run build` — clean. Compiled successfully, 146/146 pages generated, 0 TypeScript errors, no new warnings beyond the pre-existing "middleware → proxy" deprecation notice from Next 16.
+
+### Known follow-up
+- Proxima partnership demo still deferred pending timeline.
+
+---
+
 ## SESSION 32 — Dashboard Fixes Bundle (2026-05-22)
 
 ### Branch

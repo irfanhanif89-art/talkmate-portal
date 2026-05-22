@@ -164,7 +164,7 @@ async function viewJobs(
 async function viewBookings(clientId: string, supabase: SupabaseClient): Promise<string> {
   const { data: bookings, error } = await supabase
     .from('bookings')
-    .select('caller_name, service_requested, preferred_date, preferred_time, status, created_at')
+    .select('caller_name, truck_type, description, scheduled_start, status, created_at')
     .eq('client_id', clientId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
@@ -174,8 +174,18 @@ async function viewBookings(clientId: string, supabase: SupabaseClient): Promise
   if (!bookings || bookings.length === 0) return `📅 No pending bookings.`
 
   const list = bookings.map(b => {
-    const when = b.preferred_date ? `${b.preferred_date}${b.preferred_time ? ' ' + b.preferred_time : ''}` : 'TBC'
-    return `• ${b.caller_name ?? 'Unknown'} — ${b.service_requested ?? 'General'} — ${when}`
+    const when = b.scheduled_start
+      ? new Date(b.scheduled_start).toLocaleString('en-AU', {
+          day: 'numeric', month: 'short',
+          hour: '2-digit', minute: '2-digit',
+        })
+      : 'TBC'
+    // Telegram admin command — lowercase via .replace is acceptable here.
+    // For UI use formatTruckLabel() in bookings-view.tsx.
+    const what = b.truck_type
+      ? b.truck_type.replace(/_/g, ' ')
+      : b.description ?? 'General'
+    return `• ${b.caller_name ?? 'Unknown'} — ${what} — ${when} — ${b.status}`
   }).join('\n')
 
   return `📅 ${bookings.length} pending booking${bookings.length === 1 ? '' : 's'}:\n\n${list}`
