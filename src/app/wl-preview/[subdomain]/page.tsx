@@ -119,6 +119,17 @@ export default async function WhiteLabelPreviewPage({ params }: { params: Promis
             {c.support_phone ? ` · ${c.support_phone}` : ''}
           </div>
 
+          {subdomain === 'proxima' && (
+            <div style={{ textAlign: 'center' as const, marginTop: 16 }}>
+              <a
+                href={`/wl-preview/${subdomain}/demo`}
+                style={{ fontSize: 12, color: '#94A3B8', textDecoration: 'none' }}
+              >
+                View partner demo →
+              </a>
+            </div>
+          )}
+
           {!c.hide_talkmate_branding && (
             <div style={{ marginTop: 22, fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center' as const, letterSpacing: '0.05em' }}>
               Powered by TalkMate

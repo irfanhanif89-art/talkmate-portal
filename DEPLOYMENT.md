@@ -6,6 +6,54 @@
 
 ---
 
+## SESSION 34 — Proxima White-Label Partner Demo (2026-05-23)
+
+### Branch
+`feature/session-34-proxima-demo` (from `dev`)
+
+### What ships
+1. **New public route — `/wl-preview/proxima/demo`.** Renders a Proxima-branded partner-portal preview for Monique. Subdomain gate at the top of the page calls `notFound()` for anything other than `proxima`, so `/wl-preview/foo/demo` returns 404 instead of serving Proxima's network masquerading as another partner. The route inherits the existing middleware bypass on `/wl-preview` (Session 27), so it is reachable anonymously.
+2. **Static demo data — `src/lib/wl-demo-data.ts`.** Defines `DemoClient` / `DemoCall` interfaces, the `PROXIMA_DEMO` constant (4 sample sub-clients, 5 sample call rows, partner name + tagline), and `getProximaDemoStats()` which computes totals across all clients. The aggregate intentionally **includes the `setup`-status client** so Monique sees the full network potential ($524/mo royalty across 4 agents) rather than only live-paying agents ($449.25). The file has zero database calls — when TalkMate ships a real partner portal, replace this module with live queries.
+3. **Demo dashboard layout — `src/app/wl-preview/[subdomain]/demo/page.tsx`.** Inline-styled (no Tailwind in `wl-preview` context). Brand tokens locked at the top of the file: navy `#1B4FBB`, dark navy `#0A1E38`, accent orange `#E8622A`, muted text `#94A3B8`. Sections:
+   - **Header** with "P" navy monogram + "Proxima Agent" / "Partner Portal" labels and a green "Live Network" pill.
+   - **Stats row** — CSS Grid with `repeat(auto-fit, minmax(180px, 1fr))` so the four cards reflow to 2 columns on tablet and stack on phone. Card 3 (Your Royalty) renders the value in accent orange — this is the headline metric for Monique.
+   - **Agent cards** — one per `PROXIMA_DEMO.clients`. Live agents show calls / bookings / score / royalty in a `flexWrap: 'wrap'` row so the inner detail line wraps on narrow viewports instead of overflowing. The `setup`-status client (Northside Real Estate) omits the detail row and shows an orange "Setting up" badge instead of the green "Live" badge.
+   - **Recent call activity** — 5 rows with outcome badges (`Booked` green, `Missed` red), score, and relative time.
+   - **Partner earnings projection** — accent-tinted card with the current royalty plus 20-agent (~$2,500/mo) and 100-agent (~$12,500/mo) projections. Three projection cards use CSS Grid (not flex) so they stack vertically on phones.
+4. **Login-page link to the demo.** `src/app/wl-preview/[subdomain]/page.tsx` gains a "View partner demo →" link below the disabled login button, gated on `subdomain === 'proxima'`. Other partners do not see the link. Placed inside the existing login card so it inherits its width and centering, above the Proxima-suppressed "Powered by TalkMate" footer.
+
+### Routes that ship
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/wl-preview/proxima/demo` | none — middleware bypass | Proxima partner portal demo (static data; subdomain-gated 404 for any other slug) |
+
+### Middleware
+No change required. `src/middleware.ts:97-100` already short-circuits any request whose pathname starts with `/wl-preview` before the auth lookup runs.
+
+### Database
+No reads or writes against `bookings`, `calls`, `businesses`, or any client-data table. The only DB read in this code path is the existing `white_label_configs` lookup on the parent route — unchanged. No new migration.
+
+### Demo URL
+- Production: https://app.talkmate.com.au/wl-preview/proxima/demo
+- Vercel preview: substitute the preview deployment host for the same path.
+
+### Donna's smoke test
+1. Open `/wl-preview/proxima/demo` in an incognito browser. Should load without any login redirect.
+2. Confirm the header reads "Proxima Agent · Partner Portal" with a "P" navy monogram and a green "Live Network" pill.
+3. Confirm "Powered by TalkMate" is **not** shown (`hide_talkmate_branding = true` on the row).
+4. Stat cards: `4 / 3 live`, `$2,096 MRR`, **$524.00/mo royalty in accent orange**, `571 calls`.
+5. Agent cards: Northside Real Estate shows the orange "Setting up" badge and **no detail row**; the other three show calls/bookings/score/royalty.
+6. Open `/wl-preview/foo/demo` — should return a Next.js 404.
+7. Open `/wl-preview/proxima` — login page intact, with a "View partner demo →" link below the disabled button. Click it and verify it routes to the demo.
+
+### Future enhancement (deferred)
+- Click-through from each agent card to a per-client mock detail page (call list, booking calendar, individual call transcripts). Out of scope for the Monique demo, which only needs the network overview.
+
+### Build status
+`npm run build` — clean. Compiled successfully, no TypeScript errors. The new route appears as `ƒ /wl-preview/[subdomain]/demo` alongside the existing `ƒ /wl-preview/[subdomain]`.
+
+---
+
 ## SESSION 33 — Bookings Cleanup + Stripe Pagination (2026-05-23)
 
 ### Branch

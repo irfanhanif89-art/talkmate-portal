@@ -1,8 +1,8 @@
 # TalkMate Portal — System Map
 
 **Last updated:** 2026-05-23
-**Last session:** 33
-**Main SHA:** ccfb9ab
+**Last session:** 34
+**Main SHA:** TBD
 **Next migration number:** 047
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
@@ -45,6 +45,7 @@
 | 31 | 2026-05-22 | feature/session-31-bookings-cleanup | 2ea89fb | — | Bookings cleanup — backfill cron retired (`/api/cron/backfill-server-url` + vercel.json entry deleted; both live Vapi agents verified by Donna), legacy Stripe routes deleted (`/api/stripe/checkout`, `/api/stripe/create-checkout-session` — zero callers), bookings UI rewritten to modern schema (scheduled_start/truck_type/description/pickup_address/dropoff_address/confirmation_ref/sms_confirmation_sent), route line + REF badge added, ConfirmModal date fixed, New Booking modal posts to existing `/api/portal/bookings` |
 | 32 | 2026-05-22 | feature/session-32-dashboard-fixes | b1a08f1 | — | Dashboard fixes bundle — M34 nurture column added to `LEAD_STATUS_COLUMNS`, M5 dashboard label corrected to "Calls missed this month", M8 missed-call filter rewritten (dashboard query now selects `intelligence_status`; counts only `outcome === 'Missed'` OR null-outcome calls with terminal scored status `IN ('resolved','review','critical')` AND duration < 5s — pending/error are excluded), L5 annual ROI uses `biz.billing_cycle` for years × annual-price ($2990/$4990/$7990), M35 `commissionPaidEmailHtml` template + send on `/api/admin/commissions/[id]` pay action (rep + business via existing JOIN — no separate `businesses` query), M6 mailto Help link added to sidebar (rendered as `<a>` not `<Link>`), L1 hardcoded `+$6.20` and `$85` estimates centralised into `src/lib/dashboard-defaults.ts` |
 | 33 | 2026-05-23 | feature/session-33-bookings-cleanup | a7dc649 | 046 | Bookings cleanup atomic unit — 5 files updated to drop legacy column references (`command-executor.ts` viewBookings now selects `truck_type/description/scheduled_start`; `admin-feature-tabs.tsx` `AdminBooking` interface modernised + display blocks use `truck_type ?? description` and `scheduled_start` formatted; admin and portal PATCH `ALLOWED_FIELDS` whitelists strip the 5 legacy fields while keeping `actual_start/actual_end/no_show/cancellation_reason`; `bookings-view.tsx` `Booking` interface drops 6 legacy optional fields, `formatScheduled()` simplified to `(booking: Booking)` with single `scheduled_start` branch, fallback chains and `ConfirmModal` cleaned up), Migration 046 drops 6 legacy bookings columns (`confirmation_sms_sent/booking_type/service_requested/preferred_date/preferred_time/notes`) with `DROP COLUMN IF EXISTS`, idempotent backfills + 4 pre-migration check SQL comments for Donna, Stripe pagination fix in `/api/cron/stripe-sync` (do/while loop on `starting_after` with 50-page safety cap = 5000 subs max) |
+| 34 | 2026-05-23 | feature/session-34-proxima-demo | eecaa4d | — | Proxima white-label partner demo — new public route `/wl-preview/proxima/demo` shows Monique a Proxima-branded partner portal preview. Static hardcoded data only (4 sample agents, 5 sample calls, computed aggregates) in `src/lib/wl-demo-data.ts`; zero DB reads of business/call tables. Subdomain gate via `notFound()` ensures other partners can't accidentally serve Proxima's network. Parent login page (`src/app/wl-preview/[subdomain]/page.tsx`) gets a "View partner demo →" link gated on `subdomain === 'proxima'`. Brand tokens locked to navy `#1B4FBB`, secondary `#0A1E38`, accent `#E8622A`. Middleware bypass (`pathname.startsWith('/wl-preview')`) verified — already present from Session 27. No migration. |
 
 ---
 
@@ -266,7 +267,6 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **L7 — Stripe pagination.** `/api/cron/stripe-sync` now paginates with `starting_after`. Safety cap at 50 pages = 5,000 subscriptions per run.
 
 ### Deferred
-- **Proxima demo** — partnership demo deferred pending timeline.
 
 ### Infrastructure
 - **PDF template** (`/public/templates/contractor-agreement-template.pdf`) not yet uploaded — fallback inline PDF is used
