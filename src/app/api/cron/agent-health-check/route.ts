@@ -126,6 +126,36 @@ export async function GET(req: Request) {
         })
         .eq('id', biz.id)
 
+      // Auto-resolve open config_issue alerts whose issue_code is no
+      // longer detected. Without this, the 2-hour dedup window expires
+      // and the next run re-creates an identical alert row, producing
+      // duplicates indefinitely until an admin clicks Mark Resolved.
+      // Gated on alert_type = 'config_issue' so webhook_gap and
+      // transcript_violation alerts (different lifecycle) are untouched.
+      // Safe vs. transient Vapi failures: the outer loop `continue`s on
+      // a non-OK GET above, so we only reach here when validation ran.
+      const currentIssueCodes = new Set(issues.map(i => i.code))
+      const { data: openAlerts } = await supabase
+        .from('agent_health_alerts')
+        .select('id, issue_code')
+        .eq('business_id', biz.id)
+        .eq('alert_type', 'config_issue')
+        .is('resolved_at', null)
+
+      const toResolve = (openAlerts ?? []).filter(
+        a => a.issue_code && !currentIssueCodes.has(a.issue_code)
+      )
+
+      if (toResolve.length > 0) {
+        await supabase
+          .from('agent_health_alerts')
+          .update({
+            resolved_at: new Date().toISOString(),
+            resolved_by: 'auto:config_issue_no_longer_detected',
+          })
+          .in('id', toResolve.map(a => a.id))
+      }
+
       // Raise / dedupe alerts per issue code.
       for (const issue of issues) {
         const created = await maybeCreateConfigAlert(supabase, biz, issue)
