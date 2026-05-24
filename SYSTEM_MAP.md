@@ -1,9 +1,9 @@
 # TalkMate Portal — System Map
 
-**Last updated:** 2026-05-23
-**Last session:** 34
-**Main SHA:** 597ced6
-**Next migration number:** 047
+**Last updated:** 2026-05-25
+**Last session:** 35
+**Main SHA:** (post-merge SHA — to be updated)
+**Next migration number:** 048
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
@@ -46,7 +46,7 @@
 | 32 | 2026-05-22 | feature/session-32-dashboard-fixes | b1a08f1 | — | Dashboard fixes bundle — M34 nurture column added to `LEAD_STATUS_COLUMNS`, M5 dashboard label corrected to "Calls missed this month", M8 missed-call filter rewritten (dashboard query now selects `intelligence_status`; counts only `outcome === 'Missed'` OR null-outcome calls with terminal scored status `IN ('resolved','review','critical')` AND duration < 5s — pending/error are excluded), L5 annual ROI uses `biz.billing_cycle` for years × annual-price ($2990/$4990/$7990), M35 `commissionPaidEmailHtml` template + send on `/api/admin/commissions/[id]` pay action (rep + business via existing JOIN — no separate `businesses` query), M6 mailto Help link added to sidebar (rendered as `<a>` not `<Link>`), L1 hardcoded `+$6.20` and `$85` estimates centralised into `src/lib/dashboard-defaults.ts` |
 | 33 | 2026-05-23 | feature/session-33-bookings-cleanup | a7dc649 | 046 | Bookings cleanup atomic unit — 5 files updated to drop legacy column references (`command-executor.ts` viewBookings now selects `truck_type/description/scheduled_start`; `admin-feature-tabs.tsx` `AdminBooking` interface modernised + display blocks use `truck_type ?? description` and `scheduled_start` formatted; admin and portal PATCH `ALLOWED_FIELDS` whitelists strip the 5 legacy fields while keeping `actual_start/actual_end/no_show/cancellation_reason`; `bookings-view.tsx` `Booking` interface drops 6 legacy optional fields, `formatScheduled()` simplified to `(booking: Booking)` with single `scheduled_start` branch, fallback chains and `ConfirmModal` cleaned up), Migration 046 drops 6 legacy bookings columns (`confirmation_sms_sent/booking_type/service_requested/preferred_date/preferred_time/notes`) with `DROP COLUMN IF EXISTS`, idempotent backfills + 4 pre-migration check SQL comments for Donna, Stripe pagination fix in `/api/cron/stripe-sync` (do/while loop on `starting_after` with 50-page safety cap = 5000 subs max) |
 | 34 | 2026-05-23 | feature/session-34-proxima-demo | eecaa4d | — | Proxima white-label partner demo — new public route `/wl-preview/proxima/demo` shows Monique a Proxima-branded partner portal preview. Static hardcoded data only (4 sample agents, 5 sample calls, computed aggregates) in `src/lib/wl-demo-data.ts`; zero DB reads of business/call tables. Subdomain gate via `notFound()` ensures other partners can't accidentally serve Proxima's network. Parent login page (`src/app/wl-preview/[subdomain]/page.tsx`) gets a "View partner demo →" link gated on `subdomain === 'proxima'`. Brand tokens locked to navy `#1B4FBB`, secondary `#0A1E38`, accent `#E8622A`. Middleware bypass (`pathname.startsWith('/wl-preview')`) verified — already present from Session 27. No migration. |
-
+| 35 | 2026-05-25 | feature/hotfix-alert-dedup | (pending) | 047 | Hotfix — agent health alert auto-resolve. Diagnosis: existing dedup window (2h on `issue_code`, gated INSERT before SELECT, Telegram fires inside the gate) was working as designed — the spam was caused by nothing ever auto-resolving alerts, so rows aged out of the 2h window and the cron re-inserted identical rows. Diagnostic SQL across 24h showed 9 (business_id, issue_code) pairs duplicated with avg gap ~138 min — confirming window-expiry pattern. Fix: surgical addition to `agent-health-check/route.ts` — after `validateAgentConfig` returns, before the per-issue alert loop, select all open `config_issue` alerts for the business and resolve any whose `issue_code` is no longer in the current issue set (`resolved_by = 'auto:config_issue_no_longer_detected'`). Gated on `alert_type = 'config_issue'` so webhook_gap and transcript_violation lifecycles are untouched. Safe vs Vapi GET failures (outer `continue` skips this block). Migration 047 marks accumulated duplicates as resolved (UPDATE-not-DELETE; keeps most recent open row per pair; 1-hour buffer to avoid racing live cron; `resolved_by = 'session_35_dedup_cleanup'`; idempotent). Rule 1 (insert dedup) and Rule 2 (Telegram inside gate) deliberately untouched — verified already correct in code. Demo agent `fdeef08c-341c-49b5-851a-524c4ab45fee` missing `check_availability` tool is Donna's post-merge task (DEPLOYMENT.md Step 5a). |
 ---
 
 ## Migration Registry
@@ -91,6 +91,7 @@
 | 044 | 044_sms_confirmation_loop.sql | bookings 'declined' status; sms_log adds dispatcher_job_notification/booking_received/booking_confirmed/booking_declined/dispatcher_reminder; bookings.confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone; unique index on confirmation_ref; partial index for pending dispatcher sweep |
 | 045 | 045_session30_fixes.sql | sms_log CHECK constraint extended with `owner_booking_notification` (22 total types) |
 | 046 | 046_drop_legacy_bookings_columns.sql | Drop 6 legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) with idempotent backfill and 4 pre-migration safety checks documented in comments for Donna |
+| 047 | 047_dedupe_health_alerts.sql | One-time cleanup of duplicate unresolved `agent_health_alerts` rows (`alert_type = 'config_issue'` only) that accumulated before the Session 35 auto-resolve fix. For each (business_id, issue_code) pair with multiple unresolved rows, keeps the most recent open row and marks the rest `resolved_at = now(), resolved_by = 'session_35_dedup_cleanup'`. 1-hour buffer prevents racing live cron. Idempotent — `RAISE NOTICE` skip-log on a clean table. |
 
 ---
 
