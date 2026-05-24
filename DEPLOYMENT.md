@@ -6,6 +6,64 @@
 
 ---
 
+## SESSION 35 — Hotfix: Agent Health Alert Auto-Resolve (2026-05-25)
+
+### Branch
+`feature/hotfix-alert-dedup` (from `dev`)
+
+### Diagnosis
+Supabase data on `agent_health_alerts` showed duplicate unresolved `config_issue` rows accumulating across 7 distinct (business_id, issue_code) pairs — 10–11 occurrences per pair over 24 hours with an **average gap of ~138 minutes** (and `MISSING_CHECK_AVAILABILITY` firing 11 critical Telegrams in 24h). The cron's existing 2-hour dedup (`maybeCreateConfigAlert` filtering on `issue_code` + `resolved_at IS NULL` + `created_at >= now() - 2h`) was working as designed; the underlying issue was that **nothing ever auto-resolved alerts** — so once a row aged out of the 2-hour window, the next cron run inserted a fresh row. Manual `Mark resolved` from the admin dashboard was the only stop. Pattern == window-expiry, not real dedup failure.
+
+### What ships
+1. **Auto-resolve in the cron — `src/app/api/cron/agent-health-check/route.ts`.** After validation returns `issues`, before the per-issue alert loop, the cron now selects all open `config_issue` alerts for the business and resolves any whose `issue_code` is not in the current issue set. `resolved_by = 'auto:config_issue_no_longer_detected'`. Gated on `alert_type = 'config_issue'` so `webhook_gap` and `transcript_violation` alerts (which have their own lifecycle) are untouched. Safe vs transient Vapi failures — the outer loop `continue`s on a non-OK GET before reaching this block, so a failed fetch never clears alerts.
+2. **Migration 047 — `supabase/migrations/047_dedupe_health_alerts.sql`.** One-time cleanup of duplicates that accumulated before this fix. For each (business_id, issue_code) pair with multiple unresolved `config_issue` rows, keeps the most recent open row and marks the rest `resolved_at = now(), resolved_by = 'session_35_dedup_cleanup'`. UPDATE-not-DELETE preserves audit trail. 1-hour buffer (`created_at < now() - interval '1 hour'`) prevents racing a live cron run. Idempotent — re-running on a clean table logs `No duplicate unresolved config_issue alerts found, skipping cleanup` via `RAISE NOTICE` and matches zero rows.
+
+### What was deliberately NOT changed
+- Rule 1 (insert dedup on `issue_code` with 2h window) — already correctly in place at `route.ts:307–316`. Replacing it with identical code would be churn.
+- Rule 2 (Telegram inside the dedup gate) — already correctly gated by `if (created)` at `route.ts:132–142`. The diagnostic SQL confirmed: only the one critical issue (`MISSING_CHECK_AVAILABILITY`) fired Telegrams; all warning-severity duplicates fired 0.
+- `src/lib/agent-config-standard.ts`, `src/lib/agent-config-validator.ts` — Session 28 work, untouched.
+- Tool definitions, `ISSUE_DEFINITIONS`, Vapi assistant configs.
+
+### Routes that ship
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/cron/agent-health-check` | CRON_SECRET | Unchanged path; new auto-resolve behaviour |
+
+### Database
+- Migration 047 (cleanup only). No schema change.
+- `agent_health_alerts` table layout (from Migration 039) unchanged; the cron and the admin manual-resolve endpoint were the only writers of `resolved_at` — the cron is now the second auto-writer.
+
+### Verification on preview deploy
+1. **dedup within window (unchanged behaviour):** trigger cron twice within 30 min. Expect 0 new rows on second run for issues that appeared on the first.
+2. **auto-resolve:** with an existing open alert, have Donna PATCH the Vapi assistant to fix the underlying issue. Trigger cron. Verify the row has `resolved_at` set and `resolved_by = 'auto:config_issue_no_longer_detected'`. Trigger again — verify NO new alert is created.
+3. **auto-resolve does not over-resolve:** with multiple open alerts for the same business and different `issue_code` values, fix only one on the Vapi assistant. Trigger cron. Verify only the fixed alert is resolved.
+4. **Vapi failure does not clear alerts:** block `api.vapi.ai` or stub a 500 for one business. Trigger cron. Verify that business's existing open alerts are NOT resolved (outer-loop `continue` skips the issue-processing block).
+
+### Post-merge actions (Donna — separate from this PR)
+
+#### 5a — Demo agent missing `check_availability` tool
+Vapi assistant `fdeef08c-341c-49b5-851a-524c4ab45fee` (cold-call demo agent on business `ad380eb3-a0b5-4566-9107-e0b075ac48e8`) triggers `MISSING_CHECK_AVAILABILITY` on every health pass — this is the single critical issue driving the 11 Telegram alerts in the diagnostic. Donna task, NO CODE CHANGE:
+1. GET the full assistant via Vapi API and save the response as `demo-agent-pre-checkavailability-backup.json`.
+2. Add the `check_availability` tool to the assistant's tools array — tool definition matches GM Towing's; copy from a healthy production agent.
+3. PATCH the assistant with the complete model object (not a partial tools array).
+4. Verify tool count = 6 (was 5).
+5. On next cron run, confirm `MISSING_CHECK_AVAILABILITY` no longer appears for this agent and the corresponding alert row is auto-resolved with `resolved_by = 'auto:config_issue_no_longer_detected'`.
+6. Substitute the `VAPI_WEBHOOK_SECRET` from the env at request time. Do NOT embed the secret in any doc.
+
+#### 5b — Verify the spam is gone
+24 hours after deploy + Donna's demo-agent fix:
+1. Re-run the Step 1.5 diagnostic SQL (in `hotfix-alert-dedup-v3.md`).
+2. Expect zero rows returned.
+3. Spot-check the Telegram channel — no repeat alerts for the same issue.
+
+### Migration 047 idempotency
+Migration 047 is safe to re-run. On a clean table it matches zero rows and the `DO $$` block logs `No duplicate unresolved config_issue alerts found, skipping cleanup` via `RAISE NOTICE`.
+
+### Build status
+`npm run build` — clean. Compiled successfully, no TypeScript errors. `/api/cron/agent-health-check` continues to appear as a `ƒ` (dynamic) route.
+
+---
+
 ## SESSION 34 — Proxima White-Label Partner Demo (2026-05-23)
 
 ### Branch
