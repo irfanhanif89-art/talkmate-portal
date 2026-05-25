@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
-  LogOut, Shield,
+  LogOut, Shield, Upload,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/clients',        label: 'Clients',        icon: Users },
   { href: '/admin/sales-team',     label: 'Sales Team',     icon: TrendingUp },
   { href: '/admin/contractors',    label: 'Contractors',    icon: FileText },
+  { href: '/admin/leads-import',   label: 'Import Leads',   icon: Upload },
   { href: '/admin/sales-scripts',  label: 'Sales Resources',  icon: BookOpen },
   { href: '/admin/sms-failures',   label: 'SMS Failures',   icon: MessageSquareX },
   { href: '/admin/agent-health',   label: 'Agent Health',   icon: Activity },
