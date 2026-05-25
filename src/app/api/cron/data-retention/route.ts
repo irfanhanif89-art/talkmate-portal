@@ -108,10 +108,34 @@ export async function GET(req: Request) {
     })
   }
 
+  // Sessions 36-37 — flat 90-day retention for driver_location_history.
+  // This table grows unboundedly (one row per active-job GPS ping) so
+  // it has its own non-tenant-configurable retention regardless of the
+  // per-business data_retention_days setting. Stays inside DRY RUN
+  // until DRY_RUN_RETENTION=false so a stray run never wipes route
+  // history mid-investigation.
+  const locationCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+  const { count: locationHistoryCount } = await admin
+    .from('driver_location_history')
+    .select('id', { count: 'exact', head: true })
+    .lt('recorded_at', locationCutoff)
+  if (!dryRun && (locationHistoryCount ?? 0) > 0) {
+    const { error: delErr } = await admin
+      .from('driver_location_history')
+      .delete()
+      .lt('recorded_at', locationCutoff)
+    if (delErr) console.error('[data-retention] driver_location_history delete failed', delErr.message)
+  }
+
   return NextResponse.json({
     ok: true,
     dry_run: dryRun,
     businesses_processed: summary.length,
     summary,
+    driver_location_history: {
+      cutoff: locationCutoff,
+      candidate_rows: locationHistoryCount ?? 0,
+      deleted: !dryRun,
+    },
   })
 }
