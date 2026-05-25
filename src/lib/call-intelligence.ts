@@ -1,16 +1,37 @@
 // Session 18 — Call Intelligence
-// Claude AI scoring service. Reads a call transcript, asks Claude to
-// score it as a quality supervisor, and returns a structured result the
-// webhook layer uses to update the calls table and decide whether to
-// fire an owner alert or a caller-recovery SMS.
+// AI scoring service. Reads a call transcript, asks an LLM to score it
+// as a quality supervisor, and returns a structured result the webhook
+// layer uses to update the calls table and decide whether to fire an
+// owner alert or a caller-recovery SMS.
+//
+// Hotfix (2026-05-25): dual-provider — Anthropic and xAI (Grok). The
+// active provider is selected by the SCORING_PROVIDER env var, defaulting
+// to 'anthropic'. The system prompt and user prompt are identical between
+// providers so back-test deltas reflect model quality, not prompt drift.
 //
 // Scoring is always async and isolated: callers must catch their own
 // errors. A scoring failure must never block call save.
 
+import { grokJson, GrokError } from './grok'
+
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
 
-export const INTELLIGENCE_MODEL = 'claude-sonnet-4-6'
+export type ScoringProvider = 'anthropic' | 'xai'
+
+export function getScoringProvider(): ScoringProvider {
+  const raw = (process.env.SCORING_PROVIDER ?? 'anthropic').toLowerCase()
+  return raw === 'xai' ? 'xai' : 'anthropic'
+}
+
+export const INTELLIGENCE_MODEL_ANTHROPIC = 'claude-sonnet-4-6'
+export const INTELLIGENCE_MODEL_XAI = 'grok-4.20-0309-non-reasoning'
+
+// Backwards-compatible export — points at whichever provider is active
+// at module load. Existing readers (call_intelligence_log.model) record
+// the model that actually ran.
+export const INTELLIGENCE_MODEL =
+  getScoringProvider() === 'xai' ? INTELLIGENCE_MODEL_XAI : INTELLIGENCE_MODEL_ANTHROPIC
 
 export type IntelligenceStatus = 'resolved' | 'review' | 'critical'
 
@@ -343,16 +364,26 @@ function coerceResult(parsed: unknown, hadSms: boolean): CallIntelligenceResult 
   }
 }
 
-// Calls the Anthropic Messages API. Throws on any non-2xx or malformed
-// response — the caller is responsible for catching and logging.
+// Dispatch entry point. Selects provider based on SCORING_PROVIDER env
+// var. Throws on any non-2xx or malformed response — the caller is
+// responsible for catching and logging.
 export async function scoreCall(input: CallIntelligenceInput): Promise<CallIntelligenceResult> {
+  if (getScoringProvider() === 'xai') {
+    return scoreViaGrok(input)
+  }
+  return scoreViaAnthropic(input)
+}
+
+// Anthropic path — Claude Messages API. Exported so the back-test can
+// call it directly without going through the env-var dispatch.
+export async function scoreViaAnthropic(input: CallIntelligenceInput): Promise<CallIntelligenceResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY not configured')
   }
 
   const body = {
-    model: INTELLIGENCE_MODEL,
+    model: INTELLIGENCE_MODEL_ANTHROPIC,
     max_tokens: 800,
     temperature: 0,
     system: SYSTEM_PROMPT,
@@ -393,5 +424,34 @@ export async function scoreCall(input: CallIntelligenceInput): Promise<CallIntel
     ...result,
     prompt_tokens: data.usage?.input_tokens,
     completion_tokens: data.usage?.output_tokens,
+  }
+}
+
+// xAI/Grok path — uses the existing grokJson helper. Exported so the
+// back-test can call it directly.
+export async function scoreViaGrok(input: CallIntelligenceInput): Promise<CallIntelligenceResult> {
+  try {
+    const raw = await grokJson<unknown>(
+      [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      {
+        model: INTELLIGENCE_MODEL_XAI,
+        // Match the Anthropic path's determinism. Grok's chat completions
+        // accept 0; classification benefits from low entropy.
+        temperature: 0,
+        maxTokens: 2048,
+        responseFormat: 'json_object',
+      },
+    )
+    return coerceResult(raw, input.related_sms.length > 0)
+  } catch (e) {
+    if (e instanceof GrokError && e.status === 402) {
+      // Prepaid credits exhausted. xAI account has auto top-ups enabled
+      // but log explicitly in case that ever changes.
+      console.error('[call-intelligence] Grok 402: prepaid credits exhausted')
+    }
+    throw e
   }
 }

@@ -187,7 +187,7 @@ export default async function AdminPage() {
             { name: 'Vapi', ok: !!process.env.VAPI_API_KEY, hint: vapiHealth?.last_status ?? 'unknown' },
             { name: 'Stripe', ok: !!process.env.STRIPE_SECRET_KEY, hint: 'live mode' },
             { name: 'Resend', ok: !!process.env.RESEND_API_KEY, hint: 'email' },
-            { name: 'Grok', ok: !!process.env.GROK_API_KEY, hint: 'command/menu' },
+            { name: 'Grok', ok: !!process.env.GROK_API_KEY, hint: 'call scoring (when SCORING_PROVIDER=xai)' },
             { name: 'Make webhook', ok: !!process.env.MAKE_WEBHOOK_EMAIL_TRIGGER, hint: 'email triggers' },
           ].map(s => (
             <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
