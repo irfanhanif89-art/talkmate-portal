@@ -2,12 +2,15 @@
 
 import { useState } from 'react'
 import ModalShell from './modal-shell'
+import WonConfirmationScreen from './WonConfirmationScreen'
 import { COMMISSION_MAP, type BillingCycle, type CommissionPlan } from '@/lib/commission'
+import { useSalesRep } from '@/context/sales-rep-context'
 import type { LeadRow } from './leads-board'
 
 interface Props {
   leadId: string
   businessName: string
+  contactName?: string | null
   onClose: () => void
   onSuccess: (lead: LeadRow) => void
 }
@@ -18,11 +21,13 @@ function fmt(n: number): string {
   return n % 1 === 0 ? `$${n}` : `$${n.toFixed(2)}`
 }
 
-export default function WonModal({ leadId, businessName, onClose, onSuccess }: Props) {
+export default function WonModal({ leadId, businessName, contactName, onClose, onSuccess }: Props) {
+  const rep = useSalesRep()
   const [plan, setPlan] = useState<CommissionPlan | null>(null)
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [completedLead, setCompletedLead] = useState<LeadRow | null>(null)
 
   const base = plan ? COMMISSION_MAP[plan].base : 0
   const bonus = plan && billingCycle === 'annual' ? COMMISSION_MAP[plan].annual_bonus : 0
@@ -44,7 +49,29 @@ export default function WonModal({ leadId, businessName, onClose, onSuccess }: P
       return
     }
     const body = await res.json()
-    onSuccess(body.lead as LeadRow)
+    setCompletedLead(body.lead as LeadRow)
+    setSubmitting(false)
+  }
+
+  if (completedLead) {
+    return (
+      <ModalShell
+        title=""
+        onClose={() => { onSuccess(completedLead); onClose() }}
+        maxWidth={500}
+      >
+        <WonConfirmationScreen
+          businessName={businessName}
+          contactName={contactName ?? null}
+          repFullName={rep.full_name}
+          repPhone={rep.phone}
+          commissionAmount={base}
+          bonusAmount={bonus}
+          billingCycle={billingCycle}
+          onBack={() => { onSuccess(completedLead); onClose() }}
+        />
+      </ModalShell>
+    )
   }
 
   return (

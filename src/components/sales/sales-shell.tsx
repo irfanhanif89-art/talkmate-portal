@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Menu } from 'lucide-react'
 import SalesNav from './sales-nav'
 import CommissionPolicyModal from './commission-policy-modal'
+import NotificationBell from './NotificationBell'
 import { SalesRepProvider } from '@/context/sales-rep-context'
 import type { SalesRepRow } from '@/lib/sales-auth'
 
@@ -30,30 +31,37 @@ export default function SalesShell({ rep, children }: Props) {
         />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* Mobile topbar */}
+          {/* Top header — visible on every viewport */}
           <div
-            className="sales-topbar-mobile"
             style={{
-              display: 'none',
-              alignItems: 'center', gap: 12,
-              padding: '12px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12,
+              padding: '10px 18px',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               background: '#061322',
             }}
           >
-            <button
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Open menu"
-              style={{
-                background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 8, padding: '8px 10px',
-                color: '#7BAED4', cursor: 'pointer',
-              }}
-            >
-              <Menu size={18} />
-            </button>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>
-              Sales <span style={{ color: '#E8622A' }}>HQ</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                className="sales-topbar-menu"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+                style={{
+                  display: 'none',
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 8, padding: '8px 10px',
+                  color: '#7BAED4', cursor: 'pointer',
+                }}
+              >
+                <Menu size={18} />
+              </button>
+              <div className="sales-topbar-brand" style={{ fontSize: 16, fontWeight: 800, display: 'none' }}>
+                Sales <span style={{ color: '#E8622A' }}>HQ</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <NotificationBell repId={rep.id} />
             </div>
           </div>
 
@@ -65,7 +73,7 @@ export default function SalesShell({ rep, children }: Props) {
 
       <style>{`
         @media (max-width: 1023px) {
-          .sales-topbar-mobile { display: flex !important; }
+          .sales-topbar-menu, .sales-topbar-brand { display: inline-flex !important; }
         }
       `}</style>
     </SalesRepProvider>

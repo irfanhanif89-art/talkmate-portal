@@ -1,12 +1,15 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
-  LayoutDashboard, Trophy, Clock4, DollarSign,
+  LayoutDashboard, Trophy, Clock4, DollarSign, Users2,
   Phone, Mail, Calendar, FileText, Pencil, ArrowRightLeft, Wrench,
 } from 'lucide-react'
 import { formatCurrency, LEAD_STATUS_STYLES, type LeadStatus, daysSince, timeAgo } from '@/lib/sales-format'
+import { COMMISSION_MAP, isCommissionPlan } from '@/lib/commission'
+import { PLAN_PRICE_AUD, isAdminPlan } from '@/lib/admin-auth'
+import MissingEmailBanner from '@/components/sales/MissingEmailBanner'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Dashboard — TalkMate Sales HQ' }
@@ -21,36 +24,70 @@ export default async function SalesDashboardPage() {
   if (!auth.ok) redirect('/')
 
   const supabase = await createClient()
+  const admin = createAdminClient()
   const repId = auth.rep.id
+
+  const startOfMonth = new Date()
+  startOfMonth.setDate(1)
+  startOfMonth.setHours(0, 0, 0, 0)
+  const startOfMonthIso = startOfMonth.toISOString()
 
   const [
     { count: leadsAssigned },
     { count: dealsWon },
     { count: pendingApproval },
-    { data: commissionRows },
+    { data: commissionsLifetime },
+    { data: commissionsThisMonth },
+    { data: openLeads },
     { data: recentLeads },
     { data: activities },
+    activeClientsAgg,
   ] = await Promise.all([
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId),
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId).eq('status', 'won'),
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId).eq('status', 'won').eq('approval_status', 'pending'),
-    supabase.from('commissions').select('commission_amount, status').eq('rep_id', repId).in('status', ['approved', 'paid']),
+    supabase.from('commissions').select('commission_amount, bonus_amount').eq('rep_id', repId).in('status', ['approved', 'paid']),
+    supabase.from('commissions').select('commission_amount, bonus_amount').eq('rep_id', repId).in('status', ['approved', 'paid']).gte('created_at', startOfMonthIso),
+    supabase.from('leads').select('won_plan').eq('assigned_to', repId).not('status', 'in', '(won,lost,bad_lead,nurture)'),
     supabase.from('leads').select('id, business_name, contact_name, status, updated_at').eq('assigned_to', repId).order('updated_at', { ascending: false }).limit(10),
     supabase.from('lead_activities').select('id, activity_type, title, created_at, lead_id, leads(business_name)').eq('rep_id', repId).order('created_at', { ascending: false }).limit(15),
+    admin.from('businesses').select('plan').eq('account_status', 'active'),
   ])
 
-  const commissionsEarned = (commissionRows ?? []).reduce(
-    (sum, c) => sum + Number(c.commission_amount ?? 0), 0
-  )
+  const sumCommissions = (rows: Array<{ commission_amount: number | null; bonus_amount: number | null }> | null) =>
+    (rows ?? []).reduce((sum, c) => sum + Number(c.commission_amount ?? 0) + Number(c.bonus_amount ?? 0), 0)
+
+  const lifetimeEarned = sumCommissions(commissionsLifetime)
+  const thisMonthEarned = sumCommissions(commissionsThisMonth)
+
+  // Pipeline value: sum of would-be commission across every open lead.
+  // Leads without a won_plan default to growth ($349) as a midpoint estimate
+  // so the banner still shows a meaningful number even pre-quote.
+  const pipelineValue = (openLeads ?? []).reduce((sum, l) => {
+    if (l.won_plan && isCommissionPlan(l.won_plan)) {
+      return sum + COMMISSION_MAP[l.won_plan].base
+    }
+    return sum + COMMISSION_MAP.growth.base
+  }, 0)
+
+  let liveClients = 0
+  let platformMrr = 0
+  for (const r of (activeClientsAgg?.data ?? [])) {
+    liveClients += 1
+    if (isAdminPlan(r.plan)) platformMrr += PLAN_PRICE_AUD[r.plan]
+  }
 
   const isFirstLogin = (leadsAssigned ?? 0) === 0 && (activities ?? []).length === 0
+  const showMissingEmail = !auth.rep.notification_email
 
   return (
     <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif' }}>
       <PageHeading
-        title={`G'day ${auth.rep.full_name.split(' ')[0]} 👋`}
+        title={`G'day ${auth.rep.full_name.split(' ')[0]}`}
         sub="Your sales HQ. Track your pipeline, log activity, close deals."
       />
+
+      {showMissingEmail && <MissingEmailBanner />}
 
       {isFirstLogin && (
         <div style={{
@@ -68,6 +105,19 @@ export default async function SalesDashboardPage() {
         </div>
       )}
 
+      {/* Pipeline value banner */}
+      <div style={{
+        padding: '14px 18px', marginBottom: 18, borderRadius: 10,
+        background: 'rgba(232,98,42,0.06)',
+        border: '1px solid rgba(232,98,42,0.2)',
+        fontSize: 14, color: '#E8622A',
+        fontFamily: 'Outfit, sans-serif',
+      }}>
+        {(openLeads?.length ?? 0) === 0
+          ? 'No open deals yet. Add your first lead to get started.'
+          : `Your open pipeline is worth ${formatCurrency(pipelineValue)} if every deal closes.`}
+      </div>
+
       {/* Stat cards */}
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -76,7 +126,20 @@ export default async function SalesDashboardPage() {
         <StatCard icon={LayoutDashboard} label="Leads Assigned"      value={String(leadsAssigned ?? 0)} accent="#4A9FE8" />
         <StatCard icon={Trophy}          label="Deals Won"           value={String(dealsWon ?? 0)}     accent="#22c55e" />
         <StatCard icon={Clock4}          label="Pending Approval"    value={String(pendingApproval ?? 0)} accent="#f59e0b" />
-        <StatCard icon={DollarSign}      label="Commissions Earned"  value={formatCurrency(commissionsEarned)} accent="#E8622A" />
+        <StatCard
+          icon={DollarSign}
+          label="Commissions This Month"
+          value={formatCurrency(thisMonthEarned)}
+          sub={`Lifetime: ${formatCurrency(lifetimeEarned)}`}
+          accent="#E8622A"
+        />
+        <StatCard
+          icon={Users2}
+          label="Live Clients"
+          value={String(liveClients)}
+          sub={`Platform MRR: ${formatCurrency(platformMrr)}`}
+          accent="#22C55E"
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 24 }} className="sales-dashboard-grid">
@@ -182,7 +245,7 @@ function PageHeading({ title, sub }: { title: string; sub: string }) {
   )
 }
 
-function StatCard({ icon: Icon, label, value, accent }: { icon: React.ComponentType<{ size?: number }>; label: string; value: string; accent: string }) {
+function StatCard({ icon: Icon, label, value, sub, accent }: { icon: React.ComponentType<{ size?: number }>; label: string; value: string; sub?: string; accent: string }) {
   return (
     <div style={{
       padding: '18px 20px', borderRadius: 12,
@@ -198,6 +261,9 @@ function StatCard({ icon: Icon, label, value, accent }: { icon: React.ComponentT
       </div>
       <div style={{ fontSize: 12, color: '#7BAED4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
       <div style={{ fontSize: 26, color: 'white', fontWeight: 800, marginTop: 4, letterSpacing: '-0.5px' }}>{value}</div>
+      {sub && (
+        <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 600, marginTop: 4 }}>{sub}</div>
+      )}
     </div>
   )
 }
