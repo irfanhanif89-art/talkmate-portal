@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  LayoutDashboard, GitBranch, UserPlus, Users,
+  LayoutDashboard, GitBranch, UserPlus, Users, Target, PlayCircle,
   DollarSign, FileText, User as UserIcon, LogOut, X,
 } from 'lucide-react'
 
@@ -16,7 +16,9 @@ interface Props {
 
 const NAV_ITEMS = [
   { href: '/sales/dashboard',   label: 'Dashboard',      icon: LayoutDashboard },
+  { href: '/sales/hitlist',     label: 'Hit List',       icon: Target },
   { href: '/sales/leads',       label: 'My Pipeline',    icon: GitBranch },
+  { href: '/sales/demo',        label: 'Demo',           icon: PlayCircle },
   { href: '/sales/onboard',     label: 'Onboard Client', icon: UserPlus },
   { href: '/sales/clients',     label: 'My Clients',     icon: Users },
   { href: '/sales/commissions', label: 'Commissions',    icon: DollarSign },
@@ -31,9 +33,6 @@ export default function SalesNav({ repName, repEmail, isOpenMobile, onCloseMobil
   async function logout() {
     const supabase = createClient()
     await supabase.auth.signOut()
-    // Force a full reload so the supabase client cookies/state are gone
-    // before the next page renders. ?next= sends them back to the sales
-    // dashboard after they re-authenticate.
     window.location.href = '/login?next=/sales/dashboard'
   }
 

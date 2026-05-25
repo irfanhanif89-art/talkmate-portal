@@ -13,6 +13,7 @@ export interface SalesRepRow {
   contract_signed_at: string | null
   onboarded_via: 'manual' | 'contractor_flow' | null
   contractor_id: string | null
+  notification_email: string | null
 }
 
 // Shared sales-rep gate for /api/sales/* routes. Mirrors the
@@ -28,7 +29,7 @@ export async function requireSalesRep(): Promise<
 
   const { data: rep } = await supabase
     .from('sales_reps')
-    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id')
+    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id, notification_email')
     .eq('user_id', user.id)
     .maybeSingle()
 

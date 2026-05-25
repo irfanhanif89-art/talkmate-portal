@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { X, Phone, Mail, Globe, MapPin, Trophy, AlertCircle, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { X, Phone, Mail, Globe, MapPin, Trophy, AlertCircle, Trash2, FileText } from 'lucide-react'
 import { LEAD_STATUS_STYLES, LEAD_STATUS_COLUMNS, LOST_REASONS, formatDateTime, type LeadStatus } from '@/lib/sales-format'
 import type { LeadRow } from './leads-board'
 import LogActivityModal from './log-activity-modal'
@@ -304,6 +305,12 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
             style={primaryBtn}
           >Log Activity</button>
           {!isWon && (
+            <Link
+              href={`/sales/leads/${lead.id}/proposal`}
+              style={{ ...secondaryBtn, color: '#E8622A', borderColor: 'rgba(232,98,42,0.3)', textDecoration: 'none' }}
+            ><FileText size={14} /> Send Proposal</Link>
+          )}
+          {!isWon && (
             <button
               onClick={() => setActiveModal('won')}
               style={{ ...secondaryBtn, color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' }}
@@ -328,6 +335,7 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
         <WonModal
           leadId={lead.id}
           businessName={lead.business_name}
+          contactName={lead.contact_name}
           onClose={() => setActiveModal(null)}
           onSuccess={updated => { setActiveModal(null); onUpdated(updated); loadActivities() }}
         />

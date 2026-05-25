@@ -17,7 +17,7 @@ export default async function AdminClientsPage() {
   if (userProfile?.role !== 'admin' && !isSuperAdmin) redirect('/dashboard')
 
   const admin = createAdminClient()
-  const { data: businesses } = await admin
+  const { data: businessesRaw } = await admin
     .from('businesses')
     .select(`
       id, name, phone_number, address, website, abn, industry, plan,
@@ -33,9 +33,20 @@ export default async function AdminClientsPage() {
       onboarding_complete, onboarding_complete_at,
       sms_used_this_month,
       golive_verified, golive_verified_at,
-      billing_cycle, setup_fee_waived, setup_fee_amount
+      billing_cycle, setup_fee_waived, setup_fee_amount,
+      sales_rep_id,
+      sales_reps:sales_rep_id(full_name)
     `)
     .order('created_at', { ascending: false })
+
+  const businesses = (businessesRaw ?? []).map(b => {
+    const repRel = (b as { sales_reps?: { full_name: string } | { full_name: string }[] | null }).sales_reps
+    const rep = Array.isArray(repRel) ? repRel[0] : repRel
+    return {
+      ...b,
+      sales_rep_name: rep?.full_name ?? null,
+    }
+  })
 
   const { data: partners } = await admin
     .from('businesses')
