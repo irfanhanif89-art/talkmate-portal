@@ -94,7 +94,7 @@ export async function sendRepPortalAccessEmail(opts: {
   name: string
   portalUrl: string
 }) {
-  await sendEmail({
+  return sendEmail({
     to: opts.email,
     subject: 'Your TalkMate Sales HQ access is ready',
     html: repPortalAccessEmailHtml({ repName: opts.name, portalUrl: opts.portalUrl }),

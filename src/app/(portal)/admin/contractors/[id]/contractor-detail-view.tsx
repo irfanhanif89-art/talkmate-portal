@@ -123,6 +123,7 @@ export default function ContractorDetailView({
   }
 
   const canResendInvite = contractor.status === 'invited' || contractor.status === 'agreement_sent'
+  const canResendPortalAccess = contractor.status === 'active' && !!contractor.agreement_signed_at
 
   const resendInvite = async () => {
     setBusy('resend')
@@ -137,6 +138,23 @@ export default function ContractorDetailView({
       }
     } catch {
       showToast('err', 'Could not resend invite')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const resendPortalAccess = async () => {
+    setBusy('portal')
+    try {
+      const res = await fetch(`/api/contractors/${contractor.id}/resend-portal-access`, { method: 'POST' })
+      const json = await res.json()
+      if (!json.ok) {
+        showToast('err', json.error || 'Could not resend portal access email')
+      } else {
+        showToast('ok', `Portal access email sent to ${contractor.email}`)
+      }
+    } catch {
+      showToast('err', 'Could not resend portal access email')
     } finally {
       setBusy(null)
     }
@@ -216,6 +234,17 @@ export default function ContractorDetailView({
               >
                 <Send size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
                 {busy === 'resend' ? 'Resending...' : 'Resend Invite'}
+              </button>
+            )}
+            {canResendPortalAccess && (
+              <button
+                style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}
+                disabled={busy === 'portal'}
+                onClick={resendPortalAccess}
+                title="Re-send the post-signing portal access email"
+              >
+                <Send size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                {busy === 'portal' ? 'Sending...' : 'Resend Portal Access'}
               </button>
             )}
           </div>
