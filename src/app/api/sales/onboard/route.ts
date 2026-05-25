@@ -4,6 +4,25 @@ import { requireSalesRep } from '@/lib/sales-auth'
 import { sendEmail } from '@/lib/resend'
 import { generateTempPassword } from '@/lib/admin-auth'
 import { clientWelcomeEmailHtml } from '@/lib/sales-notify'
+import { findAuthUserByEmail } from '@/lib/find-auth-user'
+import { BUSINESS_TYPE_CONFIG, BUSINESS_TYPE_LABELS, type BusinessType } from '@/lib/business-types'
+
+// Map a free-text industry string (collected by the rep onboarding form)
+// to the BusinessType enum used by Vapi prompt assembly. Tries an
+// exact case-insensitive match against both the enum key (e.g. 'trades')
+// and the long-form label (e.g. 'Trades (Plumber, Electrician, Builder…)').
+// Falls back to 'other' so we never block onboarding on a mapping miss.
+function mapIndustryToBusinessType(industry: string | null): BusinessType {
+  if (!industry) return 'other'
+  const needle = industry.trim().toLowerCase()
+  if (!needle) return 'other'
+  const keys = Object.keys(BUSINESS_TYPE_CONFIG) as BusinessType[]
+  const keyHit = keys.find(k => k.toLowerCase() === needle)
+  if (keyHit) return keyHit
+  const labelHit = keys.find(k => BUSINESS_TYPE_LABELS[k].toLowerCase() === needle)
+  if (labelHit) return labelHit
+  return 'other'
+}
 
 export async function POST(req: Request) {
   const auth = await requireSalesRep()
@@ -50,9 +69,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Lead is missing the won plan' }, { status: 400 })
   }
 
-  // 2. Email duplicate guard.
-  const { data: existing } = await admin.auth.admin.listUsers()
-  const dup = existing?.users?.find(u => u.email?.toLowerCase() === email)
+  // 2. Email duplicate guard. Paginated lookup — the default
+  // listUsers() only returns page 1 of 50, so once auth.users grows
+  // past 50 it falsely passes and createUser later throws 422.
+  const dup = await findAuthUserByEmail(admin, email)
   if (dup) {
     return NextResponse.json({
       ok: false,
@@ -83,6 +103,11 @@ export async function POST(req: Request) {
   const plan = lead.won_plan as 'starter' | 'growth' | 'pro'
   const planCallLimit = plan === 'pro' ? 100000 : plan === 'growth' ? 800 : 300
 
+  // Map the rep-collected free-text industry to the BusinessType enum
+  // so Vapi prompt assembly picks the right vertical pack instead of
+  // always defaulting to the generic 'other' template.
+  const business_type = mapIndustryToBusinessType(industry)
+
   const { data: business, error: bizError } = await admin
     .from('businesses')
     .insert({
@@ -94,7 +119,7 @@ export async function POST(req: Request) {
       industry,
       plan,
       plan_call_limit: planCallLimit,
-      business_type: 'other',
+      business_type,
       owner_user_id: newUserId,
       account_status: 'pending',
       onboarded_by: 'sales_rep',
@@ -131,16 +156,20 @@ export async function POST(req: Request) {
     body: `Business: ${business_name} • Plan: ${plan} • Login: ${email}`,
   })
 
-  // 7. Welcome email (best-effort).
-  await sendEmail({
+  // 7. Welcome email (best-effort, but properly awaited so the
+  // welcome_email_sent flag actually flips before the serverless
+  // function returns).
+  const sendResult = await sendEmail({
     to: email,
     subject: `Welcome to TalkMate, ${first_name} — your AI receptionist is almost live`,
     html: clientWelcomeEmailHtml({ firstName: first_name, plan, loginEmail: email }),
-  }).then(res => {
-    if (res.ok) {
-      admin.from('businesses').update({ welcome_email_sent: true }).eq('id', business.id).then(() => {})
-    }
-  }).catch(() => {})
+  }).catch(err => {
+    console.error('[sales-onboard] welcome email failed', err)
+    return { ok: false } as const
+  })
+  if (sendResult.ok) {
+    await admin.from('businesses').update({ welcome_email_sent: true }).eq('id', business.id)
+  }
 
   return NextResponse.json({
     ok: true,

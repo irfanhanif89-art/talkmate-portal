@@ -26,7 +26,7 @@ async function sendTelegram(message: string): Promise<void> {
 }
 
 const ADMIN_EMAIL = process.env.INTERNAL_ALERT_EMAIL || 'hello@talkmate.com.au'
-const PORTAL_URL = process.env.NEXT_PUBLIC_PORTAL_URL || 'https://app.talkmate.com.au'
+const PORTAL_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
 
 export async function notifyWin(opts: {
   repName: string
@@ -49,7 +49,23 @@ export async function notifyWin(opts: {
       to: ADMIN_EMAIL,
       subject: `New win from ${opts.repName} — approval needed`,
       html: winEmailHtml(opts),
-    }),
+    })
+      .then(res => {
+        if (res && res.ok === false) {
+          console.error('[sales-notify] notifyWin admin email returned not-ok', res.error)
+          // Fall back to Telegram so admin still hears about the failure.
+          sendTelegram(
+            `⚠️ Win admin email failed for ${opts.repName} / ${opts.businessName}. (${res.error ?? 'unknown'})`,
+          )
+        }
+      })
+      .catch(err => {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[sales-notify] notifyWin admin email threw', msg)
+        sendTelegram(
+          `⚠️ Win admin email threw for ${opts.repName} / ${opts.businessName}. (${msg})`,
+        )
+      }),
   ])
 }
 
@@ -89,29 +105,59 @@ export async function notifyAdminAlert(message: string) {
 // Sent to a contractor when an existing auth user is found at signing
 // time (so inviteUserByEmail does not generate the magic-link email).
 // They still need to know their portal is live.
+// Returns the underlying sendEmail result so callers that branch on
+// `{ ok: false }` (e.g. resend-portal-access) keep working; internal
+// failures are also logged + alerted to admin so they are never silent.
 export async function sendRepPortalAccessEmail(opts: {
   email: string
   name: string
   portalUrl: string
 }) {
-  return sendEmail({
-    to: opts.email,
-    subject: 'Your TalkMate Sales HQ access is ready',
-    html: repPortalAccessEmailHtml({ repName: opts.name, portalUrl: opts.portalUrl }),
-  })
+  try {
+    const res = await sendEmail({
+      to: opts.email,
+      subject: 'Your TalkMate Sales HQ access is ready',
+      html: repPortalAccessEmailHtml({ repName: opts.name, portalUrl: opts.portalUrl }),
+    })
+    if (res && (res as { ok?: boolean }).ok === false) {
+      const errMsg = (res as { error?: string }).error ?? 'unknown error'
+      console.error('[sales-notify] sendRepPortalAccessEmail returned not-ok', errMsg)
+      sendTelegram(
+        `⚠️ Portal access email send returned not-ok for ${opts.name} (${opts.email}). (${errMsg})`,
+      )
+    }
+    return res
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[sales-notify] sendRepPortalAccessEmail threw', msg)
+    sendTelegram(
+      `⚠️ Portal access email failed for ${opts.name} (${opts.email}). (${msg})`,
+    )
+    return { ok: false, error: msg } as const
+  }
 }
 
 // Sent to a contractor when their agreement is terminated.
+// Fire-and-forget safe: any send failure is logged + admin-alerted so we
+// never silently fail to notify a terminated contractor.
 export async function sendTerminationEmail(opts: {
   email: string
   name: string
   terminationDate: string
 }) {
-  await sendEmail({
-    to: opts.email,
-    subject: 'Your TalkMate Sales Contractor Agreement has been terminated',
-    html: terminationEmailHtml({ repName: opts.name, terminationDate: opts.terminationDate }),
-  })
+  try {
+    await sendEmail({
+      to: opts.email,
+      subject: 'Your TalkMate Sales Contractor Agreement has been terminated',
+      html: terminationEmailHtml({ repName: opts.name, terminationDate: opts.terminationDate }),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[sales-notify] sendTerminationEmail failed', msg)
+    sendTelegram(
+      `⚠️ Termination email failed for ${opts.name} (${opts.email}). (${msg})`,
+    )
+  }
 }
 
 // =============================================

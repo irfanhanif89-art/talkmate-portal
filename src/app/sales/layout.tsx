@@ -19,7 +19,7 @@ export default async function SalesLayout({ children }: { children: React.ReactN
 
   const { data: rep } = await supabase
     .from('sales_reps')
-    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at')
+    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id')
     .eq('user_id', user.id)
     .maybeSingle()
 
