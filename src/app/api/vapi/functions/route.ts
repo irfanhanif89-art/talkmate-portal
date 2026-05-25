@@ -1391,13 +1391,15 @@ async function checkAvailability(
     return { result: { available: false, reason: 'capacity', message: "We're fully booked at that time. Would you like to be added to the waitlist or try a different time?" } }
   }
 
-  // 4. Towing-only: driver availability check
+  // 4. Towing-only: driver availability check.
+  //    Migration 048 renamed `drivers.active` to `drivers.is_active`
+  //    as part of the Sessions 36-37 dispatcher rework.
   if (industry === 'towing') {
     const { data: drivers } = await supabase
       .from('drivers')
       .select('id')
       .eq('client_id', clientId)
-      .eq('active', true)
+      .eq('is_active', true)
     if (!drivers || drivers.length === 0) {
       return { result: { available: false, reason: 'no_drivers', message: "We don't have a driver available at that time." } }
     }
