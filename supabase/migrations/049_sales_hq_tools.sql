@@ -117,9 +117,16 @@ CREATE POLICY "proposal_tracking_admin_all" ON public.proposal_tracking
 -- Atomic open-count increment for Resend webhook
 -- Returns ZERO rows on no-match (IF FOUND guard prevents NULL row).
 -- ============================================================
+-- search_path is pinned so the SECURITY DEFINER function can't be tricked
+-- into looking at attacker-controlled schemas. EXECUTE is revoked from
+-- anon + authenticated because this function is only meant to be called
+-- by the service role (via the Resend webhook route using createAdminClient).
 CREATE OR REPLACE FUNCTION public.increment_proposal_opens(p_email_id text)
 RETURNS TABLE(was_first_open boolean, rep_id uuid, lead_id uuid)
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   v_was_first boolean;
   v_rep_id uuid;
@@ -136,6 +143,9 @@ BEGIN
     RETURN QUERY SELECT v_was_first, v_rep_id, v_lead_id;
   END IF;
 END $$;
+REVOKE EXECUTE ON FUNCTION public.increment_proposal_opens(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.increment_proposal_opens(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.increment_proposal_opens(text) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.increment_proposal_opens(text) TO service_role;
 
 -- ============================================================

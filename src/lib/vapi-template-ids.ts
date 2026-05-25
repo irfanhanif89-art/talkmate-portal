@@ -28,3 +28,16 @@ export const VAPI_TEMPLATE_IDS: Record<string, string> = {
 export const FORBIDDEN_DEMO_PHONE_IDS = new Set<string>([
   '1b87ecc7-46d7-47f6-bacd-deba6daec770',
 ])
+
+// Assistants the Demo Launcher is allowed to overwrite. Includes the 14
+// industry templates above PLUS Irfan's default "TalkMate Demo" assistant
+// (fdeef08c-...). The launcher's safety guard refuses to PATCH if the
+// phone number's current assistant is NOT in this set — this prevents
+// the launcher from ever clobbering a live client agent that happens to
+// share the env var. The first PATCH succeeds because the default demo
+// assistant is allowlisted here; every subsequent PATCH succeeds because
+// the previously-loaded template is in VAPI_TEMPLATE_IDS.
+export const ALLOWED_CURRENT_ASSISTANTS = new Set<string>([
+  ...Object.values(VAPI_TEMPLATE_IDS),
+  'fdeef08c-341c-49b5-851a-524c4ab45fee', // TalkMate Demo (default)
+])

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { sendAdminTelegram } from '@/lib/notifications'
 import { toSalesIndustrySlug } from '@/lib/industry-slugs'
-import { VAPI_TEMPLATE_IDS, FORBIDDEN_DEMO_PHONE_IDS } from '@/lib/vapi-template-ids'
+import { VAPI_TEMPLATE_IDS, FORBIDDEN_DEMO_PHONE_IDS, ALLOWED_CURRENT_ASSISTANTS } from '@/lib/vapi-template-ids'
 
 const VAPI_BASE = 'https://api.vapi.ai'
 
@@ -41,13 +41,12 @@ export async function POST(req: Request) {
     }
     const phoneData = await getRes.json()
     const currentAssistantId = phoneData?.assistantId as string | undefined
-    const allowedAssistantIds = new Set(Object.values(VAPI_TEMPLATE_IDS))
-    if (currentAssistantId && !allowedAssistantIds.has(currentAssistantId)) {
+    if (currentAssistantId && !ALLOWED_CURRENT_ASSISTANTS.has(currentAssistantId)) {
       await sendAdminTelegram(
-        `Demo phone pointing at non-template assistant (${currentAssistantId}). Refused PATCH.`,
+        `Demo phone pointing at unrecognised assistant (${currentAssistantId}). Refused PATCH.`,
       ).catch(() => {})
       return NextResponse.json(
-        { ok: false, error: 'Demo phone pointing at non-template assistant. Refused PATCH.' },
+        { ok: false, error: 'Demo phone pointing at unrecognised assistant. Refused PATCH.' },
         { status: 500 },
       )
     }
