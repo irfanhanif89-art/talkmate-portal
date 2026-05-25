@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
-  LogOut, Shield, Upload,
+  LogOut, Shield, Upload, Menu, X,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -54,6 +54,8 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
   const router = useRouter()
   const [collapsed, setCollapsed] = useState<boolean>(false)
   const [mounted, setMounted] = useState(false)
+  const [isMobile, setIsMobile] = useState<boolean>(false)
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false)
 
   // Read collapsed preference on first render. We delay this to the
   // client-side effect so the server-rendered HTML always matches the
@@ -65,6 +67,31 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
     } catch {}
     setMounted(true)
   }, [])
+
+  // Track viewport size so we can switch the sidebar between the
+  // desktop docked layout (always visible, can collapse to icons) and
+  // the mobile overlay layout (hidden by default, slides in over the
+  // main content when the hamburger is tapped).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    if (mq.addEventListener) {
+      mq.addEventListener('change', update)
+      return () => mq.removeEventListener('change', update)
+    } else {
+      // Safari < 14 fallback
+      mq.addListener(update)
+      return () => mq.removeListener(update)
+    }
+  }, [])
+
+  // Auto-close the mobile drawer whenever the route changes so tapping
+  // a nav link navigates and dismisses the overlay in one action.
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [pathname])
 
   function toggleCollapsed() {
     setCollapsed(prev => {
@@ -83,7 +110,12 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
     }
   }
 
-  const width = collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH
+  // On mobile the sidebar is always rendered at full width as an
+  // overlay (the collapse-to-icon mode is a desktop affordance only).
+  const width = isMobile ? SIDEBAR_WIDTH : (collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH)
+  // Force the brand+nav to render in expanded form on mobile regardless
+  // of the persisted desktop preference.
+  const effectiveCollapsed = isMobile ? false : collapsed
 
   // Active when pathname matches exactly OR when this is a parent
   // route (pathname starts with href + '/'). The /admin overview link
@@ -97,28 +129,88 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
 
   const initial = (userEmail ?? '?').trim().charAt(0).toUpperCase()
 
+  // Hide hamburger / backdrop / mobile-mode entirely until we've
+  // detected the viewport size on the client. This avoids a flash of
+  // the mobile chrome on desktop during hydration.
+  const showMobileChrome = mounted && isMobile
+
+  const asideStyle: React.CSSProperties = showMobileChrome
+    ? {
+        position: 'fixed',
+        top: 0, left: 0, bottom: 0,
+        width: SIDEBAR_WIDTH,
+        zIndex: 1100,
+        background: '#061322',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex',
+        flexDirection: 'column',
+        transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform 200ms ease',
+        fontFamily: 'Outfit, sans-serif',
+        boxShadow: mobileOpen ? '0 0 24px rgba(0,0,0,0.5)' : 'none',
+      }
+    : {
+        width,
+        flexShrink: 0,
+        background: '#061322',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: 'width 200ms ease',
+        fontFamily: 'Outfit, sans-serif',
+      }
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#061322', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', background: '#061322', overflow: 'hidden', position: 'relative' }}>
+      {/* ── Mobile hamburger (only when drawer is closed) ────── */}
+      {showMobileChrome && !mobileOpen && (
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open navigation menu"
+          style={{
+            position: 'fixed',
+            top: 16, left: 16,
+            zIndex: 1200,
+            width: 40, height: 40,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#061322',
+            border: '1px solid rgba(255,255,255,0.12)',
+            color: '#F1F5F9',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          }}
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
+      {/* ── Mobile backdrop ──────────────────────────────────── */}
+      {showMobileChrome && mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: 1050,
+          }}
+        />
+      )}
+
       <aside
         aria-label="Admin navigation"
-        style={{
-          width,
-          flexShrink: 0,
-          background: '#061322',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 200ms ease',
-          fontFamily: 'Outfit, sans-serif',
-        }}
+        style={asideStyle}
       >
         {/* ── Brand mark ───────────────────────────────────────── */}
         <Link
           href="/admin"
           style={{
             display: 'flex', alignItems: 'center', gap: 10,
-            padding: collapsed ? '18px 0' : '18px 16px',
-            justifyContent: collapsed ? 'center' : 'flex-start',
+            padding: effectiveCollapsed ? '18px 0' : '18px 16px',
+            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
             textDecoration: 'none', color: 'white',
             borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}
@@ -130,8 +222,8 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
           }}>
             <Shield size={16} color="white" />
           </div>
-          {!collapsed && (
-            <div style={{ minWidth: 0 }}>
+          {!effectiveCollapsed && (
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1, color: 'white' }}>
                 Talk<span style={{ fontWeight: 300, color: '#4A9FE8', letterSpacing: '2px' }}>Mate</span>
               </div>
@@ -139,6 +231,25 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
                 Admin
               </div>
             </div>
+          )}
+          {showMobileChrome && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMobileOpen(false) }}
+              aria-label="Close navigation menu"
+              style={{
+                marginLeft: 'auto',
+                width: 32, height: 32,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: '#F1F5F9',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              <X size={16} />
+            </button>
           )}
         </Link>
 
@@ -149,11 +260,11 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
             const active = !item.comingSoon && isActive(item.href)
             const baseStyle: React.CSSProperties = {
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: collapsed ? '11px 0' : '11px 12px',
-              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: effectiveCollapsed ? '11px 0' : '11px 12px',
+              justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
               borderRadius: 8, marginBottom: 2,
               borderLeft: active ? '3px solid #E8622A' : '3px solid transparent',
-              paddingLeft: collapsed ? 0 : (active ? 9 : 12),
+              paddingLeft: effectiveCollapsed ? 0 : (active ? 9 : 12),
               background: active ? 'rgba(232,98,42,0.10)' : 'transparent',
               color: item.comingSoon
                 ? 'rgba(100,116,139,0.5)'
@@ -168,7 +279,7 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
             const content = (
               <>
                 <Icon size={18} />
-                {!collapsed && (
+                {!effectiveCollapsed && (
                   <>
                     <span style={{ flex: 1 }}>{item.label}</span>
                     {item.comingSoon && (
@@ -190,7 +301,7 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
                 <div
                   key={item.href}
                   aria-disabled="true"
-                  title={collapsed ? `${item.label} (coming soon)` : undefined}
+                  title={effectiveCollapsed ? `${item.label} (coming soon)` : undefined}
                   style={baseStyle}
                 >
                   {content}
@@ -201,8 +312,9 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
               <Link
                 key={item.href}
                 href={item.href}
-                title={collapsed ? item.label : undefined}
+                title={effectiveCollapsed ? item.label : undefined}
                 style={baseStyle}
+                onClick={() => { if (showMobileChrome) setMobileOpen(false) }}
                 onMouseEnter={e => {
                   if (!active) (e.currentTarget as HTMLElement).style.color = '#F1F5F9'
                 }}
@@ -219,12 +331,12 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
         {/* ── Bottom: user + logout + collapse toggle ──────────── */}
         <div style={{
           borderTop: '1px solid rgba(255,255,255,0.06)',
-          padding: collapsed ? '10px 0' : '12px 12px',
+          padding: effectiveCollapsed ? '10px 0' : '12px 12px',
           display: 'flex', flexDirection: 'column', gap: 8,
         }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
-            justifyContent: collapsed ? 'center' : 'flex-start',
+            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
           }}>
             <div
               title={userEmail ?? undefined}
@@ -237,7 +349,7 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
             >
               {initial}
             </div>
-            {!collapsed && (
+            {!effectiveCollapsed && (
               <span style={{
                 fontSize: 11, color: '#64748B',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
@@ -249,11 +361,11 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
           </div>
           <button
             onClick={handleLogout}
-            title={collapsed ? 'Log out' : undefined}
+            title={effectiveCollapsed ? 'Log out' : undefined}
             style={{
               display: 'flex', alignItems: 'center', gap: 10,
-              padding: collapsed ? '10px 0' : '8px 10px',
-              justifyContent: collapsed ? 'center' : 'flex-start',
+              padding: effectiveCollapsed ? '10px 0' : '8px 10px',
+              justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
               background: 'transparent', border: '1px solid rgba(255,255,255,0.08)',
               color: '#64748B', borderRadius: 8,
               fontSize: 13, fontWeight: 500, cursor: 'pointer',
@@ -270,25 +382,30 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
             }}
           >
             <LogOut size={15} />
-            {!collapsed && <span>Log out</span>}
+            {!effectiveCollapsed && <span>Log out</span>}
           </button>
-          <button
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              padding: '8px 10px', marginTop: 2,
-              background: 'transparent', border: 'none',
-              color: '#64748B', borderRadius: 8,
-              cursor: 'pointer', fontFamily: 'inherit',
-              transition: 'color 150ms ease',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#F1F5F9' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#64748B' }}
-          >
-            {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
-          </button>
+          {/* Collapse-to-icon toggle is a desktop-only affordance; on
+              mobile the sidebar is a full-width slide-in drawer so a
+              collapse mode would be meaningless. */}
+          {!showMobileChrome && (
+            <button
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '8px 10px', marginTop: 2,
+                background: 'transparent', border: 'none',
+                color: '#64748B', borderRadius: 8,
+                cursor: 'pointer', fontFamily: 'inherit',
+                transition: 'color 150ms ease',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#F1F5F9' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#64748B' }}
+            >
+              {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+            </button>
+          )}
         </div>
       </aside>
 
@@ -298,6 +415,10 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
           background: '#0A1628',
           color: '#F1F5F9',
           fontFamily: 'Outfit, sans-serif',
+          // On mobile the sidebar is a fixed overlay, so main content
+          // should always span the full viewport width (it sits at the
+          // bottom of the flexbox underneath the fixed aside).
+          width: showMobileChrome ? '100%' : undefined,
           // Hide overflow until mounted so the first paint doesn't flash
           // an unstyled state on slow networks.
           visibility: mounted ? 'visible' : 'visible',

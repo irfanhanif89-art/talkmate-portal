@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, FileText, AlertCircle } from 'lucide-react'
+import { CheckCircle2, FileText, AlertCircle, ExternalLink } from 'lucide-react'
 import { formatDateTime } from '@/lib/sales-format'
 
 export interface ContractRow {
@@ -28,6 +28,19 @@ export default function ContractView({ contract, repFullName }: Props) {
   const [typedName, setTypedName] = useState('')
   const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
+
+  // iframe PDF embedding is silently broken on iOS Safari — it renders
+  // a blank white box. On mobile we hide the iframe entirely and show
+  // a prominent "Open contract PDF" button instead.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mql = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mql.matches)
+    update()
+    mql.addEventListener('change', update)
+    return () => mql.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     if (!contract) return
@@ -108,18 +121,38 @@ export default function ContractView({ contract, repFullName }: Props) {
             Loading document…
           </div>
         ) : signedUrl ? (
-          <iframe
-            src={signedUrl}
-            title={contract.document_name}
-            style={{ width: '100%', height: 620, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, background: 'white' }}
-          />
+          isMobile ? (
+            // iOS Safari renders <iframe src=…pdf> as a blank white
+            // box. Show a prominent button instead so reps can open
+            // the contract in the native PDF viewer.
+            <a
+              href={signedUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: '100%', boxSizing: 'border-box',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                padding: '18px 22px', borderRadius: 10, border: 'none',
+                background: '#E8622A', color: 'white', textDecoration: 'none',
+                fontFamily: 'Outfit, sans-serif', fontSize: 15, fontWeight: 700,
+              }}
+            >
+              <ExternalLink size={18} /> Open contract PDF
+            </a>
+          ) : (
+            <iframe
+              src={signedUrl}
+              title={contract.document_name}
+              style={{ width: '100%', height: 620, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, background: 'white' }}
+            />
+          )
         ) : (
           <div style={{ padding: 28, color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 9, textAlign: 'center' }}>
             Could not load the document. Try refreshing — or contact admin if this keeps happening.
           </div>
         )}
 
-        {signedUrl && (
+        {signedUrl && !isMobile && (
           <div style={{ marginTop: 10, textAlign: 'right' }}>
             <a href={signedUrl} target="_blank" rel="noreferrer"
                style={{ fontSize: 12, color: '#4A9FE8', textDecoration: 'none' }}>
