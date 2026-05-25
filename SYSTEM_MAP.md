@@ -47,12 +47,37 @@
 | 33 | 2026-05-23 | feature/session-33-bookings-cleanup | a7dc649 | 046 | Bookings cleanup atomic unit — 5 files updated to drop legacy column references (`command-executor.ts` viewBookings now selects `truck_type/description/scheduled_start`; `admin-feature-tabs.tsx` `AdminBooking` interface modernised + display blocks use `truck_type ?? description` and `scheduled_start` formatted; admin and portal PATCH `ALLOWED_FIELDS` whitelists strip the 5 legacy fields while keeping `actual_start/actual_end/no_show/cancellation_reason`; `bookings-view.tsx` `Booking` interface drops 6 legacy optional fields, `formatScheduled()` simplified to `(booking: Booking)` with single `scheduled_start` branch, fallback chains and `ConfirmModal` cleaned up), Migration 046 drops 6 legacy bookings columns (`confirmation_sms_sent/booking_type/service_requested/preferred_date/preferred_time/notes`) with `DROP COLUMN IF EXISTS`, idempotent backfills + 4 pre-migration check SQL comments for Donna, Stripe pagination fix in `/api/cron/stripe-sync` (do/while loop on `starting_after` with 50-page safety cap = 5000 subs max) |
 | 34 | 2026-05-23 | feature/session-34-proxima-demo | eecaa4d | — | Proxima white-label partner demo — new public route `/wl-preview/proxima/demo` shows Monique a Proxima-branded partner portal preview. Static hardcoded data only (4 sample agents, 5 sample calls, computed aggregates) in `src/lib/wl-demo-data.ts`; zero DB reads of business/call tables. Subdomain gate via `notFound()` ensures other partners can't accidentally serve Proxima's network. Parent login page (`src/app/wl-preview/[subdomain]/page.tsx`) gets a "View partner demo →" link gated on `subdomain === 'proxima'`. Brand tokens locked to navy `#1B4FBB`, secondary `#0A1E38`, accent `#E8622A`. Middleware bypass (`pathname.startsWith('/wl-preview')`) verified — already present from Session 27. No migration. |
 | 35 | 2026-05-25 | feature/hotfix-alert-dedup | b5fe368 | 047 | Hotfix — agent health alert auto-resolve. Diagnosis: existing dedup window (2h on `issue_code`, gated INSERT before SELECT, Telegram fires inside the gate) was working as designed — the spam was caused by nothing ever auto-resolving alerts, so rows aged out of the 2h window and the cron re-inserted identical rows. Diagnostic SQL across 24h showed 9 (business_id, issue_code) pairs duplicated with avg gap ~138 min — confirming window-expiry pattern. Fix: surgical addition to `agent-health-check/route.ts` — after `validateAgentConfig` returns, before the per-issue alert loop, select all open `config_issue` alerts for the business and resolve any whose `issue_code` is no longer in the current issue set (`resolved_by = 'auto:config_issue_no_longer_detected'`). Gated on `alert_type = 'config_issue'` so webhook_gap and transcript_violation lifecycles are untouched. Safe vs Vapi GET failures (outer `continue` skips this block). Migration 047 marks accumulated duplicates as resolved (UPDATE-not-DELETE; keeps most recent open row per pair; 1-hour buffer to avoid racing live cron; `resolved_by = 'session_35_dedup_cleanup'`; idempotent). Rule 1 (insert dedup) and Rule 2 (Telegram inside gate) deliberately untouched — verified already correct in code. Demo agent `fdeef08c-341c-49b5-851a-524c4ab45fee` missing `check_availability` tool is Donna's post-merge task (DEPLOYMENT.md Step 5a). |
+
+---
+
+## Agent Pipeline Infrastructure (installed 2026-05-25)
+
+| File | Location | Purpose |
+|------|----------|---------|
+| CLAUDE.md | `C:\Users\info\talkmate-portal\CLAUDE.md` | Project brain — read by every Claude Code session |
+| MEMORY.md | `C:\Users\info\talkmate-portal\MEMORY.md` | Session history — agents append after every session |
+| builder.md | `.claude/agents/builder.md` | Writes and edits code. Full tools. Sonnet model. |
+| validator.md | `.claude/agents/validator.md` | Read-only code QA. Checks TalkMate rules. No write access. |
+| qa-tester.md | `.claude/agents/qa-tester.md` | Live browser testing via Playwright MCP. No write access. |
+| reviewer.md | `.claude/agents/reviewer.md` | GREEN/YELLOW/RED deployment gate. Opus model. No write access. |
+| build/SKILL.md | `.claude/skills/build/SKILL.md` | Full pipeline skill — builder → validator → QA → reviewer → report |
+| Global CLAUDE.md | `C:\Users\info\.claude\CLAUDE.md` | Default working directory + pipeline hardcoded for all sessions |
+
+### MCP Servers (Claude Desktop)
+| Server | Status | Purpose |
+|--------|--------|---------|
+| playwright | running | Live browser QA testing |
+| github | running | Direct repo read/write — system map updates, file access |
+
+### Build Pipeline Flow
+Every task runs automatically: Builder → Validator → QA Tester (Playwright) → Reviewer → Report to Irfan → Donna deploy prompt on approval.
+
 ---
 
 ## Migration Registry
 
 | # | File | What it does |
-|---|------|--------------|
+|---|------|--------------| 
 | 001 | 001_initial.sql | Initial schema — all 10 core tables |
 | 002 | 002_add_missing_columns.sql | Missing column additions |
 | 003 | 003_add_transcripts.sql | Call transcripts |
@@ -264,7 +289,7 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **L1** — Hardcoded estimates centralised. `src/lib/dashboard-defaults.ts` exports `INDUSTRY_AVG_UPSELL_PER_CALL` (6.20) and `INDUSTRY_AVG_CALL_VALUE` (85). Five literal occurrences replaced across dashboard-client / dashboard page / billing page.
 
 ### Closed in Session 33
-- **Legacy bookings columns dropped.** Migration 046 drops `confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, and `notes` after backfilling `sms_confirmation_sent` and `description` idempotently. Five code files (`command-executor.ts`, `admin-feature-tabs.tsx`, both bookings PATCH route handlers, `bookings-view.tsx`) updated in the same commit so the migration is safe to apply — no live reader of the legacy columns remains. Pre-migration checks documented as SQL comments for Donna.
+- **Legacy bookings columns dropped.** Migration 046 drops `confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, and `notes` after backfilling `sms_confirmation_sent` and `description` idempotently. Five code files updated in the same commit so the migration is safe to apply. Pre-migration checks documented as SQL comments for Donna.
 - **L7 — Stripe pagination.** `/api/cron/stripe-sync` now paginates with `starting_after`. Safety cap at 50 pages = 5,000 subscriptions per run.
 
 ### Deferred
