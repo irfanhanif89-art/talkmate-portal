@@ -24,6 +24,7 @@
     { "path": "/api/cron/clear-eligible-commissions", "schedule": "30 23 * * *" },
     { "path": "/api/cron/expire-pending-payments", "schedule": "45 22 * * *" },
     { "path": "/api/cron/haiku-watcher",     "schedule": "37 * * * *"   },
+    { "path": "/api/cron/process-followups", "schedule": "50 * * * *"   },
     { "path": "/api/cron/dispatch-timeout",  "schedule": "*/5 * * * *"  }
   ]
 }

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import AdminSidebarLayout from '@/components/admin/AdminSidebarLayout'
 
 // Shared chrome for every page under `/admin/*`. Wraps children in
@@ -10,7 +10,6 @@ import AdminSidebarLayout from '@/components/admin/AdminSidebarLayout'
 // Belt-and-braces — Next.js layouts can sometimes render before a
 // parent redirect resolves during hot reload, and we'd rather double-
 // check than briefly leak admin chrome to a logged-out user.
-// Set ADMIN_EMAIL in Vercel environment variables
 const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -24,8 +23,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     if (profile?.role !== 'admin') redirect('/dashboard')
   }
 
+  // Onboarding-queue badge count: leads waiting to be promoted + businesses
+  // mid-onboarding from sales reps. Served fresh on every admin page render.
+  const admin = createAdminClient()
+  const [{ count: pendingLeads }, { count: pendingBiz }] = await Promise.all([
+    admin.from('leads').select('id', { count: 'exact', head: true })
+      .eq('status', 'won').is('business_id', null),
+    admin.from('businesses').select('id', { count: 'exact', head: true })
+      .in('account_status', ['pending', 'pending_payment'])
+      .eq('onboarded_by', 'sales_rep'),
+  ])
+  const pendingOnboardingCount = (pendingLeads ?? 0) + (pendingBiz ?? 0)
+
   return (
-    <AdminSidebarLayout userEmail={user.email ?? null}>
+    <AdminSidebarLayout userEmail={user.email ?? null} pendingOnboardingCount={pendingOnboardingCount}>
       {children}
     </AdminSidebarLayout>
   )

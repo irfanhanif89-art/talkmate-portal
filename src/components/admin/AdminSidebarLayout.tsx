@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
-  LogOut, Shield, Upload, Menu, X,
+  LogOut, Shield, Upload, Menu, X, ClipboardList,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -30,26 +30,33 @@ interface NavItem {
   label: string
   icon: React.ComponentType<{ size?: number }>
   comingSoon?: boolean
+  badgeKey?: 'onboardingPending'
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/admin',                label: 'Overview',      icon: LayoutDashboard },
-  { href: '/admin/clients',        label: 'Clients',        icon: Users },
-  { href: '/admin/sales-team',     label: 'Sales Team',     icon: TrendingUp },
-  { href: '/admin/contractors',    label: 'Contractors',    icon: FileText },
-  { href: '/admin/leads-import',   label: 'Import Leads',   icon: Upload },
-  { href: '/admin/sales-scripts',  label: 'Sales Resources',  icon: BookOpen },
-  { href: '/admin/sms-failures',   label: 'SMS Failures',   icon: MessageSquareX },
-  { href: '/admin/agent-health',   label: 'Agent Health',   icon: Activity },
-  { href: '/admin/settings',       label: 'Settings',       icon: Settings, comingSoon: true },
+  { href: '/admin',                    label: 'Overview',          icon: LayoutDashboard },
+  { href: '/admin/onboarding-queue',   label: 'Onboarding Queue',  icon: ClipboardList, badgeKey: 'onboardingPending' },
+  { href: '/admin/clients',            label: 'Clients',           icon: Users },
+  { href: '/admin/sales-team',         label: 'Sales Team',        icon: TrendingUp },
+  { href: '/admin/contractors',        label: 'Contractors',       icon: FileText },
+  { href: '/admin/leads-import',       label: 'Import Leads',      icon: Upload },
+  { href: '/admin/sales-scripts',      label: 'Sales Resources',   icon: BookOpen },
+  { href: '/admin/sms-failures',       label: 'SMS Failures',      icon: MessageSquareX },
+  { href: '/admin/agent-health',       label: 'Agent Health',      icon: Activity },
+  { href: '/admin/settings',           label: 'Settings',          icon: Settings, comingSoon: true },
 ]
 
 interface Props {
   children: React.ReactNode
   userEmail: string | null
+  pendingOnboardingCount?: number
 }
 
-export default function AdminSidebarLayout({ children, userEmail }: Props) {
+export default function AdminSidebarLayout({ children, userEmail, pendingOnboardingCount = 0 }: Props) {
+  const badges: Record<string, number> = {
+    onboardingPending: pendingOnboardingCount,
+  }
+
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState<boolean>(false)
@@ -276,6 +283,7 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
               fontFamily: 'inherit',
               position: 'relative' as const,
             }
+            const badgeCount = item.badgeKey ? badges[item.badgeKey] ?? 0 : 0
             const content = (
               <>
                 <Icon size={18} />
@@ -292,7 +300,21 @@ export default function AdminSidebarLayout({ children, userEmail }: Props) {
                         Soon
                       </span>
                     )}
+                    {!item.comingSoon && badgeCount > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, padding: '2px 7px',
+                        borderRadius: 99, background: '#E8622A',
+                        color: 'white', minWidth: 20, textAlign: 'center',
+                      }}>{badgeCount}</span>
+                    )}
                   </>
+                )}
+                {effectiveCollapsed && !item.comingSoon && badgeCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: 4, right: 8,
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: '#E8622A',
+                  }} />
                 )}
               </>
             )

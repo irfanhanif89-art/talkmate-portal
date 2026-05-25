@@ -8,6 +8,7 @@ import {
   isCommissionPlan,
 } from '@/lib/commission'
 import { notifyWin } from '@/lib/sales-notify'
+import { sendInternalEmail } from '@/lib/alerts'
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireSalesRep()
@@ -16,8 +17,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const body = (await req.json().catch(() => ({}))) as { plan?: unknown; billing_cycle?: unknown }
   const plan = body.plan
-  // Default to 'monthly' for back-compat with any old client that still
-  // omits billing_cycle.
   const billingCycle = isBillingCycle(body.billing_cycle) ? body.billing_cycle : 'monthly'
   if (!isCommissionPlan(plan)) {
     return NextResponse.json({ ok: false, error: 'plan must be starter, growth, or pro' }, { status: 400 })
@@ -26,7 +25,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const admin = createAdminClient()
   const { data: lead } = await admin
     .from('leads')
-    .select('id, assigned_to, business_name, contact_name, phone, status')
+    .select('id, assigned_to, business_name, contact_name, phone, email, status')
     .eq('id', id)
     .maybeSingle()
 
@@ -37,8 +36,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: 'This deal has already been submitted as won' }, { status: 409 })
   }
 
-  // Commission split: base goes in commission_amount, annual uplift
-  // (if any) goes in bonus_amount. Both come from the server-side map.
   const baseAmount = COMMISSION_MAP[plan].base
   const bonusAmount = billingCycle === 'annual' ? COMMISSION_MAP[plan].annual_bonus : 0
   const totalAmount = baseAmount + bonusAmount
@@ -65,12 +62,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: updateErr?.message ?? 'Could not mark as won' }, { status: 500 })
   }
 
-  // Create the pending commission row. Amounts are server-side from
-  // the COMMISSION_MAP — never trust client input.
-  //
-  // Session 27 (H23) — stamp clawback_period_ends_at = won_at + 14d so the
-  // admin approve gate (in /api/admin/commissions/[id]) can reject premature
-  // approvals. Migration 042 backfills this for every pre-existing row.
   const clawbackEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
   const { error: commErr } = await admin.from('commissions').insert({
     rep_id: auth.rep.id,
@@ -86,7 +77,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: `Commission creation failed: ${commErr.message}` }, { status: 500 })
   }
 
-  // Audit + system activity entries.
   await admin.from('lead_activities').insert([
     {
       lead_id: id,
@@ -107,7 +97,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     },
   ])
 
-  // Fire-and-forget notification (don't block on failures).
+  // Existing notification (Telegram + admin email via Make.com webhook).
+  // Fire-and-forget — failures logged in notifier.
   notifyWin({
     repName: auth.rep.full_name,
     businessName: lead.business_name,
@@ -115,7 +106,46 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     contactPhone: lead.phone,
     plan,
     commissionAmount: totalAmount,
-  }).catch(() => { /* logged in notifier */ })
+  }).catch(() => {})
+
+  // Session 41 additive: rep notification + structured admin email + audit log.
+  await admin.from('rep_notifications').insert({
+    rep_id: auth.rep.id,
+    type: 'commission_updated',
+    lead_id: id,
+    message: `Commission pending for ${lead.business_name}. Awaiting admin onboarding and approval.`,
+  })
+
+  await sendInternalEmail(
+    `New deal closed: ${lead.business_name} (${plan} plan)`,
+    `
+      <h2>New deal closed by ${auth.rep.full_name}</h2>
+      <ul>
+        <li><strong>Business:</strong> ${escapeHtml(lead.business_name)}</li>
+        <li><strong>Plan:</strong> ${plan} (${billingCycle})</li>
+        <li><strong>Contact:</strong> ${escapeHtml(lead.contact_name ?? '—')}</li>
+        <li><strong>Phone:</strong> ${escapeHtml(lead.phone ?? '—')}</li>
+        <li><strong>Email:</strong> ${escapeHtml(lead.email ?? '—')}</li>
+        <li><strong>Pending commission:</strong> $${totalAmount}</li>
+      </ul>
+      <p>This deal is in the Admin Onboarding Queue waiting for setup. Activate the client in the queue to approve commission.</p>
+    `,
+  )
+
+  await admin.from('admin_audit_log').insert({
+    admin_email: auth.user.email ?? 'unknown',
+    action: 'deal_closed_by_rep',
+    business_name: lead.business_name,
+  })
 
   return NextResponse.json({ ok: true, lead: updated })
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, ch => (
+    ch === '&' ? '&amp;' :
+    ch === '<' ? '&lt;'  :
+    ch === '>' ? '&gt;'  :
+    ch === '"' ? '&quot;': '&#39;'
+  ))
 }

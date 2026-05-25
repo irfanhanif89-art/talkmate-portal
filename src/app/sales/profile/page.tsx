@@ -26,7 +26,10 @@ export default async function SalesProfilePage() {
         </p>
       </div>
 
-      <ProfileForm initialPhone={auth.rep.phone ?? ''} />
+      <ProfileForm
+        initialPhone={auth.rep.phone ?? ''}
+        initialNotificationEmail={auth.rep.notification_email ?? ''}
+      />
 
       <div style={{
         marginTop: 22, background: '#0A1E38',

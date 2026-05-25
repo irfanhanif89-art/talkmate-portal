@@ -32,6 +32,12 @@ const ACTION_OPTIONS = [
   'dispatch_toggled', 'dispatch_config_updated',
   'team_member_added', 'team_member_updated', 'team_member_removed',
   'data_retention_purge', 'data_retention_dry_run',
+  // Session 41 — Sales HQ onboarding queue + go-live actions
+  'business_created_from_lead',
+  'deal_closed_by_rep',
+  'commission_approved_on_golive',
+  'client_activated',
+  'welcome_email_resent',
 ]
 
 export default function AuditLogPage() {

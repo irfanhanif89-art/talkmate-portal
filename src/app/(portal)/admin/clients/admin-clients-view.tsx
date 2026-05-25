@@ -251,7 +251,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Status', 'Go-Live', 'Onboarded', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Status', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -259,7 +259,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={12} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={13} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
                   No clients match this filter.
                 </td>
               </tr>
@@ -347,6 +347,7 @@ export default function AdminClientsView({
                   </Link>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4', textTransform: 'capitalize' as const }}>{b.onboarded_by || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{b.sales_rep_name ?? '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{new Date(b.created_at).toLocaleDateString('en-AU')}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <div style={{ display: 'flex', gap: 6 }}>
