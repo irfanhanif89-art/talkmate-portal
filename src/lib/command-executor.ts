@@ -139,7 +139,10 @@ async function viewJobs(
     today.setHours(0, 0, 0, 0)
     query = query.gte('created_at', today.toISOString())
   } else if (filter === 'pending') {
-    query = query.eq('status', 'pending')
+    // Sessions 36-37 — v1 status 'pending' is 'created' in the new
+    // 13-state lifecycle (migration 048). Map the existing command
+    // intent to the new enum so the SMS shortcut keeps working.
+    query = query.eq('status', 'created')
   }
 
   const { data: jobs, error } = await query
@@ -277,11 +280,15 @@ async function assignJob(
     .maybeSingle()
   if (!job) return `❌ Could not find job ${jobNumber}.`
 
+  // Sessions 36-37 — migration 048 renamed drivers.active → is_active,
+  // dispatch_jobs.assigned_driver_id → driver_id, and dispatch_jobs.status
+  // 'assigned' → 'driver_notified' (the new lifecycle's "offered but
+  // awaiting driver response" state).
   const { data: drivers, error: drvErr } = await supabase
     .from('drivers')
     .select('id, name')
     .eq('client_id', clientId)
-    .eq('active', true)
+    .eq('is_active', true)
     .ilike('name', `%${driverName}%`)
   if (drvErr) return `❌ Couldn't look up drivers: ${drvErr.message}`
   if (!drivers || drivers.length === 0) {
@@ -292,9 +299,9 @@ async function assignJob(
   const { error } = await supabase
     .from('dispatch_jobs')
     .update({
-      assigned_driver_id: driver.id,
-      status: 'assigned',
-      assigned_at: new Date().toISOString(),
+      driver_id: driver.id,
+      status: 'driver_notified',
+      notified_at: new Date().toISOString(),
     })
     .eq('id', job.id)
   if (error) return `❌ Couldn't assign: ${error.message}`
@@ -319,12 +326,13 @@ async function completeJob(
     .ilike('job_number', jobNumber)
     .maybeSingle()
   if (!job) return `❌ Could not find job ${jobNumber}.`
-  if (job.status === 'complete') return `ℹ️ ${job.job_number} is already marked complete.`
+  // Sessions 36-37 — v1 'complete' is 'completed' in the new lifecycle.
+  if (job.status === 'completed') return `ℹ️ ${job.job_number} is already marked complete.`
 
   const { error } = await supabase
     .from('dispatch_jobs')
     .update({
-      status: 'complete',
+      status: 'completed',
       completed_at: new Date().toISOString(),
     })
     .eq('id', job.id)
@@ -375,36 +383,22 @@ async function viewQuotes(
 // ── view_drivers ─────────────────────────────────────────────────────────
 
 async function viewDrivers(clientId: string, supabase: SupabaseClient): Promise<string> {
+  // Sessions 36-37 — migration 048 replaced driver_availability with
+  // drivers.is_online (current shift state) + driver_availability_log
+  // (append-only history). For the SMS view-drivers command, the
+  // is_online flag is what the owner actually wants to see.
   const { data: drivers, error } = await supabase
     .from('drivers')
-    .select('id, name, phone, active')
+    .select('id, name, phone, is_online, truck_type')
     .eq('client_id', clientId)
-    .eq('active', true)
+    .eq('is_active', true)
     .order('name')
 
   if (error) return `❌ Couldn't load drivers: ${error.message}`
   if (!drivers || drivers.length === 0) return `🚛 No active drivers on file.`
 
-  // Fetch most recent availability override per driver
-  const driverIds = drivers.map(d => d.id)
-  const { data: avail } = await supabase
-    .from('driver_availability')
-    .select('driver_id, status, created_at')
-    .in('driver_id', driverIds)
-    .order('created_at', { ascending: false })
-
-  // Keep only the most recent status per driver
-  const statusMap = new Map<string, string>()
-  if (avail) {
-    for (const row of avail) {
-      if (!statusMap.has(row.driver_id)) {
-        statusMap.set(row.driver_id, row.status)
-      }
-    }
-  }
-
   const list = drivers.map(d => {
-    const status = statusMap.get(d.id) ?? 'available'
+    const status = d.is_online ? 'online' : 'offline'
     return `• ${d.name} — ${status}`
   }).join('\n')
 
