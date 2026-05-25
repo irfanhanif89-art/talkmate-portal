@@ -25,9 +25,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (EDITABLE_FIELDS.has(k)) updates[k] = v === '' ? null : v
   }
 
+  // If the rep tried to set status via this endpoint, it must be one of
+  // the in-flight statuses. Terminal statuses (won, lost, bad_lead) must
+  // go through /won, /lost, /bad-lead which collect the required
+  // metadata (plan, reason, etc). Reject loudly instead of silently
+  // dropping the field — otherwise a request that also mutates an
+  // editable field would succeed while quietly ignoring the status.
+  if (body.status !== undefined) {
+    if (typeof body.status !== 'string' || !ALLOWED_STATUSES.has(body.status)) {
+      return NextResponse.json({
+        ok: false,
+        error: 'Status changes must use the dedicated endpoints: /won, /lost, /bad-lead',
+      }, { status: 400 })
+    }
+  }
+
   const statusChange = typeof body.status === 'string'
-    && body.status !== undefined
-    && ALLOWED_STATUSES.has(String(body.status))
+    && ALLOWED_STATUSES.has(body.status)
 
   if (statusChange) updates.status = body.status
 

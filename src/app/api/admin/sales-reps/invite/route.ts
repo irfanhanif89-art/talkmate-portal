@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { sendEmail } from '@/lib/resend'
-import { repInviteEmailHtml, PORTAL_URL } from '@/lib/sales-notify'
+import { repInviteEmailHtml, PORTAL_URL, notifyAdminAlert } from '@/lib/sales-notify'
 
 export async function POST(req: Request) {
   const auth = await requireAdmin()
@@ -63,17 +63,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: repErr?.message ?? 'Failed to create rep' }, { status: 500 })
   }
 
-  // Backup welcome email (Supabase's invite email also fires). Wraps
-  // the same magic link the invite uses — if Supabase invite fails or
-  // the user already exists, this gets them in.
+  // Backup welcome email (Supabase's invite email also fires). Generate
+  // an actual magic link via admin.generateLink so the recipient can
+  // authenticate directly from this email if Supabase's invite is
+  // delayed or hits spam. Use `invite` type for brand-new users and
+  // `magiclink` for users that already existed (where inviteUserByEmail
+  // was not called above).
+  let actionLink: string | undefined
+  try {
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: existingUser ? 'magiclink' : 'invite',
+      email,
+      options: {
+        redirectTo: `${PORTAL_URL}/auth/callback?next=/sales/dashboard`,
+        data: { full_name, role: 'sales_rep' },
+      },
+    })
+    if (linkErr) {
+      console.error('[admin/sales-reps/invite] generateLink failed', linkErr.message)
+      notifyAdminAlert(
+        `⚠️ generateLink failed for new rep ${full_name} (${email}). Backup email will use /login fallback. (${linkErr.message})`,
+      ).catch(() => {})
+    } else {
+      actionLink = linkData?.properties?.action_link
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[admin/sales-reps/invite] generateLink threw', msg)
+    notifyAdminAlert(
+      `⚠️ generateLink threw for new rep ${full_name} (${email}). Backup email will use /login fallback. (${msg})`,
+    ).catch(() => {})
+  }
+
+  const magicLink = actionLink ?? `${PORTAL_URL}/login?next=${encodeURIComponent('/sales/dashboard')}`
+
   sendEmail({
     to: email,
     subject: "You've been invited to TalkMate Sales HQ",
     html: repInviteEmailHtml({
       repName: full_name,
-      magicLink: `${PORTAL_URL}/login`,
+      magicLink,
     }),
-  }).catch(() => { /* best-effort */ })
+  })
+    .then(res => {
+      if (res && res.ok === false) {
+        console.error('[admin/sales-reps/invite] backup invite email returned not-ok', res.error)
+        notifyAdminAlert(
+          `⚠️ Backup invite email failed for new rep ${full_name} (${email}). They may have no working login link. (${res.error ?? 'unknown'})`,
+        ).catch(() => {})
+      }
+    })
+    .catch(err => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[admin/sales-reps/invite] backup invite email threw', msg)
+      notifyAdminAlert(
+        `⚠️ Backup invite email threw for new rep ${full_name} (${email}). They may have no working login link. (${msg})`,
+      ).catch(() => {})
+    })
 
   return NextResponse.json({ ok: true, rep_id: createdRep.id })
 }
