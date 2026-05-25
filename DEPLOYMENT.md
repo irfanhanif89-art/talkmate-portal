@@ -6,6 +6,104 @@
 
 ---
 
+## HOTFIX — Call Intelligence Migration to Grok (2026-05-25)
+
+### Branch
+`feature/hotfix-grok-scoring-migration` (from `dev`)
+
+### Why
+Anthropic spend is currently dominated by development usage (Claude Code) at ~$30–50/day, but the production call-intelligence scorer scales linearly with client growth. Migrating scoring to Grok (`grok-4.20-0309-non-reasoning`) cuts that line item by ~85–90% (~$1–2/mo vs ~$5–15/mo at current call volume) and pre-empts the scaling cliff. xAI account has prepaid credits with auto top-ups enabled, so credit exhaustion is not a runtime risk.
+
+### What ships
+1. **Dual-provider call-intelligence — `src/lib/call-intelligence.ts`.** New `SCORING_PROVIDER` env var (`anthropic` | `xai`, default `anthropic`) selects which model scores each call. The system prompt and user-prompt builder are identical across both paths so back-test deltas reflect model quality rather than prompt drift. Anthropic logic moved into `scoreViaAnthropic(input)`; new `scoreViaGrok(input)` calls the existing `grokJson` helper in `src/lib/grok.ts` with `temperature: 0`, `responseFormat: 'json_object'`, model `grok-4.20-0309-non-reasoning`. Both paths funnel through the existing `coerceResult` validator — unknown flag types stripped, status clamped to `resolved|review|critical`, score clamped 1–10, sms_verification status coerced. `scoreCall(input)` is now a dispatcher and remains the only entry point for callers in `score-call-async.ts`. New constants `INTELLIGENCE_MODEL_ANTHROPIC` and `INTELLIGENCE_MODEL_XAI`; the legacy `INTELLIGENCE_MODEL` export is preserved (resolves to whichever provider is active at module load) so `call_intelligence_log.model` stays meaningful.
+2. **Back-test harness — `scripts/backtest-grok-scoring.ts`.** Standalone tsx script. Pulls the 100 most-recent Claude-scored calls (READ-ONLY against `calls`), rebuilds the same `CallIntelligenceInput` shape that `score-call-async.ts` constructs for live calls (business name, active VIP callers, related SMS in the 10-minute post-call window), re-scores each via `scoreViaGrok`, and produces a verdict against four quality bars. Per-call detail written to `scripts/backtest-results.json`. Never writes to the `calls` table. Forces the Grok path regardless of `SCORING_PROVIDER`.
+3. **Grok library default fix — `src/lib/grok.ts:34`.** Default model changed from `grok-3` (not in the accessible model list for our production key) to `grok-4.20-0309-non-reasoning`. Grep confirmed no existing callers omit the model argument inside `src/`, so this is pure future-proofing.
+4. **Admin status indicator — `src/app/(portal)/admin/page.tsx:190`.** Grok health pill `hint` updated from `command/menu` to `call scoring (when SCORING_PROVIDER=xai)`.
+
+### What was deliberately NOT changed
+- The system prompt (`SYSTEM_PROMPT` constant, lines 86–131). Identical prompt across providers is the whole basis of the back-test comparison.
+- `coerceResult` / `coerceFlag` / `coerceSmsVerification` — already enforce exactly the validation surface the brief required. Reusing them avoids duplicating defensive logic across providers.
+- `score-call-async.ts` — no edits. It calls `scoreCall(input)` which now dispatches; everything downstream (alerting, recovery SMS, log writes) is unchanged.
+- Anthropic API path, env var, and code. `SCORING_PROVIDER=anthropic` (the default) preserves the current production behaviour byte-for-byte. Rollback is a single env-var flip + redeploy.
+
+### Routes / Database
+- No new routes.
+- No migration.
+- No new tables or columns.
+
+### Environment variables
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `SCORING_PROVIDER` | `anthropic` (when unset) | `anthropic` keeps Claude Sonnet scoring (no change). `xai` switches to Grok via the existing `GROK_API_KEY`. Any other value falls back to `anthropic`. Set per Vercel environment so preview/dev can stay on Anthropic while production runs on Grok. |
+
+### Decision gate — back-test before cutover
+
+Run the back-test from a machine with real Vercel env vars (`vercel env pull` or run from a Vercel build/preview shell). Locally this needs `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `GROK_API_KEY` set — the committed `.env.local` ships only placeholder values, so the script must be run somewhere with real credentials.
+
+```bash
+# Option A — Node 20.6+ with --env-file
+node --env-file=.env.local --import tsx scripts/backtest-grok-scoring.ts
+
+# Option B — env vars already exported
+npx tsx scripts/backtest-grok-scoring.ts
+```
+
+The script prints quality bars and a verdict, and writes per-call detail to `scripts/backtest-results.json`.
+
+| Bar | Target | Why |
+|---|---|---|
+| Avg \|delta\| per call | ≤ 0.5 | Grok scores within half a point of Claude on average |
+| Classification agreement at 5-boundary | ≥ 85% | Same "flagged vs not-flagged" classification for the dashboard counters |
+| Critical flag recall | ≥ 90% | Grok catches 90%+ of `agent_error` / `missed_lead` / `sms_mismatch` |
+| Directional bias \|mean delta\| | ≤ 0.3 | No systematic over/under-rating |
+| Error rate | ≤ 5% | JSON parse failures, rate limits, model 404, etc. |
+
+**All five pass → Part 4a cutover.** **Any single bar fails → Part 4b Haiku fallback.**
+
+### Part 4a — Cutover procedure (only if back-test passes)
+1. Add `SCORING_PROVIDER=xai` to **Vercel production environment only** (keep preview + development on the default `anthropic` for safer dev work).
+2. Trigger a production redeploy.
+3. Wait for the next inbound call to be scored. Verify in Supabase:
+   ```sql
+   SELECT id, intelligence_score, intelligence_status, intelligence_scored_at
+   FROM calls
+   WHERE intelligence_scored_at > now() - interval '1 hour'
+   ORDER BY intelligence_scored_at DESC
+   LIMIT 5;
+   ```
+4. Tail Vercel function logs for `/api/webhooks/vapi` and `/api/cron/score-pending-calls` — confirm no `Grok 4xx`/`5xx`. A 402 indicates xAI prepaid credit exhaustion despite auto top-ups; investigate immediately.
+5. Next morning, confirm the daily quality digest renders correctly (no missing data, no parse errors).
+
+### Part 4b — Haiku fallback procedure (only if back-test fails)
+Do **not** cut over to Grok. Instead, switch the Anthropic path to Haiku — still ~70–85% cheaper than Sonnet, same API shape, proven model family.
+
+1. Edit `src/lib/call-intelligence.ts`:
+   ```diff
+   - export const INTELLIGENCE_MODEL_ANTHROPIC = 'claude-sonnet-4-6'
+   + export const INTELLIGENCE_MODEL_ANTHROPIC = 'claude-haiku-4-5'
+   ```
+2. Re-run the back-test (this time it'll exercise Haiku against the existing Sonnet baseline, via a short edit to the script to call `scoreViaAnthropic` instead of `scoreViaGrok`, or by setting `SCORING_PROVIDER=anthropic` and adding a separate script).
+3. Keep `SCORING_PROVIDER=anthropic`.
+4. Append the failing back-test bars to this hotfix entry so the next reviewer can see why Grok was rejected.
+
+### Rollback procedure (post-cutover)
+1. Set `SCORING_PROVIDER=anthropic` in Vercel production.
+2. Trigger a redeploy.
+3. Total downtime: ~2 minutes. The next call scored after redeploy uses Anthropic again. Any calls scored during the rollout window have already been persisted with their Grok-derived intelligence — no replay needed.
+
+### xAI account state (verified 2026-05-25 per brief)
+- `GROK_API_KEY` set in Vercel production, preview, and development environments.
+- Prepaid balance ~$4.14 with auto top-ups enabled — no silent credit exhaustion risk.
+- xAI Service Status: all endpoints healthy at brief time.
+
+### Build status
+`npm run build` — clean. Compiled successfully, no TypeScript errors. No new routes added.
+
+### Known caveat
+The committed `.env.local` only has placeholder Supabase / Grok values, so the back-test cannot be run from this developer machine as-is. It must be run with real credentials (Vercel CLI `env pull`, or by setting the three env vars from another secure source). The script never persists credentials.
+
+---
+
 ## SESSION 35 — Hotfix: Agent Health Alert Auto-Resolve (2026-05-25)
 
 ### Branch

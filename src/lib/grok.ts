@@ -31,7 +31,7 @@ export async function grokChat(messages: GrokMessage[], opts: GrokOptions = {}):
   if (!apiKey) throw new GrokError('GROK_API_KEY is not set')
 
   const body: Record<string, unknown> = {
-    model: opts.model || 'grok-3',
+    model: opts.model || 'grok-4.20-0309-non-reasoning',
     messages,
     temperature: opts.temperature ?? 0.2,
     max_tokens: opts.maxTokens ?? 2048,
