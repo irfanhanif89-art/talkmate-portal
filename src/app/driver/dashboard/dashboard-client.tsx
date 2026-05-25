@@ -2,15 +2,15 @@
 
 // Sessions 36-37 — dashboard client shell.
 // Renders driver header, stat cards, optional active-job card, and
-// the recent-completed list. Phase 3 hooks the incoming-job overlay
-// into this same component via Realtime on dispatch_jobs. Phase 4
-// adds the useDriverLocationBroadcast hook here.
+// the recent-completed list. Phase 4 wired in useDriverLocationBroadcast
+// so the dispatcher map updates while the driver is online.
 
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DriverShell } from '@/components/driver/DriverShell'
 import { LocationConsentModal } from '@/components/driver/LocationConsentModal'
+import { useDriverLocationBroadcast } from '@/hooks/useDriverLocationBroadcast'
 import type { DriverRow } from '@/lib/driver-auth'
 
 interface ActiveJob {
@@ -87,6 +87,14 @@ export function DriverDashboardClient({
   const router = useRouter()
   const [driver, setDriver] = useState(initialDriver)
   const [consentOpen, setConsentOpen] = useState(driver.location_consent_at == null)
+
+  // Only broadcast GPS when: driver is online + consent given.
+  useDriverLocationBroadcast({
+    driverId: driver.id,
+    clientId: driver.client_id,
+    isOnline: driver.is_online && driver.location_consent_at != null,
+    activeJobId: activeJob?.id ?? null,
+  })
 
   async function acceptConsent() {
     const res = await fetch('/api/driver/me', {
