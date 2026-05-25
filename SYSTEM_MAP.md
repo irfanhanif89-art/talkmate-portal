@@ -1,9 +1,9 @@
 # TalkMate Portal — System Map
 
-**Last updated:** 2026-05-25
-**Last session:** 40
-**Main SHA:** ebf4178
-**Next migration number:** 048
+**Last updated:** 2026-05-26
+**Last session:** 41
+**Main SHA:** 352d816
+**Next migration number:** 050
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
@@ -53,6 +53,8 @@
 | 38b | 2026-05-25 | feature/haiku-watcher-cron | 580de14 | — | 24/7 Haiku cutover watcher via Vercel cron. Replaces the Claude-Code-side scheduled task with a server-side cron so the watcher runs whether or not Claude Code is open. `src/app/api/cron/haiku-watcher/route.ts` runs hourly at :37 past with three branches: (1) Haiku scoring detected + no prior alert → Telegram with first call_id/scored_at/token counts + insert `system_alerts` row of type `haiku_cutover_confirmed` for dedup; (2) Haiku scoring detected + prior alert exists → no-op returns `{ status: 'already_fired' }`; (3) no Haiku scoring yet → regression check counting successful Sonnet entries since cutover, fires `haiku_cutover_regression` warning Telegram if non-zero. `vercel.json` adds `{ path: /api/cron/haiku-watcher, schedule: 37 * * * * }` (off-minute to avoid dogpiling the 24 existing crons). No migration. |
 | 39 | 2026-05-25 | feature/session-39-audit-cleanup | 346b367 | — | Audit cleanup — 9 medium-severity items deferred from Session 38, executed in parallel by 3 subagents (Claude CoWork) with zero file overlap and consolidated. **Mobile admin sidebar** (`src/components/admin/AdminSidebarLayout.tsx`): below 768px the sidebar is hidden by default and slides in from the left as a 240px overlay over a dark backdrop when a fixed top-left hamburger is tapped; tapping a nav link, the in-drawer X, or the backdrop closes it; main content fills 100% viewport on mobile. Desktop ≥768px unchanged (240/64px expand/collapse, localStorage preference preserved). Hydration-safe via the existing `mounted` gate; `matchMedia` with Safari fallback + cleanup. **Sales API correctness** (4 files): `src/app/sales/layout.tsx` adds `onboarded_via, contractor_id` to the sales_reps select so the SalesRepRow cast is no longer type-unsound; `src/app/api/sales/onboard/route.ts` replaces `listUsers()` with `findAuthUserByEmail()` (auth.users > 50 was silently missing dups), properly awaits the `welcome_email_sent` DB flip (was dangling `.then()` in a serverless handler), and maps rep-collected industry → `business_type` enum via a new `mapIndustryToBusinessType()` helper against `BUSINESS_TYPE_CONFIG` (was hardcoded `'other'`, degrading Vapi prompts); `src/app/api/sales/leads/[id]/route.ts` returns explicit 400 with `Status changes must use the dedicated endpoints: /won, /lost, /bad-lead` when PATCH body.status is terminal (was silently dropping while updating other fields); `src/components/sales/contract-view.tsx` detects mobile via `matchMedia('(max-width: 767px)')` and replaces the blank-on-iOS iframe with a prominent full-width orange "Open contract PDF" button (desktop keeps iframe + new-tab link). **Email/notify hardening** (2 files): `src/lib/sales-notify.ts` renames `NEXT_PUBLIC_PORTAL_URL` → `NEXT_PUBLIC_APP_URL` (was the only file using PORTAL_URL; silent fallback to hardcoded prod URL on preview deploys) — grep across `src/` confirms zero remaining matches. `notifyWin`, `sendRepPortalAccessEmail`, `sendTerminationEmail` wrap their sendEmail calls so failures log + fire a Telegram alert via direct `sendTelegram` (avoids `notifyAdminAlert` recursion). `src/app/api/admin/sales-reps/invite/route.ts` replaces the bare `/login` "magic link" in the Resend backup invite email with a real `admin.auth.admin.generateLink()` action_link (type=invite for new users, type=magiclink for existing), with fallback to `/login?next=/sales/dashboard` + Telegram alert on generation failure; `.catch(() => {})` on the backup email send replaced with log + Telegram alert on both `{ok:false}` and throw. Verified end-to-end on prod: mobile 375px contractors page now shows hamburger + readable table with full contractor names (Navya Baiyer, Jade Barber, full emails); desktop 1280px sidebar unchanged at 240px static; zero console errors; tsc clean. No migration. |
 | 40 | 2026-05-25 | feature/session-40-polish | ebf4178 | — | Session 40 polish bundle — final cleanup of nits from the Session 39 deferral list. 13 files, +35/-17. **Hydration fix** (`src/lib/sales-format.ts`): `formatDate` and `formatDateTime` now pass `timeZone: 'Australia/Brisbane'` to `Intl.DateTimeFormat`. Server (Node UTC) and client (browser local) previously produced different strings and React fired hydration warning #418 on every date-rendering page including `/admin/contractors/[id]`. TalkMate operates from QLD so Brisbane is the canonical reading. Verified on prod against Jade's record: zero console errors. **Mobile rate-card grid** (`src/components/sales/commission-policy-modal.tsx`): `gridTemplateColumns: '1fr 1fr 1fr'` → `repeat(auto-fit, minmax(90px, 1fr))` so the rate cards wrap gracefully on 375px instead of overflowing. **Sign-out full reload** (`src/components/sales/sales-nav.tsx`): `router.push('/login')` → `window.location.href = '/login?next=/sales/dashboard'` so supabase client cookies/state are flushed before the next render (avoids brief stale-session flashes) and the rep is sent back to /sales/dashboard after re-auth. **Em-dash copy cleanup** in user-facing strings across 5 files: `sales-notify.ts` (8 email subjects + body headlines + Telegram message lines now use colons/periods instead of em-dashes for clearer parsing in inbox previews), `commission-policy-modal.tsx` ("I Agree, Let's Go"), `contract-view.tsx` (error fallback + "IP and timestamp" softened to "We keep a date-stamped record so you have proof of what you signed"), `onboard-form.tsx` (deal-option separator → middle dot). The literal '—' used as null-data placeholder (formatDate's empty branch, table empty cells) is typography and deliberately kept. **Per-page browser titles**: each of the 7 `/sales/*/page.tsx` server pages now exports `metadata = { title: 'X — TalkMate Sales HQ' }` (Dashboard / My Pipeline / My Clients / Onboard Client / Commissions / My Contract / Profile) so browser tabs show useful titles instead of the generic root layout title. No migration, no new env vars, no new dependencies. tsc clean. |
+
+| 41 | 2026-05-26 | feature/session-41-sales-hq-tools | 352d816 | 049 | Sales HQ Tools — demo launcher (`/sales/demo`, 14 industry cards, Vapi agent swap), sales profile reply-to email (`/sales/profile` + `MissingEmailBanner`), onboarding queue (`/admin/onboarding-queue`), proposal open tracking via Resend webhook (`/api/webhooks/resend`, `email.opened`), follow-up sequencer cron (`/api/cron/process-followups`), `lead_followups` table (Migration 049), `sales_reps.notification_email`, hit list (`/sales/hitlist`), proposal page (`/sales/proposal/[id]`). 4 new env vars: `VAPI_DEMO_PHONE_NUMBER_ID`, `NEXT_PUBLIC_DEMO_PHONE_DISPLAY`, `SALES_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`. |
 
 ---
 
@@ -124,6 +126,8 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 | 044 | 044_sms_confirmation_loop.sql | bookings 'declined' status; sms_log adds dispatcher_job_notification/booking_received/booking_confirmed/booking_declined/dispatcher_reminder; bookings.confirmation_ref/dispatcher_notified_at/reminder_sent_at/confirmed_by_phone; unique index on confirmation_ref; partial index for pending dispatcher sweep |
 | 045 | 045_session30_fixes.sql | sms_log CHECK constraint extended with `owner_booking_notification` (22 total types) |
 | 046 | 046_drop_legacy_bookings_columns.sql | Drop 6 legacy bookings columns (`confirmation_sms_sent`, `booking_type`, `service_requested`, `preferred_date`, `preferred_time`, `notes`) with idempotent backfill and 4 pre-migration safety checks documented in comments for Donna |
+| 048 | 048_dispatcher_driver_app.sql | Dispatcher + driver app schema — Sessions 36-37: driver tables, dispatch job lifecycle, vehicle/photo/signature support |
+| 049 | 049_sales_hq_tools.sql | Session 41 — `lead_followups` table (type: email/call_reminder; status: pending/sent/dismissed), `sales_reps.notification_email` column |
 | 047 | 047_dedupe_health_alerts.sql | One-time cleanup of duplicate unresolved `agent_health_alerts` rows (`alert_type = 'config_issue'` only) that accumulated before the Session 35 auto-resolve fix. For each (business_id, issue_code) pair with multiple unresolved rows, keeps the most recent open row and marks the rest `resolved_at = now(), resolved_by = 'session_35_dedup_cleanup'`. 1-hour buffer prevents racing live cron. Idempotent — `RAISE NOTICE` skip-log on a clean table. |
 
 ---
@@ -155,6 +159,8 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 | /api/cron/call-forward-check | `0 23 * * *` | 09:00 AEST | Call forwarding check |
 | /api/cron/trial-reminders | `15 23 * * *` | 09:15 AEST | Trial reminder emails |
 | /api/cron/clear-eligible-commissions | `30 23 * * *` | 09:30 AEST | Clear commissions past clawback |
+| /api/cron/process-followups | `50 * * * *` | Every hour :50 | Process scheduled lead follow-up emails (Session 41) |
+| /api/cron/dispatch-timeout | `*/5 * * * *` | Every 5 min | Dispatch job timeout handler (Sessions 36-37) |
 
 ---
 
@@ -178,6 +184,7 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 ### Admin (admin email required → 307)
 | Route | Purpose |
 |-------|---------|
+| `/admin/onboarding-queue` | Closed deals awaiting setup — promote leads, finish go-live, approve commissions (Session 41) |
 | `/admin/clients` | Client list + management |
 | `/admin/contractors` | Contractor list + detail + commissions |
 | `/admin/sales-team` | Legacy rep management |
@@ -192,6 +199,10 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 | `/sales/dashboard` | Rep dashboard |
 | `/sales/commissions` | Commission ledger with clawback dates |
 | `/sales/contract` | Agreement on file (read-only) |
+| `/sales/profile` | Rep profile — reply-to email for proposals (Session 41) |
+| `/sales/demo` | Demo launcher — 14 industry cards, real-time Vapi agent swap on demo number (Session 41) |
+| `/sales/hitlist` | Hit list — curated prospect targets (Session 41) |
+| `/sales/proposal/[id]` | Proposal builder + send, open tracking via Resend webhook (Session 41) |
 
 ---
 
@@ -214,6 +225,7 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 | POST | /api/contractor-onboarding/[token]/sign | public | Contractor signs agreement + generates PDF |
 | POST | /api/contractors/[id]/resend | admin | Resend contractor invite |
 | POST | /api/contractors/[id]/terminate | admin | Terminate contractor |
+| POST | /api/webhooks/resend | Resend sig (whsec_) | `email.opened` events for proposal open tracking (Session 41) |
 | POST | /api/admin/commissions/[id] | admin | Approve commission (blocks if < 14 days) |
 
 ---
@@ -232,6 +244,10 @@ Every task runs automatically: Builder → Validator → QA Tester (Playwright) 
 | STRIPE_PRICE_PROFESSIONAL | ✅ | Stripe price ID — Pro $799/mo |
 | NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY | ✅ | Stripe publishable key for EmbeddedCheckout |
 | RESEND_API_KEY | ✅ | Resend transactional email |
+| RESEND_WEBHOOK_SECRET | ✅ | Resend webhook sig verification — `email.opened` proposal tracking (Session 41) |
+| SALES_EMAIL_FROM | ✅ | From address for proposal emails — `sales@talkmate.com.au` (Session 41) |
+| VAPI_DEMO_PHONE_NUMBER_ID | ✅ | Vapi phone number ID for demo line (`d1cfa481` = +61 752 409 791) — `/sales/demo` swaps active agent (Session 41) |
+| NEXT_PUBLIC_DEMO_PHONE_DISPLAY | ✅ | Human-readable demo number shown on `/sales/demo` (Session 41) |
 | TELEGRAM_BOT_TOKEN | ✅ | Telegram admin alerts |
 | TELEGRAM_ADMIN_CHAT_ID | ✅ | Telegram chat ID for admin alerts |
 | CRON_SECRET | ✅ | Bearer secret for all /api/cron/* routes |
