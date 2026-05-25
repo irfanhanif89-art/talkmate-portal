@@ -22,11 +22,15 @@ export async function GET(
 
   const { id } = await params
   const admin = createAdminClient()
-  const [bizRes, vehiclesRes, driversRes, jobsRes] = await Promise.all([
+  // Sessions 36-37 — migration 048 replaced the v1 dispatch schema.
+  // vehicles is gone (the new dispatcher tracks trucks via driver
+  // truck_type/truck_rego on the drivers row, not a separate table),
+  // `drivers.active` is now `drivers.is_active`, and the dispatch_jobs
+  // status enum is the new 13-state lifecycle.
+  const [bizRes, driversRes, jobsRes] = await Promise.all([
     admin.from('businesses').select('dispatch_enabled, dispatch_config, plan, industry').eq('id', id).single(),
-    admin.from('vehicles').select('id', { count: 'exact', head: true }).eq('client_id', id).eq('active', true),
-    admin.from('drivers').select('id', { count: 'exact', head: true }).eq('client_id', id).eq('active', true),
-    admin.from('dispatch_jobs').select('id', { count: 'exact', head: true }).eq('client_id', id).in('status', ['pending', 'assigned', 'in_progress']),
+    admin.from('drivers').select('id', { count: 'exact', head: true }).eq('client_id', id).eq('is_active', true),
+    admin.from('dispatch_jobs').select('id', { count: 'exact', head: true }).eq('client_id', id).in('status', ['created','driver_notified','accepted','en_route','on_scene','loaded','in_transit','at_dropoff']),
   ])
   if (bizRes.error) return NextResponse.json({ ok: false, error: bizRes.error.message }, { status: 500 })
 
@@ -37,7 +41,9 @@ export async function GET(
     plan: bizRes.data?.plan ?? 'starter',
     industry: bizRes.data?.industry ?? null,
     counts: {
-      vehicles: vehiclesRes.count ?? 0,
+      // vehicles is no longer a thing post-048 — kept in the response
+      // shape for the admin tab's existing layout, always 0.
+      vehicles: 0,
       drivers: driversRes.count ?? 0,
       active_jobs: jobsRes.count ?? 0,
     },

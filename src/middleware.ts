@@ -135,6 +135,52 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse
   }
 
+  // Sessions 36-37 — /driver/* is a separate authenticated area for
+  // drivers (not the owner portal). Drivers are Supabase Auth users
+  // linked to a `drivers` row; they reach this area via the invite
+  // flow. Handle it BEFORE the owner-portal gates so the driver app
+  // never gets bounced to /dashboard / /subscribe / /accept-terms /
+  // /onboarding.
+  if (path.startsWith('/driver')) {
+    const isDriverPublic =
+      path === '/driver/login' || path.startsWith('/driver/invite')
+
+    // Public driver pages: log in / accept invite. If the user is
+    // already a signed-in driver, fast-forward to the dashboard.
+    if (isDriverPublic) {
+      if (user) {
+        const dRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/drivers?user_id=eq.${user.id}&select=id,is_active&limit=1`,
+          { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } },
+        ).catch(() => null)
+        const dRows = (await dRes?.json().catch(() => [])) as { id: string; is_active: boolean }[]
+        if (Array.isArray(dRows) && dRows[0]?.is_active === true) {
+          return redirect('/driver/dashboard')
+        }
+      }
+      return supabaseResponse
+    }
+
+    // Protected driver pages. Require a Supabase Auth session AND an
+    // active drivers row.
+    if (!user) {
+      const next = encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)
+      return redirect(`/driver/login?next=${next}`)
+    }
+    const dRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/drivers?user_id=eq.${user.id}&select=id,is_active&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } },
+    ).catch(() => null)
+    const dRows = (await dRes?.json().catch(() => [])) as { id: string; is_active: boolean }[]
+    const activeDriver = Array.isArray(dRows) && dRows[0]?.is_active === true
+    if (!activeDriver) {
+      // Authenticated but not a driver (or deactivated) — back to
+      // /driver/login so they can sign in with the right account.
+      return redirect('/driver/login')
+    }
+    return supabaseResponse
+  }
+
   const protectedPaths = [
     '/dashboard', '/calls', '/catalog', '/appointments', '/analytics',
     '/settings', '/billing', '/admin', '/onboarding', '/contacts',

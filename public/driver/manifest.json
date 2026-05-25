@@ -1,0 +1,25 @@
+{
+  "name": "TalkMate Driver",
+  "short_name": "TM Driver",
+  "description": "TalkMate driver app — accept jobs, capture proof of delivery, get paid.",
+  "start_url": "/driver/dashboard",
+  "scope": "/driver/",
+  "display": "standalone",
+  "background_color": "#061322",
+  "theme_color": "#061322",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/driver/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/driver/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

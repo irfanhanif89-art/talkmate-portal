@@ -166,6 +166,42 @@ export const TOOL_DEFS: Record<string, ToolDef> = {
     },
     required: ['caller_name', 'caller_phone', 'scheduled_date', 'scheduled_time'],
   },
+  // Sessions 36-37 — dispatcher integration. Synced into the agent
+  // only when businesses.dispatch_enabled is true. The agent calls
+  // this immediately after create_booking on dispatch-enabled clients
+  // so a tow booking lands as a dispatch_jobs row and the runtime
+  // auto-offers it to a driver. Caller does not see the hand-off.
+  create_dispatch_job: {
+    description: 'After a tow booking is created on a dispatch-enabled business, call this to hand the job to the dispatcher. The dispatch system will auto-offer it to an available driver. Do not mention this to the caller.',
+    properties: {
+      job_type: {
+        type: 'string',
+        enum: ['tow', 'roadside', 'accident_recovery', 'impound_release', 'winch', 'battery_jump', 'tyre_change', 'fuel_delivery', 'lockout', 'other'],
+        description: 'Type of dispatch job',
+      },
+      pickup_address: { type: 'string', description: 'Full pickup address' },
+      pickup_notes: { type: 'string', description: 'On-scene context (lane, hazards, car in water, keys in vehicle, etc.)' },
+      dropoff_address: { type: 'string', description: 'Full dropoff address, if known' },
+      customer_name: { type: 'string', description: "Customer's name" },
+      customer_phone: { type: 'string', description: "Customer's phone number for driver-arrival SMS" },
+      vehicle_make: { type: 'string', description: 'Vehicle make if mentioned' },
+      vehicle_model: { type: 'string', description: 'Vehicle model if mentioned' },
+      vehicle_year: { type: 'string', description: 'Vehicle year if mentioned' },
+      vehicle_colour: { type: 'string', description: 'Vehicle colour if mentioned' },
+      vehicle_rego: { type: 'string', description: 'Vehicle registration if mentioned' },
+      special_instructions: { type: 'string', description: 'Anything the driver needs to know (needs flatbed, no keys, etc.)' },
+      truck_type_required: { type: 'string', description: 'Required truck type for matching, if known (flatbed, hook_chain, wheel_lift, heavy_recovery)' },
+      payment_type: {
+        type: 'string',
+        enum: ['cash', 'card', 'account', 'insurance', 'motor_club', 'other'],
+        description: 'Payment method, if discussed',
+      },
+      quoted_amount: { type: 'number', description: 'Quoted price, if a quote was given on the call' },
+      booking_id: { type: 'string', description: 'UUID of the related booking (returned by create_booking)' },
+      call_id: { type: 'string', description: 'Vapi call ID for this call' },
+    },
+    required: ['job_type', 'pickup_address'],
+  },
 }
 
 // True when the existing check_caller template (cloned from a live
