@@ -9,6 +9,7 @@ import {
 import { formatCurrency, LEAD_STATUS_STYLES, type LeadStatus, daysSince, timeAgo } from '@/lib/sales-format'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Dashboard — TalkMate Sales HQ' }
 
 const ACTIVITY_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   call: Phone, email: Mail, demo: Calendar, proposal: FileText,

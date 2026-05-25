@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import OnboardForm, { type ApprovedDeal } from '@/components/sales/onboard-form'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Onboard Client — TalkMate Sales HQ' }
 
 export default async function SalesOnboardPage() {
   const auth = await requireSalesRep()

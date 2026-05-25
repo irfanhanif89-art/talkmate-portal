@@ -6,6 +6,7 @@ import { formatDateTime } from '@/lib/sales-format'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Profile — TalkMate Sales HQ' }
 
 export default async function SalesProfilePage() {
   const auth = await requireSalesRep()

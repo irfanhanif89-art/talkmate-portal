@@ -31,7 +31,10 @@ export default function SalesNav({ repName, repEmail, isOpenMobile, onCloseMobil
   async function logout() {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/login')
+    // Force a full reload so the supabase client cookies/state are gone
+    // before the next page renders. ?next= sends them back to the sales
+    // dashboard after they re-authenticate.
+    window.location.href = '/login?next=/sales/dashboard'
   }
 
   function go(href: string) {

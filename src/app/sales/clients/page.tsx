@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { formatDate } from '@/lib/sales-format'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'My Clients — TalkMate Sales HQ' }
 
 interface ClientRow {
   business_id: string
