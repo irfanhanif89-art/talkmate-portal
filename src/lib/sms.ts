@@ -49,6 +49,16 @@ export type SmsType =
   // has alert_owner=true + owner_number set. Bypasses plan limit because
   // it's an operational alert the owner relies on.
   | 'owner_booking_notification'
+  // Sessions 36-37 — Dispatcher + Driver App. Driver-facing messages
+  // (invite, job notification) bypass plan limits because they are
+  // operational requirements. Customer-facing dispatch updates count
+  // against quota — they are user-visible touchpoints, similar to
+  // booking_received.
+  | 'dispatch_driver_invite'
+  | 'dispatch_driver_job_notification'
+  | 'dispatch_customer_accepted'
+  | 'dispatch_customer_en_route'
+  | 'dispatch_customer_completed'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -75,6 +85,10 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   'dispatcher_reminder',
   // Session 30 — owner notification always fires regardless of quota.
   'owner_booking_notification',
+  // Sessions 36-37 — operational driver-facing dispatch messages.
+  // Customer-facing dispatch_customer_* messages stay on quota.
+  'dispatch_driver_invite',
+  'dispatch_driver_job_notification',
 ])
 
 // Session 30 — Telegram alert on infrastructure-level SMS failures so we
@@ -490,4 +504,61 @@ export function templateOwnerBookingNotification(params: {
     ? `${params.pickupAddress} → ${params.dropoffAddress}`
     : params.pickupAddress || params.dropoffAddress || ''
   return `New booking: ${params.callerName}, ${params.truckType}, ${params.scheduledDisplay}.${route ? ` ${route}.` : ''} REF: ${params.confirmationRef}`
+}
+
+// ──────────────────────── Sessions 36-37 dispatcher SMS ───────────────
+// Five dispatch-flow templates: driver invite, driver job offer, and
+// three customer touchpoints (accepted / en route / completed).
+
+export function templateDispatchDriverInvite(params: {
+  driverName: string
+  businessName: string
+  appUrl: string
+  token: string
+}): string {
+  return `Hi ${params.driverName}, ${params.businessName} has invited you to TalkMate as a driver. Set up your account: ${params.appUrl}/driver/invite/${params.token} (expires in 7 days)`
+}
+
+export function templateDispatchDriverJobNotification(params: {
+  businessName: string
+  jobNumber: string
+  jobTypeLabel: string
+  pickupAddress: string
+  vehicleSummary: string
+  customerName: string
+  paymentType: string
+  specialInstructions?: string | null
+  appUrl: string
+}): string {
+  const instructions = params.specialInstructions
+    ? `\n${params.specialInstructions.slice(0, 100)}`
+    : ''
+  return `${params.businessName} - New Job ${params.jobNumber}\n${params.jobTypeLabel} - ${params.pickupAddress}\n${params.vehicleSummary}\nCustomer: ${params.customerName}\nPayment: ${params.paymentType}${instructions}\n\nOpen your TalkMate driver app to accept: ${params.appUrl}/driver/dashboard`
+}
+
+export function templateDispatchCustomerAccepted(params: {
+  customerName: string
+  driverName: string
+  etaMins: number
+  businessName: string
+  businessPhone: string
+}): string {
+  return `Hi ${params.customerName}, your driver ${params.driverName} is on the way and will arrive in approximately ${params.etaMins} minutes. ${params.businessName} (${params.businessPhone})`
+}
+
+export function templateDispatchCustomerEnRoute(params: {
+  customerName: string
+  driverName: string
+  businessName: string
+  businessPhone: string
+}): string {
+  return `Hi ${params.customerName}, your driver ${params.driverName} is now heading to you. ${params.businessName} (${params.businessPhone})`
+}
+
+export function templateDispatchCustomerCompleted(params: {
+  customerName: string
+  businessName: string
+  businessPhone: string
+}): string {
+  return `Hi ${params.customerName}, your job has been completed. Thank you for choosing ${params.businessName}. (${params.businessPhone})`
 }
