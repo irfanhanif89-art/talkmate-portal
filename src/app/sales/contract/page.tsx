@@ -5,6 +5,7 @@ import { FileText } from 'lucide-react'
 import ContractView, { type ContractRow } from '@/components/sales/contract-view'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'My Contract — TalkMate Sales HQ' }
 
 const CONTRACT_BUCKET = 'contractor-agreements'
 const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1 hour — page reload regenerates

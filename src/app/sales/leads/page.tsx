@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import LeadsBoard, { type LeadRow } from '@/components/sales/leads-board'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'My Pipeline — TalkMate Sales HQ' }
 
 export default async function SalesLeadsPage() {
   const auth = await requireSalesRep()

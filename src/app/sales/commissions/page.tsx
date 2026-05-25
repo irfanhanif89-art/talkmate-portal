@@ -5,6 +5,7 @@ import CommissionsTable, { type CommissionRow } from '@/components/sales/commiss
 import { formatCurrency } from '@/lib/sales-format'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Commissions — TalkMate Sales HQ' }
 
 export default async function SalesCommissionsPage() {
   const auth = await requireSalesRep()

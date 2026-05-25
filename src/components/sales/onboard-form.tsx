@@ -155,7 +155,7 @@ export default function OnboardForm({ deals }: { deals: ApprovedDeal[] }) {
         <option value="">Choose…</option>
         {deals.map(d => (
           <option key={d.id} value={d.id}>
-            {d.business_name} — {d.won_plan ?? 'plan TBD'}
+            {d.business_name} · {d.won_plan ?? 'plan TBD'}
           </option>
         ))}
       </select>

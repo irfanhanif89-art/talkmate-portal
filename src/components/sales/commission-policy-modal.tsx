@@ -56,7 +56,7 @@ export default function CommissionPolicyModal() {
           <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
             Monthly close
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 12 }}>
             <RateCard plan="Starter" amount={299} />
             <RateCard plan="Growth"  amount={349} />
             <RateCard plan="Pro"     amount={399} />
@@ -67,7 +67,7 @@ export default function CommissionPolicyModal() {
           <div style={{ fontSize: 12, fontWeight: 700, color: '#22C55E', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
             Annual close (client pays 12 months upfront)
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 12 }}>
             <RateCard plan="Starter" amount={373.75} accent="#22C55E" />
             <RateCard plan="Growth"  amount={473.75} accent="#22C55E" />
             <RateCard plan="Pro"     amount={598.75} accent="#22C55E" />
@@ -130,7 +130,7 @@ export default function CommissionPolicyModal() {
             cursor: !agreed || submitting ? 'not-allowed' : 'pointer',
           }}
         >
-          {submitting ? 'Saving…' : "I Agree — Let's Go"}
+          {submitting ? 'Saving…' : "I Agree, Let's Go"}
         </button>
       </div>
     </div>
