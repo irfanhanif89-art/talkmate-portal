@@ -15,9 +15,11 @@ export async function GET(
   const { id } = await params
 
   const admin = createAdminClient()
+  // Sessions 36-37 — migration 048: vehicle_id removed; `active` is
+  // now `is_active`; truck_type + truck_rego replace the vehicle FK.
   const { data, error } = await admin
     .from('drivers')
-    .select('id, name, phone, vehicle_id, active')
+    .select('id, name, phone, truck_type, truck_rego, is_active')
     .eq('client_id', id)
     .order('name', { ascending: true })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
