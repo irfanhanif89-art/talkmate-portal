@@ -148,7 +148,7 @@ export default function ContractView({ contract, repFullName }: Props) {
           )
         ) : (
           <div style={{ padding: 28, color: '#ef4444', fontSize: 13, background: 'rgba(239,68,68,0.08)', borderRadius: 9, textAlign: 'center' }}>
-            Could not load the document. Try refreshing — or contact admin if this keeps happening.
+            Could not load the document. Try refreshing, or contact admin if this keeps happening.
           </div>
         )}
 
@@ -167,7 +167,7 @@ export default function ContractView({ contract, repFullName }: Props) {
         <div style={{ padding: '22px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <h3 style={{ fontSize: 15, fontWeight: 800, color: 'white', margin: 0, marginBottom: 6 }}>Sign your agreement</h3>
           <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginBottom: 14, lineHeight: 1.6 }}>
-            Type your full name exactly as it appears on your account ({repFullName}) to confirm your signature. Your IP and the timestamp are recorded for our records.
+            Type your full name exactly as it appears on your account ({repFullName}) to confirm your signature. We keep a date-stamped record so you have proof of what you signed.
           </p>
           <input
             value={typedName}

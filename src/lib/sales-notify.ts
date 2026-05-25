@@ -37,17 +37,17 @@ export async function notifyWin(opts: {
   commissionAmount: number
 }) {
   const tgMessage = [
-    'New Win — Approval Needed',
+    'New Win: Approval Needed',
     `Rep: ${opts.repName}`,
     `Business: ${opts.businessName}`,
-    `Plan: ${opts.plan} — $${opts.commissionAmount} commission`,
+    `Plan: ${opts.plan}, $${opts.commissionAmount} commission`,
     `Review: ${PORTAL_URL}/admin/sales-team`,
   ].join('\n')
   await Promise.all([
     sendTelegram(tgMessage),
     sendEmail({
       to: ADMIN_EMAIL,
-      subject: `New win from ${opts.repName} — approval needed`,
+      subject: `New win from ${opts.repName}: approval needed`,
       html: winEmailHtml(opts),
     })
       .then(res => {
@@ -190,7 +190,7 @@ function btn(href: string, label: string) {
 
 function winEmailHtml(opts: { repName: string; businessName: string; contactName: string | null; contactPhone: string | null; plan: string; commissionAmount: number }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">New win — approval needed</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">New win: approval needed</h2>
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <tr><td style="padding: 6px 0; color: #7BAED4; font-weight: 600;">Rep</td><td style="padding: 6px 0; text-align: right;">${escapeHtml(opts.repName)}</td></tr>
       <tr><td style="padding: 6px 0; color: #7BAED4; font-weight: 600;">Business</td><td style="padding: 6px 0; text-align: right;">${escapeHtml(opts.businessName)}</td></tr>
@@ -224,7 +224,7 @@ export function contractReadyEmailHtml(opts: { repName: string }) {
 
 export function contractSignedEmailHtml(opts: { repName: string; signedAt: string }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Contract signed — welcome to the team</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Contract signed. Welcome to the team.</h2>
     <p>Hi ${escapeHtml(opts.repName)},</p>
     <p>Your contract has been signed successfully.</p>
     <p><strong>Signed:</strong> ${escapeHtml(opts.signedAt)}</p>
@@ -245,7 +245,7 @@ export function clientWelcomeEmailHtml(opts: { firstName: string; plan: string; 
 
 export function dealApprovedEmailHtml(opts: { repName: string; businessName: string; amount: number }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal approved — ${escapeHtml(opts.businessName)} is ready to onboard</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal approved. ${escapeHtml(opts.businessName)} is ready to onboard.</h2>
     <p>Hi ${escapeHtml(opts.repName)},</p>
     <p>Your deal with <strong>${escapeHtml(opts.businessName)}</strong> has been approved.</p>
     <p>Commission locked in: <strong style="color: #22c55e;">$${opts.amount}</strong></p>
@@ -255,7 +255,7 @@ export function dealApprovedEmailHtml(opts: { repName: string; businessName: str
 
 export function dealRejectedEmailHtml(opts: { repName: string; businessName: string; reason: string | null }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal not approved — ${escapeHtml(opts.businessName)}</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal not approved: ${escapeHtml(opts.businessName)}</h2>
     <p>Hi ${escapeHtml(opts.repName)},</p>
     <p>Your submission for <strong>${escapeHtml(opts.businessName)}</strong> has been rejected by admin.</p>
     ${opts.reason ? `<p><strong>Reason:</strong> ${escapeHtml(opts.reason)}</p>` : ''}
@@ -298,7 +298,7 @@ export function commissionPaidEmailHtml(opts: { repName: string; businessName: s
 
 export function commissionRevokedEmailHtml(opts: { repName: string; businessName: string; amount: number; reason: string }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Commission revoked — ${escapeHtml(opts.businessName)}</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Commission revoked: ${escapeHtml(opts.businessName)}</h2>
     <p>Hi ${escapeHtml(opts.repName)},</p>
     <p>The commission for <strong>${escapeHtml(opts.businessName)}</strong> ($${opts.amount}) has been revoked.</p>
     <p><strong>Reason:</strong> ${escapeHtml(opts.reason)}</p>

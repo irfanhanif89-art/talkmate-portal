@@ -68,16 +68,24 @@ export function formatCurrency(n: number): string {
   return `$${n.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
+// Pin to Australia/Brisbane so server-side rendering (Node UTC) and the
+// client (browser in any timezone) produce the same string. Without the
+// timeZone option, Intl renders in the runtime's local TZ — server UTC vs
+// client AEST diverges and React fires hydration warning #418 on every
+// rendered date. TalkMate operates from QLD, so Brisbane is the canonical
+// reading.
+const AU_TZ = 'Australia/Brisbane'
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', timeZone: AU_TZ })
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: AU_TZ })
 }
