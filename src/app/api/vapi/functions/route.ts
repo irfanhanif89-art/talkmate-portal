@@ -6,6 +6,7 @@ import {
   templateDispatcherNotification,
   templateOwnerBookingNotification,
 } from '@/lib/sms'
+import { dispatchJobToDriver } from '@/lib/dispatch-runtime'
 
 // The endpoint Vapi calls mid-conversation to get real-time data and
 // log call outcomes. Session 9.
@@ -43,6 +44,9 @@ const VALID_FNS = new Set([
   'add_to_waitlist',
   'cancel_booking',
   'reschedule_booking',
+  // Sessions 36-37 — dispatcher integration. After create_booking,
+  // the agent calls this when business.dispatch_enabled is true.
+  'create_dispatch_job',
 ])
 
 interface FnRequest {
@@ -176,6 +180,8 @@ export async function POST(request: Request) {
         return NextResponse.json(await cancelBooking(supabase, businessId, params))
       case 'reschedule_booking':
         return NextResponse.json(await rescheduleBooking(supabase, businessId, params))
+      case 'create_dispatch_job':
+        return NextResponse.json(await createDispatchJob(supabase, businessId, params))
       default:
         return NextResponse.json({ error: 'unhandled' }, { status: 400 })
     }
@@ -1600,4 +1606,115 @@ async function rescheduleBooking(
       message: `All sorted. Your booking is now on ${newStart.toLocaleString('en-AU')}. You'll get an updated SMS confirmation.`,
     },
   }
+}
+
+// ─── create_dispatch_job (Sessions 36-37) ─────────────────────────────
+//
+// Called by the Vapi agent after create_booking when the business has
+// dispatch_enabled = true. Creates a dispatch_jobs row and auto-offers
+// it to the first available driver. The agent does not mention this
+// to the caller — it's an internal hand-off.
+
+const VAPI_VALID_JOB_TYPES = new Set([
+  'tow', 'roadside', 'accident_recovery', 'impound_release', 'winch',
+  'battery_jump', 'tyre_change', 'fuel_delivery', 'lockout', 'other',
+])
+const VAPI_VALID_PAYMENT_TYPES = new Set([
+  'cash', 'card', 'account', 'insurance', 'motor_club', 'other',
+])
+
+async function createDispatchJob(
+  supabase: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  params: Record<string, unknown>,
+) {
+  // Gate on dispatch_enabled — silently no-op if the agent calls this
+  // for a business that doesn't have the dispatcher turned on.
+  const { data: biz } = await supabase
+    .from('businesses')
+    .select('dispatch_enabled')
+    .eq('id', clientId)
+    .maybeSingle()
+  if (!biz?.dispatch_enabled) {
+    return { result: { created: false, reason: 'dispatcher_not_enabled' } }
+  }
+
+  const jobType = typeof params.job_type === 'string' ? params.job_type.toLowerCase() : ''
+  const pickupAddress = typeof params.pickup_address === 'string' ? params.pickup_address.trim() : ''
+  if (!VAPI_VALID_JOB_TYPES.has(jobType)) {
+    return { result: { created: false, reason: 'invalid_job_type' } }
+  }
+  if (!pickupAddress) {
+    return { result: { created: false, reason: 'pickup_address_required' } }
+  }
+
+  const paymentType = typeof params.payment_type === 'string'
+    ? params.payment_type.toLowerCase()
+    : null
+  const paymentTypeClean = paymentType && VAPI_VALID_PAYMENT_TYPES.has(paymentType)
+    ? paymentType
+    : null
+
+  const callId = typeof params.call_id === 'string' ? params.call_id : null
+  const bookingId = typeof params.booking_id === 'string' ? params.booking_id : null
+
+  const { data: created, error } = await supabase
+    .from('dispatch_jobs')
+    .insert({
+      client_id: clientId,
+      booking_id: bookingId,
+      call_id: callId,
+      job_type: jobType,
+      pickup_address: pickupAddress,
+      pickup_notes: vapiStr(params.pickup_notes),
+      dropoff_address: vapiStr(params.dropoff_address),
+      customer_name: vapiStr(params.customer_name),
+      customer_phone: vapiStr(params.customer_phone),
+      vehicle_make: vapiStr(params.vehicle_make),
+      vehicle_model: vapiStr(params.vehicle_model),
+      vehicle_year: vapiStr(params.vehicle_year),
+      vehicle_colour: vapiStr(params.vehicle_colour),
+      vehicle_rego: vapiStr(params.vehicle_rego),
+      special_instructions: vapiStr(params.special_instructions),
+      truck_type_required: vapiStr(params.truck_type_required),
+      payment_type: paymentTypeClean,
+      quoted_amount: vapiNum(params.quoted_amount),
+      status: 'created',
+    })
+    .select('id, job_number')
+    .maybeSingle()
+
+  if (error || !created) {
+    return { result: { created: false, reason: error?.message ?? 'insert_failed' } }
+  }
+
+  // Fire-and-forget — auto-dispatch to the first available driver. We
+  // don't await the result to keep the Vapi response under 1s; the
+  // runtime handles its own logging and URGENT-Telegram on failure.
+  void dispatchJobToDriver({
+    jobId: created.id as string,
+    clientId,
+    preferredDriverId: null,
+    autoDispatch: true,
+  }).catch((e) => console.error('[vapi/create_dispatch_job] dispatch failed', e))
+
+  return {
+    result: {
+      created: true,
+      job_id: created.id,
+      job_number: created.job_number,
+    },
+  }
+}
+
+function vapiStr(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  return t === '' ? null : t
+}
+
+function vapiNum(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return Number.isFinite(n) ? n : null
 }

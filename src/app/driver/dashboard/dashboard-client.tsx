@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { DriverShell } from '@/components/driver/DriverShell'
 import { LocationConsentModal } from '@/components/driver/LocationConsentModal'
+import { PushRegister } from '@/components/driver/PushRegister'
 import { useDriverLocationBroadcast } from '@/hooks/useDriverLocationBroadcast'
 import type { DriverRow } from '@/lib/driver-auth'
 
@@ -116,6 +117,7 @@ export function DriverDashboardClient({
       onStatusChanged={(isOnline) => setDriver({ ...driver, is_online: isOnline })}
     >
       <LocationConsentModal open={consentOpen} onAccept={acceptConsent} />
+      <PushRegister />
 
       {/* Active job */}
       {activeJob && (
