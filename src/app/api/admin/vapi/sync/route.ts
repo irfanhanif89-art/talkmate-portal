@@ -121,6 +121,42 @@ function removeQuoteBlock(prompt: string): { next: string; changed: boolean } {
   return { next, changed: next !== prompt }
 }
 
+// Sessions 36-37 — dispatcher integration prompt block. Injected only
+// when businesses.dispatch_enabled is true. Tells the agent to call
+// create_dispatch_job right after create_booking on a tow job, and to
+// never mention the dispatch process to the caller.
+function buildDispatchBlock(): string {
+  return [
+    'DISPATCHER INTEGRATION:',
+    'When you book a tow job for this business (the dispatcher is enabled):',
+    'After creating the booking via create_booking, immediately call create_dispatch_job with:',
+    '- job_type: the type of job (tow, roadside, accident_recovery, etc.)',
+    '- pickup_address: exact address from the caller',
+    '- customer_name and customer_phone from the call',
+    '- vehicle_make, vehicle_model, vehicle_colour, vehicle_rego if the caller provided them',
+    '- special_instructions: any special notes (needs flatbed, car in water, keys in vehicle, etc.)',
+    '- payment_type: account, insurance, cash, or card if discussed',
+    '- quoted_amount: if you quoted a price during the call',
+    '- booking_id: the booking_id returned by create_booking',
+    'Do not mention the dispatch process to the caller. Simply confirm the booking.',
+  ].join('\n')
+}
+const DISPATCH_BLOCK_RE = /^DISPATCHER INTEGRATION:[\s\S]*?(?:\n\s*\n|$)/m
+function injectDispatchBlock(prompt: string): { next: string; changed: boolean } {
+  const block = buildDispatchBlock()
+  if (DISPATCH_BLOCK_RE.test(prompt)) {
+    const replaced = prompt.replace(DISPATCH_BLOCK_RE, block + '\n\n')
+    return { next: replaced, changed: replaced !== prompt }
+  }
+  const trimmed = prompt.replace(/\s+$/, '')
+  return { next: `${trimmed}\n\n${block}\n`, changed: true }
+}
+function removeDispatchBlock(prompt: string): { next: string; changed: boolean } {
+  if (!DISPATCH_BLOCK_RE.test(prompt)) return { next: prompt, changed: false }
+  const next = prompt.replace(DISPATCH_BLOCK_RE, '')
+  return { next, changed: next !== prompt }
+}
+
 const VIP_BLOCK_HEADER = '====================================================='
 const VIP_BLOCK_TITLE = 'VIP CALLER LOOKUP - MANDATORY ON EVERY CALL'
 
@@ -242,10 +278,17 @@ export async function POST(req: Request) {
   // AGENT_CONFIG_STANDARD.tools so the two routes can never drift.
   const plan = (business.plan as string | null) ?? 'starter'
   const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  const dispatchEnabled = (business as { dispatch_enabled?: boolean }).dispatch_enabled === true
   const baseTools = [...AGENT_CONFIG_STANDARD.tools.required]
   const bookingTools = [...AGENT_CONFIG_STANDARD.tools.requiredForBookings]
   const quoteTools = [...AGENT_CONFIG_STANDARD.tools.requiredForQuoting]
-  const ensured = quoteToolsEnabled ? [...baseTools, ...bookingTools, ...quoteTools] : baseTools
+  const dispatchTools = [...AGENT_CONFIG_STANDARD.tools.requiredForDispatch]
+  // Sessions 36-37 — create_dispatch_job rides alongside the booking
+  // toolset, gated on businesses.dispatch_enabled. A non-dispatch
+  // agent never gets the extra tool.
+  const ensured = quoteToolsEnabled
+    ? [...baseTools, ...bookingTools, ...quoteTools, ...(dispatchEnabled ? dispatchTools : [])]
+    : baseTools
 
   let toolsChanged = false
   const nextTools: VapiTool[] = existingTools.slice()
@@ -261,7 +304,19 @@ export async function POST(req: Request) {
     }
   }
   if (!quoteToolsEnabled) {
-    for (const fn of [...bookingTools, ...quoteTools]) {
+    // Cleanup: agent dropped off Growth/Pro — strip booking, quote, AND
+    // dispatch tools (dispatch can't be on without bookings).
+    for (const fn of [...bookingTools, ...quoteTools, ...dispatchTools]) {
+      const idx = nextTools.findIndex(t => toolName(t) === fn)
+      if (idx !== -1) {
+        nextTools.splice(idx, 1)
+        toolsChanged = true
+      }
+    }
+  } else if (!dispatchEnabled) {
+    // Dispatch was turned off but quoting/booking still on — strip
+    // only the dispatch tools.
+    for (const fn of dispatchTools) {
       const idx = nextTools.findIndex(t => toolName(t) === fn)
       if (idx !== -1) {
         nextTools.splice(idx, 1)
@@ -283,6 +338,21 @@ export async function POST(req: Request) {
     if (quoteResult.changed) {
       updatedPrompt = quoteResult.next
       fieldsUpdated.push('quote_block_removed')
+    }
+  }
+
+  // ---- DISPATCHER INTEGRATION prompt block (dispatch_enabled only) ----
+  if (dispatchEnabled) {
+    const dispatchResult = injectDispatchBlock(updatedPrompt)
+    if (dispatchResult.changed) {
+      updatedPrompt = dispatchResult.next
+      fieldsUpdated.push('dispatch_block_added')
+    }
+  } else {
+    const dispatchResult = removeDispatchBlock(updatedPrompt)
+    if (dispatchResult.changed) {
+      updatedPrompt = dispatchResult.next
+      fieldsUpdated.push('dispatch_block_removed')
     }
   }
 

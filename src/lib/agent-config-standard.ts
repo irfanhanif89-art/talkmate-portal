@@ -53,6 +53,10 @@ export const AGENT_CONFIG_STANDARD = {
     requiredForBookings: ['check_availability', 'create_booking', 'add_to_waitlist', 'cancel_booking', 'reschedule_booking'],
     // Required for Growth and Pro only (quoting-capable plans).
     requiredForQuoting: ['calculate_job_quote', 'log_quote_addon'],
+    // Sessions 36-37 — required only when businesses.dispatch_enabled.
+    // The sync routes filter this in only for dispatch-enabled clients
+    // so non-dispatch agents don't get an extra tool they'd never call.
+    requiredForDispatch: ['create_dispatch_job'],
   },
   serverUrl: 'https://app.talkmate.com.au/api/vapi/functions',
 } as const
