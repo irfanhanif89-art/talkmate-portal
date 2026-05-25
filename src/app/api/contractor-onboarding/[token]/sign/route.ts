@@ -295,16 +295,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       })
       .eq('id', contractor.id)
 
-    // When the auth user already existed, inviteUserByEmail did not
-    // generate a magic-link email. Send a transactional note so they
-    // know their portal is now ready.
-    if (linkedExistingUser) {
-      sendRepPortalAccessEmail({
-        email: contractor.email,
-        name: fullName,
-        portalUrl: dashboardUrl,
-      }).catch(() => {})
-    }
+    // Always send the Resend portal-access email — covers both the
+    // existing-user case (where Supabase's invite email never fires)
+    // and the new-user case (where Supabase's email may go to spam or
+    // be rate-limited). The /login page exposes a Magic Link tab so
+    // the rep can sign in from the portalUrl regardless of which
+    // Supabase email arrived. Failures are alerted to admin so we
+    // never silently strand a signed contractor.
+    sendRepPortalAccessEmail({
+      email: contractor.email,
+      name: fullName,
+      portalUrl: `${appUrl.replace(/\/$/, '')}/login?next=${encodeURIComponent('/sales/dashboard')}`,
+    }).catch(err => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[contractor-sign] portal access email failed', msg)
+      notifyAdminAlert(
+        `⚠️ Portal access email failed for ${fullName} (${contractor.email}). They are signed and provisioned but have no login email. Use Resend Portal Access in admin.`,
+      ).catch(() => {})
+    })
   } catch (provisionErr) {
     const msg = provisionErr instanceof Error ? provisionErr.message : String(provisionErr)
     console.error('[contractor-sign] rep portal provisioning failed', msg)
