@@ -109,7 +109,7 @@ export function trialDaysRemaining(end: string | null): number | null {
 
 export function planLabel(p: string | null): string {
   if (!p) return '—'
-  if (p === 'pro' || p === 'professional') return 'Pro'
+  if (p === 'pro') return 'Pro'
   return p.charAt(0).toUpperCase() + p.slice(1)
 }
 
@@ -140,7 +140,7 @@ export function industryLabel(i: string | null): string {
 }
 
 export function planAud(p: string | null): number {
-  if (p === 'pro' || p === 'professional') return 799
+  if (p === 'pro') return 799
   if (p === 'growth') return 499
   if (p === 'starter') return 299
   return 0

@@ -25,7 +25,7 @@ export default async function AdminCommandSettingsPage({
   const plan = (business?.plan as string | null) ?? 'starter'
   const industry = (business?.industry as string | null) ?? ''
   const isTowing = industry === 'towing'
-  const isPaidTier = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  const isPaidTier = plan === 'growth' || plan === 'pro'
 
   if (!isTowing) {
     return (

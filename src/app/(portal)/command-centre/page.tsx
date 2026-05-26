@@ -47,7 +47,7 @@ export default async function CommandCentrePage() {
       hasToken={!!business.command_centre_token}
       authorisedNumbers={business.command_authorised_numbers ?? []}
       dailyCount={business.command_daily_count ?? 0}
-      dailyLimit={plan.key === 'pro' || plan.key === 'professional' ? null : 50}
+      dailyLimit={plan.key === 'pro' ? null : 50}
       history={history ?? []}
       pending={pending ?? null}
     />

@@ -62,7 +62,7 @@ export default async function AdminPartnersPage() {
   for (const s of activeSubs) subByBusiness.set(s.business_id, { plan: s.plan, status: s.status })
 
   function planMrr(plan: string | null) {
-    if (plan === 'pro' || plan === 'professional') return 799
+    if (plan === 'pro') return 799
     if (plan === 'growth') return 499
     if (plan === 'starter') return 299
     return 0

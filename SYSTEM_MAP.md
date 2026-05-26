@@ -293,13 +293,13 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 ## Known Gaps / Deferred Work
 
 ### High Priority (from Session 27 audit — not yet addressed)
-- **H9** — SMS/bookings data integrity issues (deferred to Session 43 — needs decision on block-vs-flag for Vapi webhook booking creation)
 - **H12–H15** — Vapi agent health alerts (note: Session 28 reused the H8–H15 labels for its own four parts; the original audit items here remain)
 - **H29, H32** — Remaining deferred audit items
 
 ### Closed in Session 42
 - **H8** — Vapi agent now deprovisioned on cancel/expire/suspend via Lever 2 (`unassignVapiPhone` PATCHes `phoneNumber.assistantId = null`). Reversible on reactivation via `reassignVapiPhone`. The assistant body is never touched, so model/voice/tools tuning is preserved across pause-resume cycles. `src/lib/vapi-phone.ts` is the canonical helper.
-- **H10** — Stripe `customer.subscription.updated` now syncs `businesses.plan` via `planFromStripePriceNickname()` with compare-and-update (no Telegram noise on renewal events). All 3 unsafe `(nickname || 'starter').toLowerCase()` writes replaced. CHECK constraint `plan IN ('starter','growth','pro')` added at DB level via migration 051. `'professional'` and `'premium'` drift in production data cleaned up by migration 050.
+- **H9** — Closed as "already enforced at DB level." Original brief premise was false: `bookings.client_id` and `sms_log.client_id` are both NOT NULL with FK to `businesses(id)` ON DELETE CASCADE. Postgres physically rejects orphan inserts and CASCADE prevents retroactive orphans on business deletion. Production check confirmed 0 orphans. Additional defensive Telegram alert added in `/api/vapi/functions` `createBooking` for codes 23502 (not_null_violation) and 23503 (foreign_key_violation) so any future schema drift surfaces immediately. The brief's flag column, admin Data Integrity tab, and INSERT guards are all redundant with the DB layer.
+- **H10** — Stripe `customer.subscription.updated` now syncs `businesses.plan` via `planFromStripePriceNickname()` with compare-and-update (no Telegram noise on renewal events). All 3 unsafe `(nickname || 'starter').toLowerCase()` writes replaced. CHECK constraint `plan IN ('starter','growth','pro')` added at DB level via migration 051. `'professional'` and `'premium'` drift in production data cleaned up by migration 050. Read-side bandages cleanup: `'professional'` removed from the `Plan` union in `src/lib/plan.ts` and 22 dependent sites simplified (mostly `plan === 'pro' || plan === 'professional'` → `plan === 'pro'`). `getPlan()` kept defensive `'professional'` → `'pro'` normalisation for any stale read replicas.
 - **Stripe webhook idempotency** (cross-cutting fix surfaced by council review) — new `stripe_webhook_events` dedup table protects every case in the switch from Stripe's guaranteed retries.
 
 ### Closed in Session 28

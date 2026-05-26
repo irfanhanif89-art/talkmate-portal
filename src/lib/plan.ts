@@ -1,7 +1,11 @@
 // Plan metadata used across the portal.
 // Source of truth for limits, prices, and feature gates.
-
-export type Plan = 'starter' | 'growth' | 'pro' | 'professional'
+//
+// Session 42 — the 'professional' legacy alias was retired. The DB CHECK
+// constraint (migration 051) now enforces plan IN ('starter','growth','pro'),
+// so reads no longer need to defensively map 'professional' → 'pro'. The
+// 'professional' string can never appear in production data.
+export type Plan = 'starter' | 'growth' | 'pro'
 
 export interface PlanConfig {
   key: Plan
@@ -13,7 +17,6 @@ export interface PlanConfig {
   overagePerCall: number
 }
 
-// `professional` is treated as an alias of `pro` (legacy data may carry either).
 export const PLAN_CONFIG: Record<Plan, PlanConfig> = {
   starter: {
     key: 'starter',
@@ -60,25 +63,13 @@ export const PLAN_CONFIG: Record<Plan, PlanConfig> = {
     hasCommandCentre: true,
     overagePerCall: 0,
   },
-  professional: {
-    key: 'professional',
-    label: 'Pro',
-    monthlyPrice: 799,
-    callLimit: null,
-    features: [
-      'Unlimited calls',
-      'Everything in Growth',
-      'Outbound AI calls',
-      'Multi-location support',
-      'Dedicated success manager',
-    ],
-    hasCommandCentre: true,
-    overagePerCall: 0,
-  },
 }
 
 export function getPlan(plan: string | null | undefined): PlanConfig {
-  const normalized = (plan || 'starter').toLowerCase() as Plan
+  // Legacy data could carry 'professional' before migration 050 backfill —
+  // normalise just in case stale rows ever resurface from a cache/replica.
+  const raw = (plan || 'starter').toLowerCase()
+  const normalized = (raw === 'professional' ? 'pro' : raw) as Plan
   return PLAN_CONFIG[normalized] ?? PLAN_CONFIG.starter
 }
 

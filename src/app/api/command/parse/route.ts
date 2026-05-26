@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   // ─ Daily rate limit ─────────────────────────────────────────────────────
   const admin = createAdminClient()
   const today = new Date().toISOString().slice(0, 10)
-  const dailyLimit = plan.key === 'pro' || plan.key === 'professional' ? null : 50
+  const dailyLimit = plan.key === 'pro' ? null : 50
   let dailyCount = business.command_daily_count_date === today ? (business.command_daily_count ?? 0) : 0
   if (dailyLimit !== null && dailyCount >= dailyLimit) {
     return NextResponse.json({

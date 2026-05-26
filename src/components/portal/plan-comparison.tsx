@@ -7,7 +7,7 @@ import { PLAN_CONFIG, type Plan } from '@/lib/plan'
 const ORDER: Plan[] = ['starter', 'growth', 'pro']
 
 export default function PlanComparison({ currentPlan }: { currentPlan: string }) {
-  const current = (currentPlan === 'professional' ? 'pro' : currentPlan) as Plan
+  const current = currentPlan as Plan
   // Session 27 (H6) — track which card is mid-redirect so we can show a
   // loading state on its button while the Stripe portal session is created.
   const [loadingPlan, setLoadingPlan] = useState<Plan | null>(null)

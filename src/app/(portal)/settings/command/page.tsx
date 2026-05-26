@@ -24,7 +24,7 @@ export default async function CommandSettingsPage() {
   const plan = (business.plan as string | null) ?? 'starter'
   const industry = (business.industry as string | null) ?? ''
   const isTowing = industry === 'towing'
-  const isPaidTier = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  const isPaidTier = plan === 'growth' || plan === 'pro'
 
   // Industry mismatch -- info banner only, no upgrade path.
   if (!isTowing) {

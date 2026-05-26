@@ -233,7 +233,7 @@ export async function computeAutoChecks(
 
     check_plan_set:
       business.plan === 'starter' || business.plan === 'growth' ||
-      business.plan === 'pro' || business.plan === 'professional',
+      business.plan === 'pro',
 
     check_first_call_logged:
       callCount > 0,

@@ -128,7 +128,7 @@ export default async function AdminPage() {
 
   const totalMRR = subscriptions?.reduce((sum, s) => {
     if (s.status !== 'active') return sum
-    return sum + (s.plan === 'pro' || s.plan === 'professional' ? 799 : s.plan === 'growth' ? 499 : 299)
+    return sum + (s.plan === 'pro' ? 799 : s.plan === 'growth' ? 499 : 299)
   }, 0) || 0
 
   const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
@@ -399,7 +399,7 @@ export default async function AdminPage() {
           <tbody>
             {(businesses ?? []).map((b, i) => {
               const sub = subscriptions?.find(s => s.business_id === b.id)
-              const mrr = sub?.plan === 'pro' || sub?.plan === 'professional' ? 799 : sub?.plan === 'growth' ? 499 : sub?.plan === 'starter' ? 299 : 0
+              const mrr = sub?.plan === 'pro' ? 799 : sub?.plan === 'growth' ? 499 : sub?.plan === 'starter' ? 299 : 0
               const agentStatus = (b as { agent_status?: string }).agent_status
               return (
                 <tr key={b.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? '#0A1E38' : '#071829' }}>

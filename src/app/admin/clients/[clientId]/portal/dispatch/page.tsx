@@ -24,7 +24,7 @@ export default async function AdminDispatchPage({
 
   const plan = (business?.plan as string | null) ?? 'starter'
   const industry = (business?.industry as string | null) ?? ''
-  const isPro = plan === 'pro' || plan === 'professional'
+  const isPro = plan === 'pro'
 
   // Session 16 -- admin parity. Non-Pro towing clients see the locked
   // preview here too; the upgrade button routes to the client edit
