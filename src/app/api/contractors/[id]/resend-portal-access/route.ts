@@ -35,7 +35,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
-  const dashboardUrl = `${appUrl.replace(/\/$/, '')}/sales/dashboard`
+  // Supabase magic-link redirects must land on /auth/callback so the PKCE
+  // code is exchanged for a session; landing directly on /sales/dashboard
+  // skips the exchange and leaves the user unauthenticated.
+  const authCallbackUrl = `${appUrl.replace(/\/$/, '')}/auth/callback?next=${encodeURIComponent('/sales/dashboard')}`
   const loginUrl = `${appUrl.replace(/\/$/, '')}/login?next=${encodeURIComponent('/sales/dashboard')}`
   const fullName = `${contractor.first_name} ${contractor.last_name}`.trim()
 
@@ -45,7 +48,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const inviteRes = await admin.auth.admin.inviteUserByEmail(contractor.email, {
       data: { full_name: fullName, role: 'sales_rep' },
-      redirectTo: dashboardUrl,
+      redirectTo: authCallbackUrl,
     })
     if (inviteRes.error) {
       // Most likely: user already exists. Confirm with a paginated lookup.

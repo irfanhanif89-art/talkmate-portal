@@ -211,15 +211,18 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isGuestOnly) {
-    // Sales reps land on /sales/dashboard; everyone else on /dashboard.
-    // Admins were handled earlier. We do the lookup here (not at every
-    // request) because guest-only paths are hit infrequently.
+    // Any sales rep (active OR inactive) lands on /sales/dashboard. The
+    // /sales layout has its own "Your account has been deactivated"
+    // screen for inactive reps — sending them to /dashboard instead can
+    // bounce them into the client onboarding/subscribe flow if they have
+    // a stale businesses row. Non-reps (no sales_reps row) go to the
+    // client /dashboard as before. Admins were handled earlier.
     const repRes = await fetch(
       `${SUPABASE_URL}/rest/v1/sales_reps?user_id=eq.${user.id}&select=id,status&limit=1`,
       { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
     ).catch(() => null)
     const repData = (await repRes?.json().catch(() => [])) as { status: string }[]
-    if (Array.isArray(repData) && repData[0]?.status === 'active') {
+    if (Array.isArray(repData) && repData.length > 0) {
       return redirect('/sales/dashboard')
     }
     return redirect('/dashboard')
@@ -231,18 +234,21 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse
   }
 
-  // /sales paths — confirm the user has an active sales_reps row.
-  // Admin email allowlist already short-circuited above (admins go to
-  // /admin), so reaching here means a non-admin user. The page-level
-  // SalesRepContext re-checks rep status + policy acknowledgement.
+  // /sales paths — confirm the user has a sales_reps row. Status check
+  // happens at the layout level (/src/app/sales/layout.tsx renders a
+  // "Your account has been deactivated" screen for inactive reps), so
+  // middleware just gates on row existence. Previously this gate
+  // required status='active' and bounced inactive reps to /dashboard,
+  // which then fed them into the client /subscribe flow if they had a
+  // stale businesses row — the bug that stranded Jade.
   if (isSalesPath && user) {
     const repRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/sales_reps?user_id=eq.${user.id}&select=id,status&limit=1`,
+      `${SUPABASE_URL}/rest/v1/sales_reps?user_id=eq.${user.id}&select=id&limit=1`,
       { headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
     ).catch(() => null)
-    const repData = (await repRes?.json().catch(() => [])) as { id: string; status: string }[]
-    const activeRep = Array.isArray(repData) && repData[0]?.status === 'active'
-    if (!activeRep) {
+    const repData = (await repRes?.json().catch(() => [])) as { id: string }[]
+    if (!Array.isArray(repData) || repData.length === 0) {
+      // Not a sales rep — send to client portal.
       return redirect('/dashboard')
     }
     return supabaseResponse

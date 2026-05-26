@@ -215,14 +215,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // The contractor is already marked active above; this only adds portal
   // access on top.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
-  const dashboardUrl = `${appUrl.replace(/\/$/, '')}/sales/dashboard`
+  // Supabase magic-link redirects must land on /auth/callback so the PKCE
+  // code is exchanged for a session; landing directly on /sales/dashboard
+  // skips the exchange and leaves the user unauthenticated.
+  const authCallbackUrl = `${appUrl.replace(/\/$/, '')}/auth/callback?next=${encodeURIComponent('/sales/dashboard')}`
   try {
     let authUserId: string | null = null
     let linkedExistingUser = false
 
     const inviteRes = await admin.auth.admin.inviteUserByEmail(contractor.email, {
       data: { full_name: fullName, role: 'sales_rep' },
-      redirectTo: dashboardUrl,
+      redirectTo: authCallbackUrl,
     })
 
     if (inviteRes.error) {
@@ -275,15 +278,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       }
       repId = insertedRep.id
     } else {
-      // Link the existing rep row to this contractor.
+      // Link the existing rep row to this contractor. The contractor has
+      // just signed their agreement, so flip status to 'active' regardless
+      // of the prior state — otherwise legacy reps stay inactive after
+      // signing and middleware bounces them off /sales/* to /dashboard.
       await admin
         .from('sales_reps')
         .update({
           contractor_id: contractor.id,
           onboarded_via: 'contractor_flow',
           contract_signed_at: signed_at_iso,
+          status: 'active',
         })
         .eq('id', repId)
+
+      // If the rep was previously deactivated, admin/sales-reps/[id] PATCH
+      // bans the auth user. Unban here so re-activation is complete.
+      await admin.auth.admin
+        .updateUserById(authUserId, { ban_duration: 'none' })
+        .catch(() => {})
     }
 
     await admin
