@@ -292,6 +292,86 @@ export function contractorInviteEmailHtml(opts: { firstName: string; inviteUrl: 
   `)
 }
 
+// Sent to the customer from hello@talkmate.com.au when a sales rep
+// closes a deal. Contains the rep's personal sign-off + the secure
+// Stripe Checkout link. Reply-to is set to the rep's notification
+// email so the customer can talk directly to the rep who closed them.
+export function customerPaymentLinkEmailHtml(opts: {
+  contactName: string | null
+  businessName: string
+  planLabel: string
+  billingCycleLabel: string
+  paymentUrl: string
+  repFullName: string
+  repPhone: string | null
+}) {
+  const greeting = opts.contactName ? `Hi ${escapeHtml(opts.contactName)},` : 'Hi there,'
+  const repLine = opts.repPhone
+    ? `${escapeHtml(opts.repFullName)} · ${escapeHtml(opts.repPhone)}`
+    : escapeHtml(opts.repFullName)
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Welcome to TalkMate, ${escapeHtml(opts.businessName)}</h2>
+    <p>${greeting}</p>
+    <p>Great speaking with you. Here is your secure payment link to activate your <strong>${escapeHtml(opts.planLabel)}</strong> ${escapeHtml(opts.billingCycleLabel)} plan with TalkMate.</p>
+    <p style="margin: 22px 0;">${btn(opts.paymentUrl, 'Complete payment')}</p>
+    <p style="font-size: 13px; color: #7BAED4;">Or paste this link into your browser:<br/><span style="word-break: break-all; color: #4A9FE8;">${escapeHtml(opts.paymentUrl)}</span></p>
+    <p>Once payment lands, our team will be in touch within 24 hours to finish configuring your AI receptionist. You're covered by our 14-day money-back guarantee.</p>
+    <p>Any questions, just reply to this email — it goes straight to ${escapeHtml(opts.repFullName)}.</p>
+    <p style="margin-top: 24px; font-size: 13px; color: #34495e;">${repLine}<br/>TalkMate</p>
+  `)
+}
+
+// Fire-and-forget send of the payment link to the customer. Failures
+// are logged + Telegram-alerted so an admin can manually deliver the
+// link if Resend has an outage.
+export async function sendCustomerPaymentLinkEmail(opts: {
+  toEmail: string
+  contactName: string | null
+  businessName: string
+  planLabel: string
+  billingCycleLabel: string
+  paymentUrl: string
+  repFullName: string
+  repPhone: string | null
+  repReplyToEmail: string | null
+}) {
+  try {
+    const res = await sendEmail({
+      to: opts.toEmail,
+      // Per Irfan's spec: customer payment links come from
+      // hello@talkmate.com.au, not the rep's address. Reply-to is the
+      // rep so the customer can still reach the closer directly.
+      from: 'TalkMate <hello@talkmate.com.au>',
+      replyTo: opts.repReplyToEmail ?? undefined,
+      subject: `Your TalkMate payment link — ${opts.businessName}`,
+      html: customerPaymentLinkEmailHtml({
+        contactName: opts.contactName,
+        businessName: opts.businessName,
+        planLabel: opts.planLabel,
+        billingCycleLabel: opts.billingCycleLabel,
+        paymentUrl: opts.paymentUrl,
+        repFullName: opts.repFullName,
+        repPhone: opts.repPhone,
+      }),
+    })
+    if (res && (res as { ok?: boolean }).ok === false) {
+      const errMsg = (res as { error?: string }).error ?? 'unknown error'
+      console.error('[sales-notify] customer payment link email returned not-ok', errMsg)
+      sendTelegram(
+        `⚠️ Customer payment-link email returned not-ok for ${opts.businessName} (${opts.toEmail}). Rep ${opts.repFullName} may need to resend manually. (${errMsg})`,
+      )
+    }
+    return res
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[sales-notify] customer payment link email threw', msg)
+    sendTelegram(
+      `⚠️ Customer payment-link email failed for ${opts.businessName} (${opts.toEmail}). Rep ${opts.repFullName} may need to resend manually. (${msg})`,
+    )
+    return { ok: false, error: msg } as const
+  }
+}
+
 export function contractorSignedPdfEmailHtml(opts: { firstName: string; signedPdfUrl: string }) {
   return emailWrap(`
     <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your signed agreement — keep this for your records</h2>
