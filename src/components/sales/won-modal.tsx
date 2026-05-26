@@ -61,10 +61,12 @@ export default function WonModal({ leadId, businessName, contactName, onClose, o
         maxWidth={500}
       >
         <WonConfirmationScreen
+          leadId={leadId}
           businessName={businessName}
           contactName={contactName ?? null}
           repFullName={rep.full_name}
           repPhone={rep.phone}
+          plan={plan!}
           commissionAmount={base}
           bonusAmount={bonus}
           billingCycle={billingCycle}
