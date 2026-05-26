@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { logAdminAction } from '@/lib/audit'
+import { unassignVapiPhone } from '@/lib/vapi-phone'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -19,6 +20,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { error } = await admin.from('businesses').update({ account_status: 'suspended' }).eq('id', id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  // Session 42 (H8) — unbind Vapi phoneNumber so a suspended client's
+  // assistant can't answer calls. Reversible via the activate route.
+  await unassignVapiPhone(id, 'suspended')
 
   await admin.from('client_admin_notes').insert({
     business_id: id,

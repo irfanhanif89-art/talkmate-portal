@@ -3,9 +3,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { sendAdminTelegram } from '@/lib/notifications'
 import { sendEmail } from '@/lib/resend'
+import { planFromStripePriceNickname } from '@/lib/plan'
+import { unassignVapiPhone, reassignVapiPhone } from '@/lib/vapi-phone'
 
 async function sendWelcomeEmail(email: string, businessName: string, plan: string) {
-  const planLabel = plan === 'professional' ? 'Professional' : plan === 'growth' ? 'Growth' : 'Starter'
+  // Session 42 (H10) — plan now flows through planFromStripePriceNickname
+  // so the canonical values are 'starter' | 'growth' | 'pro'. Keep the
+  // legacy 'professional' branch defensive for any in-flight email from
+  // an older write path, but treat 'pro' as the primary modern value.
+  const planLabel =
+    plan === 'pro' || plan === 'professional' ? 'Pro' :
+    plan === 'growth' ? 'Growth' :
+    'Starter'
   try {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -67,6 +76,25 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient()
 
+  // Session 42 — Stripe webhook idempotency. Stripe retries any event
+  // that doesn't return 2xx. Without dedup, every retry re-fires every
+  // case in this switch (double cancel emails, plan-sync thrash, multiple
+  // Vapi PATCH calls). Atomic insert with PK conflict acts as a lock:
+  // first writer wins, retries no-op via the maybeSingle check.
+  const { data: alreadyProcessed } = await supabase
+    .from('stripe_webhook_events')
+    .select('event_id')
+    .eq('event_id', event.id)
+    .maybeSingle()
+
+  if (alreadyProcessed) {
+    return NextResponse.json({ received: true, deduped: true })
+  }
+
+  await supabase
+    .from('stripe_webhook_events')
+    .insert({ event_id: event.id, event_type: event.type })
+
   switch (event.type) {
     case 'checkout.session.completed': {
       const session = event.data.object as Stripe.Checkout.Session
@@ -75,15 +103,18 @@ export async function POST(request: NextRequest) {
         const customerId = session.customer as string
         const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', customerId).single()
         if (biz) {
+          // Session 42 (H10) — use the canonical mapper instead of
+          // raw nickname.toLowerCase(), which lets through anything an
+          // admin typed into Stripe (e.g. 'Professional' → drift).
+          const planName = planFromStripePriceNickname(sub.items.data[0]?.price.nickname)
           await supabase.from('subscriptions').upsert({
             business_id: biz.id,
             stripe_subscription_id: sub.id,
             stripe_customer_id: customerId,
-            plan: (sub.items.data[0]?.price.nickname || 'starter').toLowerCase(),
+            plan: planName,
             status: sub.status,
             current_period_end: new Date((sub as unknown as { current_period_end: number }).current_period_end * 1000).toISOString(),
           }, { onConflict: 'stripe_subscription_id' })
-          const planName = (sub.items.data[0]?.price.nickname || 'starter').toLowerCase()
           await supabase.from('businesses').update({ plan: planName }).eq('id', biz.id)
           // Send welcome email
           const { data: owner } = await supabase.from('users').select('email').eq('id',
@@ -100,11 +131,51 @@ export async function POST(request: NextRequest) {
     case 'customer.subscription.updated': {
       const sub = event.data.object as Stripe.Subscription
       const subData = sub as unknown as { current_period_end: number }
+      const newPlan = planFromStripePriceNickname(sub.items.data[0]?.price.nickname)
+      const customerId = sub.customer as string
+
+      // 1. subscriptions row tracks period_end which changes every renewal,
+      //    so always write here even if the plan didn't change.
       await supabase.from('subscriptions').update({
         status: sub.status,
-        plan: (sub.items.data[0]?.price.nickname || 'starter').toLowerCase(),
+        plan: newPlan,
         current_period_end: new Date(subData.current_period_end * 1000).toISOString(),
       }).eq('stripe_subscription_id', sub.id)
+
+      // 2. Session 42 (H10) — compare-and-update businesses.plan. Stripe
+      //    fires customer.subscription.updated on every billing-cycle
+      //    renewal, so we only Telegram + notify the client when the plan
+      //    actually changed. Without this gate, monthly renewals would
+      //    spam admin alerts and accumulate noise notification rows.
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id, name, plan, vapi_phone_unassigned_at')
+        .eq('stripe_customer_id', customerId)
+        .maybeSingle()
+
+      if (biz && biz.plan !== newPlan) {
+        await supabase.from('businesses').update({ plan: newPlan }).eq('id', biz.id)
+        await sendAdminTelegram(
+          `Plan change: ${biz.name ?? 'Unknown'} moved from ${biz.plan} to ${newPlan} via Stripe.`,
+        ).catch(() => {})
+        await supabase.from('notifications').insert({
+          business_id: biz.id,
+          type: 'plan_changed',
+          message: `Your plan has been updated to ${newPlan.charAt(0).toUpperCase() + newPlan.slice(1)}.`,
+        })
+      }
+
+      // 3. Session 42 (H8) — if subscription is now active and the phone
+      //    was previously unassigned (cancel → reactivate path), re-bind
+      //    it and flip account_status back to active.
+      if (sub.status === 'active' && biz?.vapi_phone_unassigned_at) {
+        await reassignVapiPhone(biz.id)
+        await supabase
+          .from('businesses')
+          .update({ account_status: 'active' })
+          .eq('id', biz.id)
+      }
+
       break
     }
     case 'customer.subscription.deleted': {
@@ -120,6 +191,12 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
       if (biz) {
         await supabase.from('businesses').update({ account_status: 'cancelled' }).eq('id', biz.id)
+
+        // Session 42 (H8) — unbind the Vapi phoneNumber so the assistant
+        // can no longer answer calls. The assistant body is never touched
+        // (no model/voice/tools mutation), so reactivation is a single
+        // PATCH back to assistantId via reassignVapiPhone().
+        await unassignVapiPhone(biz.id, 'cancelled')
 
         // Look up owner email separately because users.email is the canonical
         // source (auth.users may have a different one if it was changed).
@@ -273,6 +350,13 @@ export async function POST(request: NextRequest) {
       .update({ payout_status: 'failed' })
       .eq('stripe_account_id', transfer.destination as string)
   }
+
+  // Session 42 — stamp processed_at so the dedup table doubles as an
+  // audit trail of which events finished cleanly.
+  await supabase
+    .from('stripe_webhook_events')
+    .update({ processed_at: new Date().toISOString() })
+    .eq('event_id', event.id)
 
   return NextResponse.json({ received: true })
 }

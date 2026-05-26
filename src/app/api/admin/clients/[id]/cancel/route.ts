@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { postEmailTrigger } from '@/lib/make-webhook'
 import { logAdminAction } from '@/lib/audit'
+import { unassignVapiPhone } from '@/lib/vapi-phone'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -45,6 +46,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   await admin.from('businesses').update({ account_status: 'cancelled' }).eq('id', id)
+
+  // Session 42 (H8) — unbind Vapi phoneNumber so the assistant stops
+  // answering calls. Stripe webhook will also fire for the cancel
+  // upstream, but idempotency in unassignVapiPhone + the Stripe webhook
+  // dedup table mean the duplicate call is safe.
+  await unassignVapiPhone(id, 'cancelled')
 
   await admin.from('client_admin_notes').insert({
     business_id: id,
