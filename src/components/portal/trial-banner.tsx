@@ -17,7 +17,7 @@ interface TrialStatus {
 function planStripeLink(plan: string | null | undefined): string | null {
   if (plan === 'starter') return process.env.NEXT_PUBLIC_STRIPE_STARTER_LINK ?? null
   if (plan === 'growth') return process.env.NEXT_PUBLIC_STRIPE_GROWTH_LINK ?? null
-  if (plan === 'pro' || plan === 'professional') return process.env.NEXT_PUBLIC_STRIPE_PRO_LINK ?? null
+  if (plan === 'pro') return process.env.NEXT_PUBLIC_STRIPE_PRO_LINK ?? null
   return null
 }
 

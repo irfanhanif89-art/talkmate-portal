@@ -152,7 +152,7 @@ export default function BillingPage() {
       if (biz.signup_at) {
         const months = Math.max(1, Math.floor((Date.now() - new Date(biz.signup_at).getTime()) / (30 * 24 * 60 * 60 * 1000)))
         const billingCycleForCalc = (biz.billing_cycle as string) ?? 'monthly'
-        const monthlyPrice = biz.plan === 'pro' || biz.plan === 'professional'
+        const monthlyPrice = biz.plan === 'pro'
           ? 799
           : biz.plan === 'growth'
           ? 499
@@ -298,7 +298,7 @@ export default function BillingPage() {
               style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Manage in Stripe
             </button>
-            {planConfig.key !== 'pro' && planConfig.key !== 'professional' && (
+            {planConfig.key !== 'pro' && (
               <button
                 onClick={async () => {
                   const r = await fetch('/api/stripe/portal', { method: 'POST' })

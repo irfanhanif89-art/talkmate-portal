@@ -296,7 +296,7 @@ export async function POST() {
   // can never drift. Growth/Pro get booking + quoting; Starter gets
   // the four required core tools only.
   const plan = (business.plan as string | null) ?? 'starter'
-  const quoteToolsEnabled = plan === 'growth' || plan === 'pro' || plan === 'professional'
+  const quoteToolsEnabled = plan === 'growth' || plan === 'pro'
   const dispatchEnabled = (business as { dispatch_enabled?: boolean }).dispatch_enabled === true
   const baseTools = [...AGENT_CONFIG_STANDARD.tools.required]
   const bookingTools = [...AGENT_CONFIG_STANDARD.tools.requiredForBookings]

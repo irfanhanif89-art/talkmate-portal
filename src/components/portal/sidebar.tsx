@@ -35,7 +35,7 @@ interface Props {
 
 // Session 16 -- plan gate helpers for sidebar nav badges.
 function isProPlan(plan: string): boolean {
-  return plan === 'pro' || plan === 'professional'
+  return plan === 'pro'
 }
 function isPaidPlan(plan: string): boolean {
   return plan === 'growth' || isProPlan(plan)
@@ -384,7 +384,7 @@ export default function PortalSidebar(props: Props) {
               Upgrade to Pro →
             </a>
           )}
-          {(planConfig.key === 'pro' || planConfig.key === 'professional') && (
+          {planConfig.key === 'pro' && (
             <div style={{ marginTop: 10, fontSize: 11, color: '#7BAED4', textAlign: 'center', fontStyle: 'italic' }}>
               You are on our top plan
             </div>

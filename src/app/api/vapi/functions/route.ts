@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { sendAdminTelegram } from '@/lib/notifications'
 import {
   sendSMS,
   templateBookingReceived,
@@ -559,6 +560,19 @@ async function createBooking(
     .single()
 
   if (error || !booking) {
+    // Session 42 (H9 closure) — orphan inserts are prevented at the DB
+    // layer by bookings.client_id NOT NULL + FK to businesses CASCADE.
+    // We should never see code 23502 (not_null_violation) or 23503
+    // (foreign_key_violation) here — if we do, it means a schema drift
+    // (someone dropped the constraint, or the FK was disabled). Alert
+    // immediately so we find out within minutes instead of weeks.
+    const code = (error as { code?: string } | null)?.code
+    if (code === '23502' || code === '23503') {
+      await sendAdminTelegram(
+        `Booking integrity invariant broken: ${code} on client_id=${clientId}. ` +
+        `DB-level FK or NOT NULL was bypassed. Check migrations 050/051 immediately.`,
+      ).catch(() => {})
+    }
     return { result: { booking_id: null, error: error?.message ?? 'insert failed' } }
   }
 

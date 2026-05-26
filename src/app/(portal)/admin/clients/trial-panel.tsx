@@ -134,7 +134,7 @@ export function TrialManagementPanel({
 
       {showConvert && (
         <ConvertPlanPicker
-          currentPlan={(business.plan === 'professional' ? 'pro' : business.plan) ?? 'starter'}
+          currentPlan={business.plan ?? 'starter'}
           busy={busy === 'convert-trial'}
           onCancel={() => setShowConvert(false)}
           onPick={convert}

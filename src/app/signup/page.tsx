@@ -20,7 +20,7 @@ export default async function SignupPage({
   const planParam = (plan ?? '').toLowerCase()
   const initialPlan: 'starter' | 'growth' | 'pro' =
     planParam === 'starter' ? 'starter'
-    : planParam === 'pro' || planParam === 'professional' ? 'pro'
+    : planParam === 'pro' ? 'pro'
     : 'growth' // default to Growth — the "most popular" plan
 
   return <SignupClient initialPlan={initialPlan} />

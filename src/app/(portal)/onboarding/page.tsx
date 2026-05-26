@@ -382,7 +382,7 @@ export default function OnboardingPage() {
   // provisioned command_bots record. Anyone else jumps 10 → 12.
   const isTowingGrowthPlus =
     bizIndustry === 'towing' &&
-    ['growth', 'pro', 'professional'].includes((bizPlan ?? '').toLowerCase())
+    ['growth', 'pro'].includes((bizPlan ?? '').toLowerCase())
   const skipCommandStep = !isTowingGrowthPlus || !commandBot
 
   async function next() {

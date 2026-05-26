@@ -359,7 +359,7 @@ export default function EditClientModal({
 // else so the admin UI stays narrow for non-eligible clients.
 function showCommandTab(business: AdminBusiness): boolean {
   const plan = (business.plan ?? '').toLowerCase()
-  return business.industry === 'towing' && ['growth', 'pro', 'professional'].includes(plan)
+  return business.industry === 'towing' && ['growth', 'pro'].includes(plan)
 }
 
 // ── Details tab ────────────────────────────────────────────────────────────
