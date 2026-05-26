@@ -274,6 +274,34 @@ export function repPortalAccessEmailHtml(opts: { repName: string; portalUrl: str
   `)
 }
 
+export function contractorInviteEmailHtml(opts: { firstName: string; inviteUrl: string; expiresAt: string }) {
+  const expiresLabel = new Date(opts.expiresAt).toLocaleDateString('en-AU', {
+    timeZone: 'Australia/Brisbane',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Welcome to TalkMate — review and sign your contract</h2>
+    <p>Hi ${escapeHtml(opts.firstName)},</p>
+    <p>You've been invited to join the TalkMate sales team. The next step is to review and sign your Independent Sales Representative Agreement.</p>
+    <p>Click the button below to open the agreement. You'll be asked to confirm your details (ABN and bank), read the agreement in full, and sign it electronically. It takes about five minutes.</p>
+    <p style="margin: 22px 0;">${btn(opts.inviteUrl, 'Review and sign agreement')}</p>
+    <p style="font-size: 12px; color: #7BAED4;">This link is unique to you and expires on ${escapeHtml(expiresLabel)}. If you didn't expect this email, you can ignore it.</p>
+    <p>Questions? Reply to this email and we'll help.</p>
+  `)
+}
+
+export function contractorSignedPdfEmailHtml(opts: { firstName: string; signedPdfUrl: string }) {
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your signed agreement — keep this for your records</h2>
+    <p>Hi ${escapeHtml(opts.firstName)},</p>
+    <p>Thanks for signing your TalkMate Sales Representative Agreement. A signed PDF copy is linked below — please save it for your records.</p>
+    <p style="margin: 22px 0;">${btn(opts.signedPdfUrl, 'Download signed agreement')}</p>
+    <p>Your Sales HQ portal access will be sent separately. Welcome to the team.</p>
+  `)
+}
+
 export function terminationEmailHtml(opts: { repName: string; terminationDate: string }) {
   return emailWrap(`
     <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your TalkMate Sales Contractor Agreement has been terminated</h2>
