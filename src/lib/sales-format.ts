@@ -89,3 +89,34 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return '—'
   return d.toLocaleString('en-AU', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: AU_TZ })
 }
+
+// Session 43 — sprint window helpers. admin_settings stores
+// sales_sprint_start / sales_sprint_end as plain date strings like
+// "2026-05-01". Convert to ISO timestamps for SQL comparisons against
+// won_at. Brisbane is +10:00 year-round (no DST in QLD), so the offset
+// is constant.
+const AEST_OFFSET = '+10:00'
+
+export function aestDateToIsoStart(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null
+  // "2026-05-01" → "2026-05-01T00:00:00+10:00"
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null
+  return `${dateStr}T00:00:00${AEST_OFFSET}`
+}
+
+export function aestDateToIsoEnd(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null
+  // "2026-05-31" → "2026-05-31T23:59:59+10:00"
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null
+  return `${dateStr}T23:59:59${AEST_OFFSET}`
+}
+
+export function formatSprintRange(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start || !end) return '—'
+  const s = new Date(`${start}T00:00:00${AEST_OFFSET}`)
+  const e = new Date(`${end}T00:00:00${AEST_OFFSET}`)
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return '—'
+  const sFmt = s.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: AU_TZ })
+  const eFmt = e.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: AU_TZ })
+  return `${sFmt} – ${eFmt}`
+}
