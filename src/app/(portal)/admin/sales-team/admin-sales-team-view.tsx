@@ -10,6 +10,7 @@ import ApproveDealModal from './approve-deal-modal'
 import RejectDealModal from './reject-deal-modal'
 import RevokeCommissionModal from './revoke-commission-modal'
 import MarkPaidModal from './mark-paid-modal'
+import ReassignLeadModal from '@/components/admin/ReassignLeadModal'
 
 const LEGACY_BANNER_KEY = 'sales-team-legacy-banner-dismissed'
 
@@ -71,13 +72,16 @@ interface Props {
   leads: AdminLeadRow[]
   commissions: AdminCommissionRow[]
   leaderboard: Array<{ rep_name: string; count: number }>
+  // Session 43 — all active reps across legacy + contractor flows.
+  // Used as the destination dropdown for the Reassign Lead modal.
+  allActiveReps: Array<{ id: string; full_name: string; status: string }>
 }
 
 type Tab = 'reps' | 'leads' | 'commissions'
 
 const COMMISSION_MAP = { starter: 299, growth: 349, pro: 399 } as const
 
-export default function AdminSalesTeamView({ reps, leads, commissions, leaderboard }: Props) {
+export default function AdminSalesTeamView({ reps, leads, commissions, leaderboard, allActiveReps }: Props) {
   const [tab, setTab] = useState<Tab>('reps')
   const router = useRouter()
 
@@ -86,6 +90,7 @@ export default function AdminSalesTeamView({ reps, leads, commissions, leaderboa
   const [contractRep, setContractRep] = useState<AdminRepRow | null>(null)
   const [approveLead, setApproveLead] = useState<AdminLeadRow | null>(null)
   const [rejectLead, setRejectLead] = useState<AdminLeadRow | null>(null)
+  const [reassignLead, setReassignLead] = useState<AdminLeadRow | null>(null)
   const [revokeCommission, setRevokeCommission] = useState<AdminCommissionRow | null>(null)
   const [payCommission, setPayCommission] = useState<AdminCommissionRow | null>(null)
 
@@ -158,6 +163,7 @@ export default function AdminSalesTeamView({ reps, leads, commissions, leaderboa
           leaderboard={leaderboard}
           onApprove={setApproveLead}
           onReject={setRejectLead}
+          onReassign={setReassignLead}
         />
       )}
       {tab === 'commissions' && (
@@ -174,6 +180,20 @@ export default function AdminSalesTeamView({ reps, leads, commissions, leaderboa
       {contractRep && <ContractManagerModal rep={contractRep} onClose={() => setContractRep(null)} onSuccess={() => { setContractRep(null); router.refresh() }} />}
       {approveLead && <ApproveDealModal lead={approveLead} onClose={() => setApproveLead(null)} onSuccess={() => { setApproveLead(null); router.refresh() }} />}
       {rejectLead && <RejectDealModal lead={rejectLead} onClose={() => setRejectLead(null)} onSuccess={() => { setRejectLead(null); router.refresh() }} />}
+      {reassignLead && (
+        <ReassignLeadModal
+          lead={{
+            id: reassignLead.id,
+            business_name: reassignLead.business_name,
+            status: reassignLead.status,
+            assigned_to: reassignLead.rep_id,
+            current_rep_name: reassignLead.rep_name === 'Unassigned' ? null : reassignLead.rep_name,
+          }}
+          destinationReps={allActiveReps.filter(r => r.id !== reassignLead.rep_id)}
+          onClose={() => setReassignLead(null)}
+          onSuccess={() => { setReassignLead(null); router.refresh() }}
+        />
+      )}
       {revokeCommission && <RevokeCommissionModal commission={revokeCommission} onClose={() => setRevokeCommission(null)} onSuccess={() => { setRevokeCommission(null); router.refresh() }} />}
       {payCommission && <MarkPaidModal commission={payCommission} onClose={() => setPayCommission(null)} onSuccess={() => { setPayCommission(null); router.refresh() }} />}
     </div>
@@ -304,11 +324,12 @@ function RepsPane({ reps, onManageContract, onDeactivate, onReactivate }: {
 // -----------------------------
 // Leads tab
 // -----------------------------
-function LeadsPane({ leads, leaderboard, onApprove, onReject }: {
+function LeadsPane({ leads, leaderboard, onApprove, onReject, onReassign }: {
   leads: AdminLeadRow[]
   leaderboard: Array<{ rep_name: string; count: number }>
   onApprove: (lead: AdminLeadRow) => void
   onReject: (lead: AdminLeadRow) => void
+  onReassign: (lead: AdminLeadRow) => void
 }) {
   const [sub, setSub] = useState<'queue' | 'all'>('queue')
   const [filterRep, setFilterRep] = useState('all')
@@ -414,13 +435,14 @@ function LeadsPane({ leads, leaderboard, onApprove, onReject }: {
 
             <Card>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 780 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 880 }}>
                   <thead><tr style={headRow}>
                     <th style={th}>Business</th>
                     <th style={th}>Rep</th>
                     <th style={th}>Status</th>
                     <th style={th}>Industry</th>
                     <th style={th}>Created</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Action</th>
                   </tr></thead>
                   <tbody>
                     {filteredAll.map(l => (
@@ -430,6 +452,15 @@ function LeadsPane({ leads, leaderboard, onApprove, onReject }: {
                         <td style={{ ...td, color: '#7BAED4', textTransform: 'capitalize' }}>{l.status.replace(/_/g, ' ')}</td>
                         <td style={{ ...td, color: '#7BAED4' }}>{l.industry ?? '—'}</td>
                         <td style={{ ...td, color: '#7BAED4' }}>{formatDate(l.created_at)}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <button
+                            onClick={() => onReassign(l)}
+                            style={{ ...ghostBtn, color: '#7BAED4', borderColor: 'rgba(123,174,212,0.3)' }}
+                            title="Move this lead to another rep"
+                          >
+                            Reassign
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
