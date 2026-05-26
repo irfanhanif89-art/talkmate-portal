@@ -23,13 +23,26 @@ export default async function AdminSalesTeamPage() {
   const admin = createAdminClient()
 
   // Fetch reps with their lead/won/commission rollups in parallel.
-  const [{ data: reps }, { data: leads }, { data: commissions }, { data: contracts }] = await Promise.all([
+  // Session 43: also fetch all reps (legacy + contractor-flow) so the
+  // Reassign Lead modal can offer every active destination rep, AND
+  // so the leads tab can resolve rep names for contractor-flow reps
+  // (previously showed "Unassigned" for any lead owned by a non-legacy rep).
+  const [
+    { data: reps },
+    { data: allReps },
+    { data: leads },
+    { data: commissions },
+    { data: contracts },
+  ] = await Promise.all([
     admin.from('sales_reps')
       .select('id, full_name, email, phone, status, contract_signed_at, policy_acknowledged_at, created_at, team_id')
       // Session 25: this page now manages legacy manually-onboarded reps
       // only. Contractor-flow reps live on /admin/contractors.
       .eq('is_legacy', true)
       .order('created_at', { ascending: false }),
+    admin.from('sales_reps')
+      .select('id, full_name, status')
+      .order('full_name', { ascending: true }),
     admin.from('leads')
       .select('id, business_name, contact_name, phone, email, industry, status, approval_status, won_plan, won_at, business_id, created_at, assigned_to, approval_notes')
       .order('created_at', { ascending: false }),
@@ -69,7 +82,13 @@ export default async function AdminSalesTeamPage() {
     }
   }
 
+  // Build the rep-name lookup from ALL reps (legacy + contractor-flow)
+  // so leads/commissions/audit-trail can always resolve a name.
   const repNameById = new Map<string, string>()
+  for (const r of allReps ?? []) {
+    repNameById.set(r.id, r.full_name)
+  }
+
   const repRows: AdminRepRow[] = (reps ?? []).map(r => {
     repNameById.set(r.id, r.full_name)
     return {
@@ -145,12 +164,19 @@ export default async function AdminSalesTeamPage() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
 
+  // Active destination reps for the ReassignLeadModal — drawn from
+  // allReps so contractor-flow reps appear too.
+  const allActiveReps = (allReps ?? [])
+    .filter(r => r.status === 'active')
+    .map(r => ({ id: r.id, full_name: r.full_name, status: r.status }))
+
   return (
     <AdminSalesTeamView
       reps={repRows}
       leads={leadRows}
       commissions={commissionRows}
       leaderboard={leaderboard}
+      allActiveReps={allActiveReps}
     />
   )
 }
