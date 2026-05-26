@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { createTelegramBotForClient } from '@/lib/telegram-bot-creator'
 import { logAdminAction } from '@/lib/audit'
+import { reassignVapiPhone } from '@/lib/vapi-phone'
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin()
@@ -20,6 +21,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { error } = await admin.from('businesses').update({ account_status: 'active' }).eq('id', id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  // Session 42 (H8) — re-bind Vapi phoneNumber if it was previously
+  // unassigned (cancelled/expired/suspended → active path). Idempotent:
+  // no-ops if vapi_phone_unassigned_at is null.
+  await reassignVapiPhone(id)
 
   await admin.from('client_admin_notes').insert({
     business_id: id,

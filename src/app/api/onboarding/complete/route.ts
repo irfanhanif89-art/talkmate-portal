@@ -88,6 +88,17 @@ Always be warm, natural, and helpful. You represent ${business.name} in Australi
     }
   }
 
+  // Session 42 (H8) — persist the preview phoneNumber UUID so that if a
+  // preview-stage business is suspended before approval (e.g. fraud),
+  // unassignVapiPhone() can still PATCH the binding. After approval the
+  // production Twilio number's UUID overwrites this in provisionAgent().
+  if (vapiAgentId) {
+    await supabase
+      .from('businesses')
+      .update({ vapi_phone_number_id: PREVIEW_VAPI_PHONE_ID })
+      .eq('id', business.id)
+  }
+
   // Pull the new Session-1 fields out of the wizard responses.
   const industry = (responses.industry as IndustrySlug | undefined) ?? null
   const recordingDisclosureEnabled = (responses.recordingDisclosureEnabled as boolean | undefined) ?? true

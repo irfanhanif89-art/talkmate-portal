@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { logAdminAction } from '@/lib/audit'
+import { unassignVapiPhone } from '@/lib/vapi-phone'
 
 // Immediately set a trial to 'expired'. Used by the "End trial now" button.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,6 +24,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .single()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  // Session 42 (H8) — unbind Vapi phoneNumber on manual trial expiry,
+  // same as the expire-trials cron does automatically.
+  await unassignVapiPhone(id, 'expired')
 
   await admin.from('client_comms_log').insert({
     business_id: id,

@@ -107,7 +107,12 @@ export async function POST(request: Request) {
     const rawArgs = fc?.parameters ?? fc?.arguments ?? {}
     params = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs
 
-    // Resolve business_id from the Vapi assistantId → businesses table
+    // Resolve business_id from the Vapi assistantId → businesses table.
+    // Session 42 (H8 defence-in-depth) — also gate on account_status so
+    // cancelled / expired / suspended accounts cannot create bookings,
+    // SMS, quotes via the native payload path. The legacy branch below
+    // already has this gate (Session 28 H12); this branch was unguarded
+    // until Session 42.
     const assistantId: string = raw.call?.assistantId ?? raw.call?.assistant?.id ?? ''
     if (!assistantId) {
       return NextResponse.json({ error: 'Cannot resolve business: no assistantId in call context' }, { status: 400 })
@@ -115,10 +120,16 @@ export async function POST(request: Request) {
     const supabaseAdmin = createAdminClient()
     const { data: biz } = await supabaseAdmin
       .from('businesses')
-      .select('id')
+      .select('id, account_status')
       .eq('vapi_agent_id', assistantId)
-      .single()
-    businessId = biz?.id ?? ''
+      .maybeSingle()
+    if (!biz) {
+      return NextResponse.json({ error: 'Unknown assistant' }, { status: 404 })
+    }
+    if (!['active', 'trial'].includes(biz.account_status as string)) {
+      return NextResponse.json({ error: 'Account not active' }, { status: 403 })
+    }
+    businessId = biz.id
   } else {
     // Legacy custom format
     // Session 28 (H12): do NOT trust body.business_id — it lets anyone

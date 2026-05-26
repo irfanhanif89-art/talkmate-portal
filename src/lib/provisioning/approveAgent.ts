@@ -142,6 +142,9 @@ export async function provisionAgent(
   }
 
   // Vapi register (naturally idempotent on the assistantId).
+  // Session 42 (H8) — capture the returned phoneNumber UUID and persist
+  // it to businesses.vapi_phone_number_id so unassignVapiPhone() can
+  // PATCH this resource later when the subscription is cancelled.
   try {
     const vapiRes = await fetch('https://api.vapi.ai/phone-number', {
       method: 'POST',
@@ -167,6 +170,24 @@ export async function provisionAgent(
         status: 502,
         error: 'Vapi registration failed (Twilio number retained for retry)',
       }
+    }
+    // Capture phoneNumber UUID for H8 entitlement deprovision.
+    try {
+      const vapiData = (await vapiRes.json()) as { id?: string }
+      const vapiPhoneNumberId = vapiData?.id ?? null
+      if (vapiPhoneNumberId) {
+        await supabase
+          .from('businesses')
+          .update({ vapi_phone_number_id: vapiPhoneNumberId })
+          .eq('id', businessId)
+      } else {
+        await sendAdminTelegram(
+          `WARNING: Vapi phone-number POST did not return an id for ${business.name}. ` +
+          `H8 unassign/reassign will not work for this customer. Manual backfill required.`,
+        ).catch(() => {})
+      }
+    } catch (parseErr) {
+      console.error('[provisionAgent] Vapi response parse failed:', parseErr)
     }
   } catch (e) {
     console.error('[provisionAgent] Vapi exception:', e)

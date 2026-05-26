@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyCron } from '@/lib/cron-auth'
 import { sendSms } from '@/lib/twilio'
+import { unassignVapiPhone } from '@/lib/vapi-phone'
 
 // Daily cron — runs at 8am AEST (22:00 UTC). Flips every trial whose
 // trial_end_date has passed to account_status = 'expired'. Also fires
@@ -61,6 +62,17 @@ export async function GET(req: Request) {
       webhookStatus = 'failed'
       webhookError = e instanceof Error ? e.message : String(e)
     }
+  }
+
+  // Session 42 (H8) — unbind each expired business's Vapi phoneNumber
+  // so the assistant stops answering calls. Idempotent: unassignVapiPhone
+  // no-ops if vapi_phone_unassigned_at is already set or if
+  // vapi_phone_number_id is null. Errors are logged + Telegram'd inside
+  // the helper; we don't let one failed unassign break the cron loop.
+  for (const b of expiredList) {
+    await unassignVapiPhone(b.id, 'expired').catch((e) => {
+      console.error('[expire-trials] unassignVapiPhone threw for', b.id, e)
+    })
   }
 
   // Direct SMS to Irfan (belt-and-braces alongside Make.com webhook)
