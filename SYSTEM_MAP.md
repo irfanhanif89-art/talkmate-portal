@@ -358,6 +358,21 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 
 ---
 
+## Test Accounts
+
+Dedicated mailbox for Claude-run QA. Use for any test that requires receiving a real email (contractor invites, welcome emails, proposal sends, etc.). Do NOT use for live customer-facing flows.
+
+| Field | Value |
+|-------|-------|
+| Email | `testingtalkmate@gmail.com` |
+| Gmail password | `Talkmatetest2026!` |
+| Purpose | Receive test emails sent by Claude during QA |
+| Created | 2026-05-26 |
+
+After a QA test, delete any test rows created in `contractors` / `leads` / `businesses` so they don't pollute reporting.
+
+---
+
 ## Architecture Notes
 
 - **Auth:** Supabase Auth (email/password). Sessions via SSR cookies.
