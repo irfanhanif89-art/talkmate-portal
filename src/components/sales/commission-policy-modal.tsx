@@ -72,9 +72,6 @@ export default function CommissionPolicyModal() {
             <RateCard plan="Growth"  amount={473.75} accent="#22C55E" />
             <RateCard plan="Pro"     amount={598.75} accent="#22C55E" />
           </div>
-          <p style={{ fontSize: 12, color: '#7BAED4', marginTop: 10, marginBottom: 0 }}>
-            Base commission plus 2.5% of annual contract value. One-off payment per closed deal.
-          </p>
         </div>
 
         <PolicyRow
