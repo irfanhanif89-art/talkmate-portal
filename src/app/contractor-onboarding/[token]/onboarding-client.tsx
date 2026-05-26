@@ -374,24 +374,24 @@ export default function ContractorOnboardingClient({ token }: { token: string })
                   <tbody>
                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                       <td style={{ padding: '6px 4px', fontWeight: 600 }}>Starter</td>
-                      <td style={{ padding: '6px 4px' }}>/mo</td>
-                      <td style={{ padding: '6px 4px' }}>,990 upfront</td>
-                      <td style={{ padding: '6px 4px' }}></td>
-                      <td style={{ padding: '6px 4px' }}>.75</td>
+                      <td style={{ padding: '6px 4px' }}>$299/mo</td>
+                      <td style={{ padding: '6px 4px' }}>$2,990 upfront</td>
+                      <td style={{ padding: '6px 4px' }}>$299</td>
+                      <td style={{ padding: '6px 4px' }}>$373.75</td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                       <td style={{ padding: '6px 4px', fontWeight: 600 }}>Growth</td>
-                      <td style={{ padding: '6px 4px' }}>/mo</td>
-                      <td style={{ padding: '6px 4px' }}>,990 upfront</td>
-                      <td style={{ padding: '6px 4px' }}></td>
-                      <td style={{ padding: '6px 4px' }}>.75</td>
+                      <td style={{ padding: '6px 4px' }}>$499/mo</td>
+                      <td style={{ padding: '6px 4px' }}>$4,990 upfront</td>
+                      <td style={{ padding: '6px 4px' }}>$349</td>
+                      <td style={{ padding: '6px 4px' }}>$473.75</td>
                     </tr>
                     <tr>
                       <td style={{ padding: '6px 4px', fontWeight: 600 }}>Pro</td>
-                      <td style={{ padding: '6px 4px' }}>/mo</td>
-                      <td style={{ padding: '6px 4px' }}>,990 upfront</td>
-                      <td style={{ padding: '6px 4px' }}></td>
-                      <td style={{ padding: '6px 4px' }}>.75</td>
+                      <td style={{ padding: '6px 4px' }}>$799/mo</td>
+                      <td style={{ padding: '6px 4px' }}>$7,990 upfront</td>
+                      <td style={{ padding: '6px 4px' }}>$399</td>
+                      <td style={{ padding: '6px 4px' }}>$598.75</td>
                     </tr>
                   </tbody>
                 </table>
@@ -470,7 +470,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>11. Dispute Resolution</h3>
               <p>11.1 If a dispute arises in connection with this Agreement, the party raising the dispute must notify the other party in writing, setting out the nature of the dispute and the outcome sought.</p>
               <p>11.2 Within 14 days of a dispute notice being received, both parties must attempt in good faith to resolve the dispute through direct written negotiation.</p>
-              <p>11.3 If the dispute is not resolved within 14 days, either party may refer the dispute to the Queensland Civil and Administrative Tribunal (QCAT) for disputes with a value of ,000 or less, or to a court of competent jurisdiction for disputes exceeding ,000.</p>
+              <p>11.3 If the dispute is not resolved within 14 days, either party may refer the dispute to the Queensland Civil and Administrative Tribunal (QCAT) for disputes with a value of $25,000 or less, or to a court of competent jurisdiction for disputes exceeding $25,000.</p>
               <p>11.4 QCAT proceedings may be initiated by either party without the requirement for mediation or any other pre-litigation step beyond the 14-day negotiation window in clause 11.2.</p>
               <p>11.5 This Agreement is governed by the laws of Queensland, Australia. The parties submit to the non-exclusive jurisdiction of the courts and tribunals of Queensland.</p>
               <p>11.6 Nothing in this clause prevents either party from seeking urgent injunctive or declaratory relief from a court of competent jurisdiction where necessary to protect confidential information, intellectual property, or other time-sensitive interests.</p>

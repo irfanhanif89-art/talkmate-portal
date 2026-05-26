@@ -1,0 +1,15 @@
+from pypdf import PdfReader
+r = PdfReader(r'C:\Users\info\Downloads\test-contract-out.pdf')
+all_text = '\n'.join(p.extract_text() for p in r.pages)
+print('Pages:', len(r.pages))
+print('Has {{placeholder}}?:', '{{' in all_text)
+print('Has real first name Jordan?:', 'Jordan' in all_text)
+print('Has real ABN 83914571673?:', '83914571673' in all_text)
+print('Has BSB 062-000?:', '062-000' in all_text)
+print('Has signature method label?:', 'drawn' in all_text)
+print('Has Schedule 1?:', 'Schedule 1' in all_text)
+print('Has Schedule 2?:', 'Schedule 2' in all_text)
+for v in ['$299/mo', '$373.75', '$598.75', '$25,000', '2,990 upfront']:
+    print(f'  {v!r}:', v in all_text)
+print('Has Irfan Hanif signatory?:', 'Irfan Hanif' in all_text)
+print('Has IP audit line?:', '203.0.113.42' in all_text)

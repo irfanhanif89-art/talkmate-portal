@@ -17,6 +17,11 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { getRecurringPriceId, getSetupPriceId, isPricingPlan } from '@/lib/pricing'
 import { isBillingCycle } from '@/lib/commission'
+import { sendCustomerPaymentLinkEmail } from '@/lib/sales-notify'
+
+function planLabelOf(p: 'starter' | 'growth' | 'pro'): string {
+  return p.charAt(0).toUpperCase() + p.slice(1)
+}
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireSalesRep()
@@ -42,6 +47,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
   if (!isPricingPlan(lead.won_plan)) {
     return NextResponse.json({ ok: false, error: 'Lead has no valid plan' }, { status: 400 })
+  }
+  // Customer email is mandatory — the payment link is sent automatically
+  // from hello@talkmate.com.au, not copy-pasted by the rep. If the lead
+  // has no email on file, the rep needs to add it before proceeding.
+  const customerEmail = typeof lead.email === 'string' ? lead.email.trim() : ''
+  if (!customerEmail || !customerEmail.includes('@')) {
+    return NextResponse.json(
+      { ok: false, error: 'This lead has no email on file. Add their email to the lead before sending the payment link.' },
+      { status: 400 },
+    )
   }
   const billingCycle = isBillingCycle(lead.won_billing_cycle) ? lead.won_billing_cycle : 'monthly'
 
@@ -109,5 +124,36 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     })
     .eq('id', leadId)
 
-  return NextResponse.json({ ok: true, url: session.url })
+  // Auto-send the payment link to the customer from hello@talkmate.com.au.
+  // Reply-to is set to the rep's notification email (falls back to their
+  // login email) so the customer can reach the closing rep directly.
+  // The email send is awaited so the UI can render a definitive "Sent to
+  // X" success state — if the send fails we still return the URL (the
+  // checkout session is real and committed in Stripe) plus an
+  // `email_send_error` field so the UI can prompt the rep to follow up.
+  const repReplyTo: string | null = auth.rep.notification_email ?? auth.rep.email ?? null
+
+  const emailResult = await sendCustomerPaymentLinkEmail({
+    toEmail: customerEmail,
+    contactName: typeof lead.contact_name === 'string' ? lead.contact_name : null,
+    businessName: typeof lead.business_name === 'string' ? lead.business_name : '',
+    planLabel: planLabelOf(lead.won_plan),
+    billingCycleLabel: billingCycle === 'annual' ? 'annual' : 'monthly',
+    paymentUrl: session.url,
+    repFullName: auth.rep.full_name,
+    repPhone: auth.rep.phone,
+    repReplyToEmail: repReplyTo,
+  })
+
+  const emailedOk = emailResult && (emailResult as { ok?: boolean }).ok !== false
+  const emailError = !emailedOk
+    ? (emailResult as { error?: string })?.error ?? 'Email send failed'
+    : null
+
+  return NextResponse.json({
+    ok: true,
+    url: session.url,
+    emailed_to: emailedOk ? customerEmail : null,
+    email_send_error: emailError,
+  })
 }
