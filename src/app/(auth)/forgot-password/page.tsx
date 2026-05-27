@@ -13,8 +13,12 @@ export default function ForgotPasswordPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true); setError('')
+    // After the user clicks the reset link, /auth/callback exchanges
+    // the code for a session and forwards to /reset-password — a
+    // dedicated page that only needs the new password (no current
+    // password required, since the reset session itself proves identity).
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/profile?reset=1')}`,
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reset-password')}`,
     })
     if (error) { setError(error.message); setBusy(false); return }
     setSent(true); setBusy(false)
