@@ -182,7 +182,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // Insert agreement record with signature metadata (migration 041).
   await admin.from('contractor_agreements').insert({
     contractor_id: contractor.id,
-    agreement_version: '2.0',
+    agreement_version: '2.1',
     script_version: scriptVersion,
     script_date: scriptDate,
     signed_at: signed_at_iso,
