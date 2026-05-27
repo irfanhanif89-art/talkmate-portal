@@ -325,7 +325,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
                 borderRadius: 10, lineHeight: 1.6, fontSize: 14,
               }}
             >
-              <h2 style={{ fontSize: 18, marginTop: 0 }}>TalkMate Sales Contractor Agreement, Version 2.0</h2>
+              <h2 style={{ fontSize: 18, marginTop: 0 }}>TalkMate Sales Contractor Agreement</h2>
               <p style={{ margin: '0 0 4px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>Miami, QLD 4220 | talkmate.com.au</p>
               <p>Effective: {today}</p>
               <p>This Sales Contractor Agreement (<strong>Agreement</strong>) is entered into between:</p>
@@ -587,12 +587,12 @@ export default function ContractorOnboardingClient({ token }: { token: string })
             <h1 style={heading}>Sign the Agreement</h1>
             <p style={sub}>
               By signing below you confirm you have read and agree to all terms of
-              the TalkMate Sales Contractor Agreement v2.0.
+              the TalkMate Sales Contractor Agreement v2.1.
             </p>
 
             <div style={summaryBox}>
               <div style={{ marginBottom: 4 }}><strong>Contractor:</strong> {fullName}</div>
-              <div style={{ marginBottom: 4 }}><strong>Agreement Version:</strong> 2.0</div>
+              <div style={{ marginBottom: 4 }}><strong>Agreement Version:</strong> 2.1</div>
               <div style={{ marginBottom: 4 }}><strong>Date:</strong> {today}</div>
               <div><strong>Script Version:</strong> {scriptVersion} (dated {scriptDate})</div>
             </div>
@@ -609,7 +609,7 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <input type="checkbox" checked={agreeAgreement} onChange={e => setAgreeAgreement(e.target.checked)} style={{ marginTop: 4 }} />
               <span style={{ fontSize: 14, lineHeight: 1.5 }}>
                 I, <strong>{fullName}</strong>, agree to be legally bound by the TalkMate Sales Contractor
-                Agreement Version 2.0 dated {today}. I confirm this electronic signature has the same
+                Agreement Version 2.1 dated {today}. I confirm this electronic signature has the same
                 legal effect as my handwritten signature under the Electronic Transactions Act 2001 (Qld).
               </span>
             </label>
@@ -659,7 +659,25 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               Your signed agreement has been emailed to <strong>{c.email}</strong>. Welcome to the
               TalkMate sales team.
             </p>
-            <h3 style={{ fontSize: 16, margin: '20px 0 6px' }}>Commission Schedule</h3>
+
+            <div style={summaryBox}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Next: sign in to Sales HQ</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.6 }}>
+                We&apos;ve emailed your portal access details to <strong>{c.email}</strong>. Check
+                spam if you don&apos;t see it within a few minutes. You can also open the portal
+                directly below — use <strong>Magic Link</strong> on the sign-in page if you haven&apos;t
+                set a password yet, or <strong>Forgot password</strong> if you need to reset one.
+              </div>
+            </div>
+
+            <a
+              href={`/login?next=${encodeURIComponent('/sales/dashboard')}`}
+              style={{ ...button, textDecoration: 'none', display: 'inline-block', textAlign: 'center' }}
+            >
+              Open Sales HQ →
+            </a>
+
+            <h3 style={{ fontSize: 16, margin: '24px 0 6px' }}>Commission Schedule</h3>
             <CommissionTable />
             <p style={{ ...note, marginTop: 20 }}>
               Questions? Email <a style={{ color: '#22D3EE' }} href="mailto:hello@talkmate.com.au">hello@talkmate.com.au</a>
