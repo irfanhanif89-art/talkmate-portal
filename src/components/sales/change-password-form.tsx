@@ -2,10 +2,8 @@
 
 import { useState } from 'react'
 import { CheckCircle2, AlertCircle } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 
 export default function ChangePasswordForm() {
-  const supabase = createClient()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
@@ -22,19 +20,20 @@ export default function ChangePasswordForm() {
     setError(null)
     setSaved(false)
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
     if (password !== confirm) {
       setError('Passwords do not match.')
       return
     }
 
     setSaving(true)
-    const { error: updateErr } = await supabase.auth.updateUser({ password })
-    if (updateErr) {
-      setError(updateErr.message)
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setError(body?.error ?? 'Could not update password.')
       setSaving(false)
       return
     }
@@ -48,7 +47,7 @@ export default function ChangePasswordForm() {
     <form onSubmit={save} style={card}>
       <h2 style={cardTitle}>Change password</h2>
       <p style={cardHint}>
-        Set a new password so you can sign in without a magic link. Minimum 8 characters.
+        Set a new password so you can sign in without a magic link. Must be at least 8 characters and include an uppercase letter, a number, and a special character.
       </p>
 
       <Field label="New password">
