@@ -55,8 +55,15 @@ export default function ProfilePage() {
       // Verify current password first
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password: currentPassword })
       if (signInErr) throw new Error('Current password is incorrect.')
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
-      if (error) throw error
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error ?? 'Could not update password.')
+      }
       setPwMsg({ ok: true, text: 'Password changed successfully.' })
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('')
     } catch (err) {

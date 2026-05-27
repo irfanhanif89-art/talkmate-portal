@@ -37,12 +37,16 @@ function ResetPasswordInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     if (password !== confirm) { setError('Passwords do not match.'); return }
     setBusy(true)
-    const { error: updateErr } = await supabase.auth.updateUser({ password })
-    if (updateErr) {
-      setError(updateErr.message)
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setError(body?.error ?? 'Could not update password.')
       setBusy(false)
       return
     }
