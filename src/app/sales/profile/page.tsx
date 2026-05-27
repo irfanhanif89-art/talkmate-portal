@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/sales/profile-form'
+import ChangePasswordForm from '@/components/sales/change-password-form'
 import { formatDateTime } from '@/lib/sales-format'
-import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Profile — TalkMate Sales HQ' }
@@ -31,8 +31,12 @@ export default async function SalesProfilePage() {
         initialNotificationEmail={auth.rep.notification_email ?? ''}
       />
 
+      <div style={{ marginTop: 16 }}>
+        <ChangePasswordForm />
+      </div>
+
       <div style={{
-        marginTop: 22, background: '#0A1E38',
+        marginTop: 16, background: '#0A1E38',
         border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 22,
       }}>
         <h2 style={{ fontSize: 14, fontWeight: 700, color: 'white', margin: 0, marginBottom: 14 }}>Account details</h2>
@@ -43,17 +47,6 @@ export default async function SalesProfilePage() {
         <Row label="Commission policy" value={`Version ${auth.rep.commission_policy_version}`} />
         <Row label="Policy acknowledged" value={formatDateTime(auth.rep.policy_acknowledged_at)} />
         <Row label="Contract signed" value={formatDateTime(auth.rep.contract_signed_at)} last />
-      </div>
-
-      <div style={{
-        marginTop: 16, padding: '14px 18px', borderRadius: 10,
-        background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-        fontSize: 13, color: '#7BAED4',
-      }}>
-        Need to change your password?{' '}
-        <Link href="/forgot-password" style={{ color: '#E8622A', fontWeight: 700, textDecoration: 'none' }}>
-          Reset it here →
-        </Link>
       </div>
     </div>
   )
