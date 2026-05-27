@@ -326,11 +326,10 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               }}
             >
               <h2 style={{ fontSize: 18, marginTop: 0 }}>TalkMate Sales Contractor Agreement</h2>
-              <p style={{ margin: '0 0 4px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>Miami, QLD 4220 | talkmate.com.au</p>
-              <p>Effective: {today}</p>
-              <p>This Sales Contractor Agreement (<strong>Agreement</strong>) is entered into between:</p>
-              <p><strong>Principal:</strong> TalkMate (ABN: TBC), trading as TalkMate, Miami QLD 4220</p>
-              <p><strong>Contractor:</strong> {fullName}</p>
+              <p style={{ margin: '0 0 4px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>Version 2.1 | Miami, QLD 4220 | talkmate.com.au</p>
+              <p><strong>Principal:</strong> TalkMate (ABN: 23 489 336 470), trading as TalkMate, Miami QLD 4220 (TalkMate)</p>
+              <p><strong>Contractor:</strong> {fullName} (Contractor)</p>
+              <p><strong>Effective Date:</strong> {today}</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>1. Appointment and Nature of Engagement</h3>
               <p>1.1 TalkMate appoints the Contractor as a non-exclusive independent sales contractor to promote and sell TalkMate&apos;s AI receptionist subscription plans to prospective clients in Australia.</p>
@@ -397,10 +396,16 @@ export default function ContractorOnboardingClient({ token }: { token: string })
                 </table>
               </div>
               <p>3.2 Annual plan commission is calculated as the base monthly commission for the relevant plan plus 2.5% of the total annual amount paid by the client.</p>
-              <p>3.3 A Qualified Sale means a sale where: the client has successfully signed up to a TalkMate plan via the portal; the client&apos;s payment has been received and cleared by TalkMate; the client has not cancelled or requested a refund within the 14-day money-back guarantee period; and the sale was not made through misrepresentation, false promise, or unethical conduct by the Contractor.</p>
+              <p>3.3 A Qualified Sale means a sale where:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>The client has successfully signed up to a TalkMate plan via the portal.</li>
+                <li>The client&apos;s payment has been received and cleared by TalkMate.</li>
+                <li>The client has not cancelled or requested a refund within the 14-day money-back guarantee period.</li>
+                <li>The sale was not made through misrepresentation, false promise, or unethical conduct by the Contractor.</li>
+              </ul>
               <p>3.4 Commission will be paid within 14 days after the expiry of the client&apos;s 14-day money-back guarantee period, provided the sale qualifies under clause 3.3.</p>
               <p>3.5 Commission payments will be made by bank transfer to the account nominated by the Contractor. The Contractor must provide valid banking details prior to the first payment.</p>
-              <p>3.6 <strong>ABN and Tax Withholding.</strong> The Contractor must provide a valid Australian Business Number (ABN) prior to receiving any commission payment. If the Contractor fails to provide a valid ABN, TalkMate is required by law to withhold 47% of each commission payment and remit that amount to the Australian Taxation Office. TalkMate accepts no liability for any tax consequences arising from the Contractor&apos;s failure to provide a valid ABN.</p>
+              <p>3.6 <strong>ABN and Tax Withholding.</strong> The Contractor must provide a valid Australian Business Number (ABN) prior to receiving any commission payment. If the Contractor fails to provide a valid ABN, TalkMate is required by law under the Tax Laws Amendment (Improving Small Business Outcomes) Act and ATO no-ABN withholding rules to withhold 47% of each commission payment and remit that amount to the Australian Taxation Office. TalkMate accepts no liability for any tax consequences arising from the Contractor&apos;s failure to provide a valid ABN.</p>
               <p>3.7 TalkMate reserves the right to adjust the commission structure by providing 30 days written notice to the Contractor. Sales made prior to the effective date of any change will be paid at the rate applicable at the time of sale.</p>
               <p>3.8 <strong>Acquisition.</strong> In the event TalkMate is acquired by or merges with another entity during the term of this Agreement, TalkMate will use reasonable endeavours to ensure that commission obligations for Qualified Sales made prior to the acquisition date are honoured by the acquiring entity. TalkMate will provide the Contractor with written notice of any such acquisition within 14 days of completion.</p>
 
@@ -434,21 +439,42 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <p>5.3 In the event a client complaint or refund request is received by TalkMate that relates to conduct or representations made by the Contractor, TalkMate may investigate using available evidence including call recordings and written communications, and take such action as it deems appropriate including suspending commission payments, terminating this Agreement, and seeking recovery of losses under clause 10.</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>6. Systems Access and Intellectual Property</h3>
-              <p>6.1 TalkMate will provide the Contractor with access to the following systems for the purpose of performing the Services: TalkMate Sales HQ portal and CRM; approved lead packs as allocated by TalkMate; version-controlled sales scripts, pitch decks, and approved marketing materials.</p>
+              <p>6.1 TalkMate will provide the Contractor with access to the following systems for the purpose of performing the Services:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>TalkMate Sales HQ portal and CRM.</li>
+                <li>Approved lead packs as allocated by TalkMate.</li>
+                <li>Version-controlled sales scripts, pitch decks, and approved marketing materials.</li>
+              </ul>
               <p>6.2 All systems, platforms, tools, lead data, client data, scripts, materials, and intellectual property provided by TalkMate remain the sole property of TalkMate at all times. The Contractor acquires no ownership interest in any TalkMate intellectual property.</p>
-              <p>6.3 The Contractor must: use TalkMate systems only for the purpose of performing the Services under this Agreement; not download, copy, share, or distribute lead lists, client data, or TalkMate materials to any third party; not use TalkMate&apos;s systems, data, or materials for any purpose outside of this Agreement; and immediately notify TalkMate of any suspected unauthorised access to TalkMate systems.</p>
+              <p>6.3 The Contractor must:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>Use TalkMate systems only for the purpose of performing the Services under this Agreement.</li>
+                <li>Not download, copy, share, or distribute lead lists, client data, or TalkMate materials to any third party.</li>
+                <li>Not use TalkMate&apos;s systems, data, or materials for any purpose outside of this Agreement.</li>
+                <li>Immediately notify TalkMate of any suspected unauthorised access to TalkMate systems.</li>
+              </ul>
               <p>6.4 Upon termination of this Agreement for any reason, the Contractor must immediately cease using all TalkMate systems and return or destroy all TalkMate materials in their possession. TalkMate will revoke all system access within 24 hours of termination.</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>7. Confidentiality</h3>
-              <p>7.1 The Contractor acknowledges that in the course of performing the Services they will have access to confidential information of TalkMate including but not limited to: client lists, prospect lists, and lead data; pricing structures, commission arrangements, and business strategy; sales scripts, pitch materials, and conversion processes; technology, systems, and platform details; business plans, financial information, and commercial arrangements.</p>
+              <p>7.1 The Contractor acknowledges that in the course of performing the Services they will have access to confidential information of TalkMate including but not limited to:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>Client lists, prospect lists, and lead data.</li>
+                <li>Pricing structures, commission arrangements, and business strategy.</li>
+                <li>Sales scripts, pitch materials, and conversion processes.</li>
+                <li>Technology, systems, and platform details.</li>
+                <li>Business plans, financial information, and commercial arrangements.</li>
+              </ul>
               <p>7.2 The Contractor must not at any time, whether during or after the term of this Agreement, disclose or use any confidential information of TalkMate for any purpose other than performing the Services, without the prior written consent of TalkMate.</p>
               <p>7.3 The obligations of confidentiality in this clause survive termination of this Agreement for a period of two (2) years.</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>8. Non-Solicitation</h3>
+              <p style={{ fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', borderLeft: '2px solid rgba(34, 211, 238, 0.5)', paddingLeft: 10, margin: '6px 0 10px' }}>
+                <strong>Amendment Note (v2.1):</strong> Clause 8.1 has been amended to limit the non-solicitation obligation to TalkMate-introduced contacts only. The Contractor&apos;s own pre-existing contacts and independently sourced leads remain outside the scope of this clause.
+              </p>
               <p>8.1 During the term of this Agreement and for a period of twelve (12) months following termination, the Contractor must not, anywhere in Australia:</p>
               <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
-                <li>Directly or indirectly solicit, approach, or contact any client or prospect introduced to the Contractor through TalkMate for the purpose of selling competing products or services.</li>
-                <li>Encourage or assist any TalkMate client to cancel their subscription or transition to a competing service.</li>
+                <li>Directly or indirectly solicit, approach, or contact any client or prospect introduced to the Contractor through TalkMate (including via TalkMate lead packs, CRM referrals, or the TalkMate portal) for the purpose of selling competing products or services. For the avoidance of doubt, this obligation does not apply to contacts or leads that the Contractor sourced independently and brought to TalkMate.</li>
+                <li>Encourage or assist any TalkMate-introduced client to cancel their subscription or transition to a competing service.</li>
                 <li>Use TalkMate&apos;s lead data or client information to benefit any competing business.</li>
                 <li>Directly or indirectly solicit, recruit, or engage any employee, contractor, or team member of TalkMate to leave TalkMate or to work for any competing business or venture.</li>
               </ul>
@@ -458,14 +484,43 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>9. Term and Termination</h3>
               <p>9.1 This Agreement commences on the Effective Date and continues on an ongoing basis until terminated in accordance with this clause.</p>
               <p>9.2 Either party may terminate this Agreement without cause by providing fourteen (14) days written notice to the other party.</p>
-              <p>9.3 TalkMate may terminate this Agreement immediately and without notice if the Contractor: commits a material breach of this Agreement including misrepresentation to clients; engages in conduct that is dishonest, fraudulent, or likely to bring TalkMate into disrepute; violates any applicable law including the Australian Consumer Law, Privacy Act, or Spam Act; discloses confidential information in breach of clause 7; solicits TalkMate clients or personnel in breach of clause 8; or fails to provide a valid ABN after being given 7 days written notice to do so.</p>
-              <p>9.4 Upon termination: the Contractor&apos;s access to all TalkMate systems will be revoked within 24 hours; commission will be paid for Qualified Sales completed prior to the termination date, subject to the clawback provisions in clause 4; no commission will be payable for leads in the pipeline that have not resulted in a Qualified Sale prior to termination; and all confidentiality and non-solicitation obligations survive termination.</p>
+              <p>9.3 TalkMate may terminate this Agreement immediately and without notice if the Contractor:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>Commits a material breach of this Agreement including misrepresentation to clients.</li>
+                <li>Engages in conduct that is dishonest, fraudulent, or likely to bring TalkMate into disrepute.</li>
+                <li>Violates any applicable law including the Australian Consumer Law, Privacy Act, or Spam Act.</li>
+                <li>Discloses confidential information in breach of clause 7.</li>
+                <li>Solicits TalkMate clients or personnel in breach of clause 8.</li>
+                <li>Fails to provide a valid ABN after being given 7 days written notice to do so.</li>
+              </ul>
+              <p>9.4 Upon termination:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>The Contractor&apos;s access to all TalkMate systems will be revoked within 24 hours.</li>
+                <li>Commission will be paid for Qualified Sales completed prior to the termination date, subject to the clawback provisions in clause 4.</li>
+                <li>No commission will be payable for leads in the pipeline that have not resulted in a Qualified Sale prior to termination.</li>
+                <li>All confidentiality and non-solicitation obligations survive termination.</li>
+              </ul>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>10. Liability and Indemnity</h3>
-              <p>10.1 The Contractor indemnifies and holds harmless TalkMate, its officers, employees, and agents against any loss, damage, cost, or liability (including legal costs) arising from: any misrepresentation, false statement, or unauthorised promise made by the Contractor to a prospect or client; any breach by the Contractor of this Agreement, applicable law, or regulatory requirement; or any claim by a client arising from the Contractor&apos;s conduct during the sales process.</p>
-              <p>10.2 TalkMate&apos;s total liability to the Contractor under or in connection with this Agreement is limited to the total commission paid to the Contractor in the three (3) months preceding the event giving rise to the claim.</p>
+              <p style={{ fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', borderLeft: '2px solid rgba(34, 211, 238, 0.5)', paddingLeft: 10, margin: '6px 0 10px' }}>
+                <strong>Amendment Note (v2.1):</strong> Clauses 10.1 and 10.2 have been amended to create mutual liability caps of three (3) months at the request of the Contractor. Intentional fraud, deliberate misrepresentation, and data theft are expressly carved out and remain uncapped.
+              </p>
+              <p>10.1 Subject to clause 10.5, the Contractor indemnifies and holds harmless TalkMate, its officers, employees, and agents against any loss, damage, cost, or liability (including legal costs) arising from:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li>Any misrepresentation, false statement, or unauthorised promise made by the Contractor to a prospect or client.</li>
+                <li>Any breach by the Contractor of this Agreement, applicable law, or regulatory requirement.</li>
+                <li>Any claim by a client arising from the Contractor&apos;s conduct during the sales process.</li>
+              </ul>
+              <p>10.2 Subject to clause 10.5, each party&apos;s total liability to the other under or in connection with this Agreement is limited to the total commission paid (or payable) to the Contractor in the three (3) months preceding the event giving rise to the claim. This cap applies equally to TalkMate&apos;s liability to the Contractor and to the Contractor&apos;s liability to TalkMate.</p>
               <p>10.3 Neither party is liable to the other for indirect, consequential, or loss of profits damages.</p>
               <p>10.4 TalkMate&apos;s liability under clause 10.1 does not extend to misrepresentations made by the Contractor that fall within the scope of the approved sales script in force at the time of the relevant sale. Where a client complaint arises from content contained in TalkMate&apos;s approved script, TalkMate accepts responsibility for that content.</p>
+              <p>10.5 Notwithstanding any other provision of this Agreement, the liability cap in clause 10.2 does not apply to, and does not limit either party&apos;s liability arising from:</p>
+              <ul style={{ paddingLeft: 18, margin: '4px 0 8px' }}>
+                <li><strong>Intentional fraud</strong> — including deliberate misrepresentation of facts to induce the other party to enter into this Agreement or any transaction.</li>
+                <li><strong>Deliberate misrepresentation</strong> — any knowing or intentional false statement made to a client, prospect, or TalkMate in the course of the engagement.</li>
+                <li><strong>Data theft or unauthorised disclosure</strong> — including any intentional misappropriation, unauthorised access to, or disclosure of TalkMate&apos;s confidential information, lead data, or client data in breach of clauses 6 or 7.</li>
+              </ul>
+              <p style={{ fontStyle: 'italic', color: 'rgba(255,255,255,0.75)' }}>In each of the above circumstances, the offending party&apos;s liability remains uncapped and the other party retains all rights at law and in equity.</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>11. Dispute Resolution</h3>
               <p>11.1 If a dispute arises in connection with this Agreement, the party raising the dispute must notify the other party in writing, setting out the nature of the dispute and the outcome sought.</p>
@@ -481,16 +536,16 @@ export default function ContractorOnboardingClient({ token }: { token: string })
               <p>12.3 <strong>Waiver.</strong> A failure or delay by either party to exercise a right under this Agreement does not operate as a waiver of that right.</p>
               <p>12.4 <strong>Severability.</strong> If any provision of this Agreement is found to be invalid or unenforceable, the remaining provisions continue in full force and effect.</p>
               <p>12.5 <strong>Notices.</strong> Notices under this Agreement may be given by email to the email addresses provided by each party at the time of engagement. A notice sent by email is taken to be received at the time of transmission unless the sender receives a delivery failure notification.</p>
-              <p>12.6 <strong>Electronic Execution.</strong> The parties agree that this Agreement will be executed electronically via the TalkMate Sales Portal. An electronic signature applied through the TalkMate portal has the same legal effect as a handwritten signature under the Electronic Transactions Act 2001 (Qld). A PDF copy of the executed agreement will be automatically emailed to the Contractor&apos;s nominated email address upon execution.</p>
+              <p>12.6 <strong>Electronic Execution.</strong> The parties agree that this Agreement will be executed electronically via the TalkMate Sales Portal using a compliant electronic signature mechanism. An electronic signature applied through the TalkMate portal has the same legal effect as a handwritten signature under the Electronic Transactions Act 2001 (Qld). A PDF copy of the executed agreement will be automatically emailed to the Contractor&apos;s nominated email address upon execution.</p>
               <p>12.7 <strong>Counterparts.</strong> This Agreement may be executed in counterparts, each of which is an original and all of which together constitute one instrument.</p>
 
               <h3 style={{ fontSize: 15, margin: '16px 0 6px' }}>Schedule 1: Commission Rates</h3>
               <CommissionTable />
 
               <p style={{ marginTop: 16, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                TalkMate | Miami QLD 4220 | talkmate.com.au | Version 2.0
+                TalkMate | Miami QLD 4220 | talkmate.com.au | Version 2.1
               </p>
-              <p style={{ marginTop: 8 }}>I have read and understood the full TalkMate Sales Contractor Agreement Version 2.0.</p>
+              <p style={{ marginTop: 8 }}>I have read and understood the full TalkMate Sales Contractor Agreement Version 2.1.</p>
             </div>
             <p style={note}>
               {agreementScrolled ? 'Thanks - you can continue.' : 'Scroll to the bottom of the agreement to continue.'}

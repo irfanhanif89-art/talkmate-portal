@@ -280,7 +280,7 @@ export default function ContractorDetailView({
         {contractor.agreement_signed_at ? (
           <>
             <div style={kvRow}><div style={kvKey}>Signed</div><div style={kvVal}>{formatDateTime(contractor.agreement_signed_at)}</div></div>
-            <div style={kvRow}><div style={kvKey}>Version</div><div style={kvVal}>{agreements[0]?.agreement_version ?? '2.0'}</div></div>
+            <div style={kvRow}><div style={kvKey}>Version</div><div style={kvVal}>{agreements[0]?.agreement_version ?? '2.1'}</div></div>
             <div style={kvRow}><div style={kvKey}>Script version</div><div style={kvVal}>{agreements[0]?.script_version ?? ''} (dated {agreements[0]?.script_date ?? ''})</div></div>
             {signedPdfUrl && (
               <div style={{ marginTop: 12 }}>

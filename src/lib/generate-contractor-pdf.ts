@@ -342,14 +342,14 @@ function renderFullAgreement(
   c = { page: c.page, y: c.y - 30 }
   c.page.drawText('Sales Contractor Agreement', { x: MARGIN_X, y: c.y, size: H1_SIZE, font: helvBold, color: COLOR_BLACK })
   c = { page: c.page, y: c.y - 22 }
-  c.page.drawText('Version 2.0', { x: MARGIN_X, y: c.y, size: 11, font: helv, color: COLOR_GREY })
+  c.page.drawText('Version 2.1', { x: MARGIN_X, y: c.y, size: 11, font: helv, color: COLOR_GREY })
   c = { page: c.page, y: c.y - 14 }
   c.page.drawText('Miami, QLD 4220 | talkmate.com.au', { x: MARGIN_X, y: c.y, size: 10, font: helv, color: COLOR_GREY })
   c = gap(c, 22)
 
   c = drawParagraph(pdfDoc, c, 'This Sales Contractor Agreement (Agreement) is entered into between:', { font: helv })
   c = gap(c, 6)
-  c = drawParagraph(pdfDoc, c, `Principal: TalkMate (ABN: TBC), trading as TalkMate, Miami QLD 4220 (TalkMate).`, { font: helv })
+  c = drawParagraph(pdfDoc, c, `Principal: TalkMate (ABN: 23 489 336 470), trading as TalkMate, Miami QLD 4220 (TalkMate).`, { font: helv })
   c = gap(c, 4)
   c = drawParagraph(pdfDoc, c, `Contractor: ${fullName} (Contractor).`, { font: helv })
   c = gap(c, 4)
@@ -468,9 +468,11 @@ function renderFullAgreement(
 
   // Section 8
   c = drawHeading(pdfDoc, c, '8. Non-Solicitation', { font: helvBold, size: H2_SIZE, topGap: 14 })
+  c = drawParagraph(pdfDoc, c, "Amendment Note (v2.1): Clause 8.1 has been amended to limit the non-solicitation obligation to TalkMate-introduced contacts only. The Contractor's own pre-existing contacts and independently sourced leads remain outside the scope of this clause.", { font: helvItalic, color: COLOR_DARK_GREY })
+  c = gap(c, 4)
   c = drawParagraph(pdfDoc, c, '8.1 During the term of this Agreement and for a period of twelve (12) months following termination, the Contractor must not, anywhere in Australia:', { font: helv })
-  c = drawBullet(pdfDoc, c, 'Directly or indirectly solicit, approach, or contact any client or prospect introduced to the Contractor through TalkMate for the purpose of selling competing products or services.', helv)
-  c = drawBullet(pdfDoc, c, 'Encourage or assist any TalkMate client to cancel their subscription or transition to a competing service.', helv)
+  c = drawBullet(pdfDoc, c, 'Directly or indirectly solicit, approach, or contact any client or prospect introduced to the Contractor through TalkMate (including via TalkMate lead packs, CRM referrals, or the TalkMate portal) for the purpose of selling competing products or services. For the avoidance of doubt, this obligation does not apply to contacts or leads that the Contractor sourced independently and brought to TalkMate.', helv)
+  c = drawBullet(pdfDoc, c, 'Encourage or assist any TalkMate-introduced client to cancel their subscription or transition to a competing service.', helv)
   c = drawBullet(pdfDoc, c, "Use TalkMate's lead data or client information to benefit any competing business.", helv)
   c = drawBullet(pdfDoc, c, 'Directly or indirectly solicit, recruit, or engage any employee, contractor, or team member of TalkMate to leave TalkMate or to work for any competing business or venture.', helv)
   c = gap(c, 4)
@@ -500,16 +502,25 @@ function renderFullAgreement(
 
   // Section 10
   c = drawHeading(pdfDoc, c, '10. Liability and Indemnity', { font: helvBold, size: H2_SIZE, topGap: 14 })
-  c = drawParagraph(pdfDoc, c, '10.1 The Contractor indemnifies and holds harmless TalkMate, its officers, employees, and agents against any loss, damage, cost, or liability (including legal costs) arising from:', { font: helv })
+  c = drawParagraph(pdfDoc, c, 'Amendment Note (v2.1): Clauses 10.1 and 10.2 have been amended to create mutual liability caps of three (3) months at the request of the Contractor. Intentional fraud, deliberate misrepresentation, and data theft are expressly carved out and remain uncapped.', { font: helvItalic, color: COLOR_DARK_GREY })
+  c = gap(c, 4)
+  c = drawParagraph(pdfDoc, c, '10.1 Subject to clause 10.5, the Contractor indemnifies and holds harmless TalkMate, its officers, employees, and agents against any loss, damage, cost, or liability (including legal costs) arising from:', { font: helv })
   c = drawBullet(pdfDoc, c, 'Any misrepresentation, false statement, or unauthorised promise made by the Contractor to a prospect or client.', helv)
   c = drawBullet(pdfDoc, c, 'Any breach by the Contractor of this Agreement, applicable law, or regulatory requirement.', helv)
   c = drawBullet(pdfDoc, c, "Any claim by a client arising from the Contractor's conduct during the sales process.", helv)
   c = gap(c, 4)
-  c = drawParagraph(pdfDoc, c, "10.2 TalkMate's total liability to the Contractor under or in connection with this Agreement is limited to the total commission paid to the Contractor in the three (3) months preceding the event giving rise to the claim.", { font: helv })
+  c = drawParagraph(pdfDoc, c, "10.2 Subject to clause 10.5, each party's total liability to the other under or in connection with this Agreement is limited to the total commission paid (or payable) to the Contractor in the three (3) months preceding the event giving rise to the claim. This cap applies equally to TalkMate's liability to the Contractor and to the Contractor's liability to TalkMate.", { font: helv })
   c = gap(c, 4)
   c = drawParagraph(pdfDoc, c, '10.3 Neither party is liable to the other for indirect, consequential, or loss of profits damages.', { font: helv })
   c = gap(c, 4)
   c = drawParagraph(pdfDoc, c, "10.4 TalkMate's liability under clause 10.1 does not extend to misrepresentations made by the Contractor that fall within the scope of the approved sales script in force at the time of the relevant sale. Where a client complaint arises from content contained in TalkMate's approved script, TalkMate accepts responsibility for that content.", { font: helv })
+  c = gap(c, 4)
+  c = drawParagraph(pdfDoc, c, "10.5 Notwithstanding any other provision of this Agreement, the liability cap in clause 10.2 does not apply to, and does not limit either party's liability arising from:", { font: helv })
+  c = drawBullet(pdfDoc, c, 'Intentional fraud — including deliberate misrepresentation of facts to induce the other party to enter into this Agreement or any transaction.', helv)
+  c = drawBullet(pdfDoc, c, 'Deliberate misrepresentation — any knowing or intentional false statement made to a client, prospect, or TalkMate in the course of the engagement.', helv)
+  c = drawBullet(pdfDoc, c, "Data theft or unauthorised disclosure — including any intentional misappropriation, unauthorised access to, or disclosure of TalkMate's confidential information, lead data, or client data in breach of clauses 6 or 7.", helv)
+  c = gap(c, 4)
+  c = drawParagraph(pdfDoc, c, "In each of the above circumstances, the offending party's liability remains uncapped and the other party retains all rights at law and in equity.", { font: helvItalic, color: COLOR_DARK_GREY })
 
   // Section 11
   c = drawHeading(pdfDoc, c, '11. Dispute Resolution', { font: helvBold, size: H2_SIZE, topGap: 14 })
@@ -665,7 +676,7 @@ async function renderSignaturePage(
   sigPage.drawText(`Signed at: ${f.signed_at_iso}`, {
     x: MARGIN_X, y: 36, size: 9, font: helv, color: COLOR_GREY,
   })
-  sigPage.drawText(usedTemplate ? 'Body: uploaded template' : 'Body: full v2.0 programmatic copy', {
+  sigPage.drawText(usedTemplate ? 'Body: uploaded template' : 'Body: full v2.1 programmatic copy', {
     x: PAGE_W - MARGIN_X - 220, y: 50, size: 9, font: helv, color: COLOR_GREY,
   })
   sigPage.drawText('TalkMate Sales Portal | talkmate.com.au', {
