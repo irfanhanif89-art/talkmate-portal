@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  LayoutDashboard, GitBranch, UserPlus, Users, Target, PlayCircle,
+  LayoutDashboard, GitBranch, Users, Target, PlayCircle,
   DollarSign, FileText, User as UserIcon, LogOut, X,
 } from 'lucide-react'
 
@@ -19,7 +19,6 @@ const NAV_ITEMS = [
   { href: '/sales/hitlist',     label: 'Hit List',       icon: Target },
   { href: '/sales/leads',       label: 'My Pipeline',    icon: GitBranch },
   { href: '/sales/demo',        label: 'Demo',           icon: PlayCircle },
-  { href: '/sales/onboard',     label: 'Onboard Client', icon: UserPlus },
   { href: '/sales/clients',     label: 'My Clients',     icon: Users },
   { href: '/sales/commissions', label: 'Commissions',    icon: DollarSign },
   { href: '/sales/contract',    label: 'My Contract',    icon: FileText },

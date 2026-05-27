@@ -19,6 +19,7 @@ export default async function OnboardingQueuePage() {
     .select(`
       id, business_name, contact_name, phone, email, industry, suburb, state,
       website, notes, won_plan, won_billing_cycle, won_at, assigned_to,
+      payment_confirmed_at, stripe_payment_link, stripe_payment_link_created_at,
       sales_reps:assigned_to(full_name, email, phone)
     `)
     .eq('status', 'won')
@@ -112,6 +113,9 @@ function normaliseLead(l: Record<string, unknown>) {
     won_plan: (l.won_plan as string | null) ?? null,
     won_billing_cycle: (l.won_billing_cycle as string | null) ?? null,
     won_at: (l.won_at as string | null) ?? null,
+    payment_confirmed_at: (l.payment_confirmed_at as string | null) ?? null,
+    stripe_payment_link: (l.stripe_payment_link as string | null) ?? null,
+    stripe_payment_link_created_at: (l.stripe_payment_link_created_at as string | null) ?? null,
     rep_name: rep?.full_name ?? null,
     rep_email: rep?.email ?? null,
     rep_phone: rep?.phone ?? null,

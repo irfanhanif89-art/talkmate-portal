@@ -20,6 +20,9 @@ export interface PendingLeadCard {
   won_plan: string | null
   won_billing_cycle: string | null
   won_at: string | null
+  payment_confirmed_at: string | null
+  stripe_payment_link: string | null
+  stripe_payment_link_created_at: string | null
   rep_name: string | null
   rep_email: string | null
   rep_phone: string | null
@@ -126,6 +129,14 @@ export default function OnboardingQueueClient({ pendingLeads, pendingBusinesses,
 
                   <div style={{ marginTop: 6, fontSize: 12, color: timeColor, fontWeight: 700 }}>
                     {timeAgo(lead.won_at)} {hoursOld >= 24 && '(slow)'}
+                  </div>
+
+                  <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <PaymentStatusBadge
+                      paidAt={lead.payment_confirmed_at}
+                      linkSentAt={lead.stripe_payment_link_created_at}
+                      hasLink={!!lead.stripe_payment_link}
+                    />
                   </div>
 
                   <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
@@ -242,6 +253,20 @@ function PlanBadge({ plan }: { plan: string }) {
       fontSize: 11, fontWeight: 700, textTransform: 'capitalize',
     }}>{plan}</span>
   )
+}
+
+function PaymentStatusBadge({ paidAt, linkSentAt, hasLink }: {
+  paidAt: string | null
+  linkSentAt: string | null
+  hasLink: boolean
+}) {
+  if (paidAt) {
+    return <Pill bg="rgba(34,197,94,0.12)" color="#22c55e">💰 Paid — ready for full onboarding</Pill>
+  }
+  if (hasLink || linkSentAt) {
+    return <Pill bg="rgba(245,158,11,0.12)" color="#f59e0b">🟡 Payment link sent — awaiting payment</Pill>
+  }
+  return <Pill bg="rgba(239,68,68,0.12)" color="#ef4444">⚠️ No payment link generated</Pill>
 }
 
 function StatusPill({ status }: { status: string }) {

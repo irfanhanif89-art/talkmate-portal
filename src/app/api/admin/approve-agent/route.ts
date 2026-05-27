@@ -4,6 +4,7 @@ import { provisionAgent } from '@/lib/provisioning/approveAgent'
 import { sendEmail } from '@/lib/resend'
 import { sendAdminTelegram } from '@/lib/notifications'
 import { createAdminClient } from '@/lib/supabase/server'
+import { dealApprovedEmailHtml } from '@/lib/sales-notify'
 
 // Session 41 — thin wrapper. The provisioning core (Twilio + Vapi +
 // checklist gate) lives in /lib/provisioning/approveAgent.ts so the new
@@ -36,6 +37,94 @@ export async function POST(req: NextRequest) {
     .select('name, owner_user_id')
     .eq('id', businessId)
     .maybeSingle()
+
+  // Session 51 — Go-live is now the trigger that approves the rep's
+  // commission. Previously this happened on Stripe payment confirmation
+  // (auto-approval in the webhook), but Irfan wants commission gated on
+  // the client actually being live and using the product. So we wait
+  // until the agent has been reviewed + Twilio provisioned + welcome
+  // email sent, then flip the matching pending commission rows.
+  //
+  // The 14-day clawback gate (enforced in /api/admin/commissions/[id])
+  // still applies as a separate admin action. If go-live fires before
+  // the clawback window ends, we leave the commission pending with a
+  // soft warning instead of blocking the go-live — client activation is
+  // more important than commission timing. Admin can manually approve
+  // later via /admin/sales-team once the clawback window passes.
+  //
+  // Lookup is via lead → matching business_id (admin's create-from-lead
+  // path links business_id on the lead row).
+  let commissionApprovalNote: string | null = null
+  try {
+    const { data: linkedLead } = await admin
+      .from('leads')
+      .select('id, business_name, assigned_to')
+      .eq('business_id', businessId)
+      .maybeSingle()
+    if (linkedLead) {
+      const nowIso = new Date().toISOString()
+      const { data: pendingCommissions } = await admin
+        .from('commissions')
+        .select('id, rep_id, commission_amount, bonus_amount, clawback_period_ends_at, created_at')
+        .eq('lead_id', linkedLead.id)
+        .eq('status', 'pending')
+      const approvedIds: string[] = []
+      const heldForClawback: string[] = []
+      for (const comm of pendingCommissions ?? []) {
+        const clawbackEnds = comm.clawback_period_ends_at
+          ? new Date(comm.clawback_period_ends_at as string).getTime()
+          : new Date(comm.created_at as string).getTime() + 14 * 24 * 60 * 60 * 1000
+        if (Date.now() < clawbackEnds) {
+          heldForClawback.push(comm.id as string)
+          continue
+        }
+        await admin
+          .from('commissions')
+          .update({ status: 'approved', approved_at: nowIso })
+          .eq('id', comm.id)
+        approvedIds.push(comm.id as string)
+        if (comm.rep_id) {
+          const totalAmount = Number(comm.commission_amount ?? 0) + Number(comm.bonus_amount ?? 0)
+          const { data: rep } = await admin
+            .from('sales_reps')
+            .select('full_name, email')
+            .eq('id', comm.rep_id)
+            .maybeSingle()
+          if (rep?.email) {
+            sendEmail({
+              to: rep.email,
+              subject: `Deal approved — ${linkedLead.business_name} is live`,
+              html: dealApprovedEmailHtml({
+                repName: rep.full_name ?? 'Rep',
+                businessName: linkedLead.business_name,
+                amount: totalAmount,
+              }),
+            }).catch(() => {})
+          }
+          await admin.from('rep_notifications').insert({
+            rep_id: comm.rep_id,
+            type: 'commission_updated',
+            lead_id: linkedLead.id,
+            message: `Commission approved — ${linkedLead.business_name} is live.`,
+          })
+        }
+      }
+      // Mirror commission approval onto the lead row for consistency
+      // with the legacy /admin/sales-team approval flow.
+      if (approvedIds.length > 0) {
+        await admin
+          .from('leads')
+          .update({ approval_status: 'approved', approved_at: nowIso, approved_by: auth.user.id })
+          .eq('id', linkedLead.id)
+      }
+      if (heldForClawback.length > 0) {
+        commissionApprovalNote = `Commission held: ${heldForClawback.length} row(s) inside 14-day clawback window. Admin can approve manually once it ends.`
+      }
+    }
+  } catch (e) {
+    console.error('[approve-agent] commission approval step failed', e)
+    commissionApprovalNote = 'Commission approval step failed — check logs.'
+  }
 
   let ownerEmail: string | null = null
   if (business?.owner_user_id) {
@@ -82,8 +171,12 @@ export async function POST(req: NextRequest) {
   }
 
   await sendAdminTelegram(
-    `${business?.name} approved and live. Phone: ${result.phone_number ?? 'manual provisioning needed'}`,
+    `${business?.name} approved and live. Phone: ${result.phone_number ?? 'manual provisioning needed'}${commissionApprovalNote ? `\n${commissionApprovalNote}` : ''}`,
   ).catch(() => {})
 
-  return NextResponse.json({ success: true, twilioNumber: result.phone_number })
+  return NextResponse.json({
+    success: true,
+    twilioNumber: result.phone_number,
+    commission_approval_note: commissionApprovalNote,
+  })
 }

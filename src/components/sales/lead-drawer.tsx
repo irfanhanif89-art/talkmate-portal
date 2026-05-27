@@ -6,7 +6,7 @@ import { X, Phone, Mail, Globe, MapPin, Trophy, AlertCircle, Trash2, FileText } 
 import { LEAD_STATUS_STYLES, LEAD_STATUS_COLUMNS, LOST_REASONS, formatDateTime, type LeadStatus } from '@/lib/sales-format'
 import type { LeadRow } from './leads-board'
 import LogActivityModal from './log-activity-modal'
-import WonModal from './won-modal'
+import CloseAndOnboardModal from './close-and-onboard-modal'
 import LostModal from './lost-modal'
 import BadLeadModal from './bad-lead-modal'
 
@@ -314,7 +314,7 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
             <button
               onClick={() => setActiveModal('won')}
               style={{ ...secondaryBtn, color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' }}
-            ><Trophy size={14} /> Mark Won</button>
+            ><Trophy size={14} /> Close & onboard</button>
           )}
           <button
             onClick={() => setActiveModal('bad')}
@@ -332,10 +332,8 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
         />
       )}
       {activeModal === 'won' && (
-        <WonModal
-          leadId={lead.id}
-          businessName={lead.business_name}
-          contactName={lead.contact_name}
+        <CloseAndOnboardModal
+          lead={lead}
           onClose={() => setActiveModal(null)}
           onSuccess={updated => { setActiveModal(null); onUpdated(updated); loadActivities() }}
         />

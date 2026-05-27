@@ -98,19 +98,40 @@ export async function POST(req: Request) {
     }
   }
 
-  // 4. Approve commissions for this business
-  const { data: approvedCommissions } = await admin.from('commissions')
-    .update({ status: 'approved', approved_at: new Date().toISOString() })
+  // 4. Approve commissions for this business — Session 51 added the
+  //    14-day clawback gate to match /api/admin/approve-agent. If the
+  //    pending commission is still inside its clawback window, leave it
+  //    pending and surface a soft note instead of blocking go-live.
+  //    Client activation always wins; commission timing can catch up.
+  const { data: pendingCommissions } = await admin.from('commissions')
+    .select('id, rep_id, clawback_period_ends_at, created_at')
     .eq('business_id', business_id)
     .eq('status', 'pending')
-    .select('rep_id')
 
-  for (const c of (approvedCommissions ?? [])) {
-    await admin.from('rep_notifications').insert({
-      rep_id: c.rep_id,
-      type: 'commission_updated',
-      message: `Commission approved for ${business.name}. Payment incoming.`,
-    })
+  const heldForClawback: string[] = []
+  let approvedCount = 0
+  const nowMs = Date.now()
+  const nowIso = new Date().toISOString()
+
+  for (const c of pendingCommissions ?? []) {
+    const clawbackEnds = c.clawback_period_ends_at
+      ? new Date(c.clawback_period_ends_at as string).getTime()
+      : new Date(c.created_at as string).getTime() + 14 * 24 * 60 * 60 * 1000
+    if (nowMs < clawbackEnds) {
+      heldForClawback.push(c.id as string)
+      continue
+    }
+    await admin.from('commissions')
+      .update({ status: 'approved', approved_at: nowIso })
+      .eq('id', c.id)
+    approvedCount++
+    if (c.rep_id) {
+      await admin.from('rep_notifications').insert({
+        rep_id: c.rep_id,
+        type: 'commission_updated',
+        message: `Commission approved for ${business.name}. Payment incoming.`,
+      })
+    }
     await admin.from('admin_audit_log').insert({
       admin_email: adminEmail,
       action: 'commission_approved_on_golive',
@@ -119,9 +140,13 @@ export async function POST(req: Request) {
     })
   }
 
+  const commissionNote = heldForClawback.length > 0
+    ? ` ${heldForClawback.length} commission row(s) held inside 14-day clawback — admin can approve manually once it ends.`
+    : ''
+
   // 5. Telegram + audit log
   await sendAdminTelegram(
-    `Client activated: ${business.name} (${business.plan}). Commission approved.`,
+    `Client activated: ${business.name} (${business.plan}). ${approvedCount > 0 ? 'Commission approved.' : 'No commission approved (held for clawback).'}${commissionNote}`,
   ).catch(() => {})
   await admin.from('admin_audit_log').insert({
     admin_email: adminEmail,
