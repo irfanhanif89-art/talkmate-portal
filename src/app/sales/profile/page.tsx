@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/sales/profile-form'
@@ -17,18 +17,35 @@ export default async function SalesProfilePage() {
     ? await supabase.from('sales_teams').select('name').eq('id', auth.rep.team_id).maybeSingle()
     : { data: null as null }
 
+  // Pull banking + ABN from the contractor row (service-role so RLS
+  // doesn't block the rep's own data; the row is owned by them anyway).
+  const admin = createAdminClient()
+  const { data: contractor } = auth.rep.contractor_id
+    ? await admin
+        .from('contractors')
+        .select('abn, bank_bsb, bank_account_number')
+        .eq('id', auth.rep.contractor_id)
+        .maybeSingle()
+    : { data: null as null }
+
   return (
     <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif', maxWidth: 720 }}>
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>Profile</h1>
         <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginTop: 4 }}>
-          Your sales rep account. Name and email are managed by admin.
+          Update your contact, payout, and tax details. Changes save immediately and admin is notified.
         </p>
       </div>
 
       <ProfileForm
+        initialFullName={auth.rep.full_name ?? ''}
+        initialEmail={auth.rep.email ?? ''}
         initialPhone={auth.rep.phone ?? ''}
         initialNotificationEmail={auth.rep.notification_email ?? ''}
+        initialAbn={contractor?.abn ?? ''}
+        initialBsb={contractor?.bank_bsb ?? ''}
+        initialAccount={contractor?.bank_account_number ?? ''}
+        hasContractor={!!auth.rep.contractor_id}
       />
 
       <div style={{
@@ -36,8 +53,6 @@ export default async function SalesProfilePage() {
         border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 22,
       }}>
         <h2 style={{ fontSize: 14, fontWeight: 700, color: 'white', margin: 0, marginBottom: 14 }}>Account details</h2>
-        <Row label="Full name" value={auth.rep.full_name} />
-        <Row label="Email" value={auth.rep.email} />
         <Row label="Team" value={team?.name ?? '—'} />
         <Row label="Status" value={<StatusBadge status={auth.rep.status} />} />
         <Row label="Commission policy" value={`Version ${auth.rep.commission_policy_version}`} />
