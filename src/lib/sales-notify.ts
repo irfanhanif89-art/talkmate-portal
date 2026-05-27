@@ -245,11 +245,11 @@ export function clientWelcomeEmailHtml(opts: { firstName: string; plan: string; 
 
 export function dealApprovedEmailHtml(opts: { repName: string; businessName: string; amount: number }) {
   return emailWrap(`
-    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal approved. ${escapeHtml(opts.businessName)} is ready to onboard.</h2>
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Deal approved. ${escapeHtml(opts.businessName)} is live.</h2>
     <p>Hi ${escapeHtml(opts.repName)},</p>
-    <p>Your deal with <strong>${escapeHtml(opts.businessName)}</strong> has been approved.</p>
+    <p>Admin has finished onboarding <strong>${escapeHtml(opts.businessName)}</strong> and their AI receptionist is live.</p>
     <p>Commission locked in: <strong style="color: #22c55e;">$${opts.amount}</strong></p>
-    <p style="margin: 22px 0;">${btn(`${PORTAL_URL}/sales/onboard`, 'Onboard Client')}</p>
+    <p style="margin: 22px 0;">${btn(`${PORTAL_URL}/sales/commissions`, 'View Commissions')}</p>
   `)
 }
 
