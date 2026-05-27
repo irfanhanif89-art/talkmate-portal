@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import PasswordInput from '@/components/PasswordInput'
 
 const Logo = () => (
   <svg width="160" height="48" viewBox="0 0 400 120" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -259,8 +260,15 @@ function LoginPageInner() {
             </div>
             <div style={{ marginBottom: 10 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4A7FBB', marginBottom: 8, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••" required style={inp} />
+              <PasswordInput
+                value={password}
+                onChange={setPassword}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                ariaLabel="Password"
+                style={inp}
+              />
             </div>
             <div style={{ textAlign: 'right', marginBottom: 24 }}>
               <a href="/forgot-password" style={{ fontSize: 13, color: '#4A9FE8', textDecoration: 'none' }}>Forgot password?</a>

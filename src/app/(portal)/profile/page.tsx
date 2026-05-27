@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import PasswordInput from '@/components/PasswordInput'
 
 export default function ProfilePage() {
   const supabase = createClient()
@@ -132,15 +133,41 @@ export default function ProfilePage() {
         <form onSubmit={changePassword}>
           <div style={{ marginBottom: 14 }}>
             <label style={label}>Current Password</label>
-            <input type="password" style={inp} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="••••••••" required />
+            <PasswordInput
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              ariaLabel="Current password"
+              style={inp}
+            />
           </div>
           <div style={{ marginBottom: 14 }}>
             <label style={label}>New Password</label>
-            <input type="password" style={inp} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
+            <PasswordInput
+              value={newPassword}
+              onChange={setNewPassword}
+              placeholder="••••••••"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              ariaLabel="New password"
+              style={inp}
+            />
           </div>
           <div style={{ marginBottom: 20 }}>
             <label style={label}>Confirm New Password</label>
-            <input type="password" style={inp} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
+            <PasswordInput
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="••••••••"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              ariaLabel="Confirm new password"
+              style={inp}
+            />
           </div>
           {pwMsg && (
             <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, fontSize: 13, background: pwMsg.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: pwMsg.ok ? '#22C55E' : '#EF4444', border: `1px solid ${pwMsg.ok ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}` }}>

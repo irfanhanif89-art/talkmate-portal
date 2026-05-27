@@ -46,6 +46,13 @@ export type AuditAction =
   | 'team_member_removed'
   | 'data_retention_purge'
   | 'data_retention_dry_run'
+  // Session 47 — rep / contractor profile edits. Rep-centric entries set
+  // `business_id` to NULL (no FK to a businesses row) and embed the
+  // sales_rep.id + contractor.id in `after_value._rep_id` /
+  // `_contractor_id` so the audit log query can still cross-reference.
+  | 'rep_profile_self_update'
+  | 'rep_profile_admin_update'
+  | 'rep_email_changed_by_admin'
 
 export async function logAdminAction(params: AuditLogParams): Promise<void> {
   try {

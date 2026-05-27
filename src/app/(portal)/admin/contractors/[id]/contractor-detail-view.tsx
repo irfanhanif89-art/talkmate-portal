@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileText, Plus, AlertTriangle, Send } from 'lucide-react'
+import { ArrowLeft, FileText, Plus, AlertTriangle, Send, Pencil } from 'lucide-react'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/sales-format'
+import EditRepModal from '@/components/admin/EditRepModal'
 
 export interface DetailContractor {
   id: string
@@ -55,12 +56,20 @@ export interface DetailCommission {
   notes: string | null
 }
 
+interface LinkedRep {
+  id: string
+  full_name: string
+  notification_email: string | null
+  status: string
+}
+
 interface Props {
   contractor: DetailContractor
   agreements: DetailAgreement[]
   acknowledgements: DetailAcknowledgement[]
   commissions: DetailCommission[]
   signedPdfUrl: string | null
+  linkedRep: LinkedRep | null
 }
 
 const COMMISSION_RATES = {
@@ -109,11 +118,12 @@ const statusBadge = (s: DetailCommission['status']) => {
 }
 
 export default function ContractorDetailView({
-  contractor, agreements, acknowledgements, commissions, signedPdfUrl,
+  contractor, agreements, acknowledgements, commissions, signedPdfUrl, linkedRep,
 }: Props) {
   const router = useRouter()
   const [addOpen, setAddOpen] = useState(false)
   const [terminateOpen, setTerminateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; message: string } | null>(null)
 
@@ -221,7 +231,15 @@ export default function ContractorDetailView({
 
       {/* Profile */}
       <div style={card}>
-        <h2 style={sectionTitle}>Profile</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ ...sectionTitle, margin: 0 }}>Profile</h2>
+          <button
+            style={{ ...btnGhost, padding: '6px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil size={12} /> Edit Profile
+          </button>
+        </div>
         <div style={kvRow}>
           <div style={kvKey}>Email</div>
           <div style={{ ...kvVal, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
@@ -415,6 +433,25 @@ export default function ContractorDetailView({
           busy={busy === 'terminate'}
           onClose={() => setTerminateOpen(false)}
           onConfirm={terminate}
+        />
+      )}
+
+      {editOpen && (
+        <EditRepModal
+          contractorId={contractor.id}
+          repDisplayName={`${contractor.first_name} ${contractor.last_name}`.trim() || contractor.email}
+          initial={{
+            full_name: linkedRep?.full_name
+              ?? `${contractor.first_name} ${contractor.last_name}`.trim(),
+            email: contractor.email,
+            phone: contractor.phone ?? '',
+            notification_email: linkedRep?.notification_email ?? '',
+            abn: contractor.abn ?? '',
+            bank_bsb: contractor.bank_bsb ?? '',
+            bank_account_number: contractor.bank_account_number ?? '',
+            status: linkedRep?.status === 'inactive' ? 'inactive' : 'active',
+          }}
+          onClose={() => setEditOpen(false)}
         />
       )}
     </div>

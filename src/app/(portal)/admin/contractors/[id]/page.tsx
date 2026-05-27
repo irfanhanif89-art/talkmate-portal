@@ -36,7 +36,7 @@ export default async function ContractorDetailPage({ params }: { params: Promise
     .maybeSingle()
   if (!contractor) notFound()
 
-  const [{ data: agreements }, { data: acks }, { data: commissions }] = await Promise.all([
+  const [{ data: agreements }, { data: acks }, { data: commissions }, { data: linkedRep }] = await Promise.all([
     admin
       .from('contractor_agreements')
       .select('id, agreement_version, script_version, script_date, signed_at, signed_pdf_url, status, created_at')
@@ -52,6 +52,13 @@ export default async function ContractorDetailPage({ params }: { params: Promise
       .select('id, plan_type, billing_cycle, sale_amount, commission_amount, status, clawback_period_ends_at, paid_at, created_at, client_business_id, notes')
       .eq('contractor_id', id)
       .order('created_at', { ascending: false }),
+    contractor.sales_rep_id
+      ? admin
+          .from('sales_reps')
+          .select('id, full_name, notification_email, status')
+          .eq('id', contractor.sales_rep_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null as { id: string; full_name: string; notification_email: string | null; status: string } | null }),
   ])
 
   // Generate a fresh signed URL for the latest signed PDF if we have one.
@@ -70,6 +77,7 @@ export default async function ContractorDetailPage({ params }: { params: Promise
       acknowledgements={(acks ?? []) as DetailAcknowledgement[]}
       commissions={(commissions ?? []) as DetailCommission[]}
       signedPdfUrl={signedPdfUrl}
+      linkedRep={linkedRep ?? null}
     />
   )
 }
