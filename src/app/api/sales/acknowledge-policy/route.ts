@@ -3,8 +3,8 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { COMMISSION_POLICY_VERSION } from '@/lib/commission'
 
-export async function POST() {
-  const auth = await requireSalesRep()
+export async function POST(req: Request) {
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
