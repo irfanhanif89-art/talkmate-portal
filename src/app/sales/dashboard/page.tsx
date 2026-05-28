@@ -1,14 +1,13 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
-  LayoutDashboard, Trophy, Clock4, DollarSign, Users2,
+  LayoutDashboard, Trophy, Clock4, DollarSign,
   Phone, Mail, Calendar, FileText, Pencil, ArrowRightLeft, Wrench,
 } from 'lucide-react'
 import { formatCurrency, LEAD_STATUS_STYLES, type LeadStatus, daysSince, timeAgo } from '@/lib/sales-format'
 import { COMMISSION_MAP, isCommissionPlan } from '@/lib/commission'
-import { PLAN_PRICE_AUD, isAdminPlan } from '@/lib/admin-auth'
 import MissingEmailBanner from '@/components/sales/MissingEmailBanner'
 
 export const dynamic = 'force-dynamic'
@@ -24,7 +23,6 @@ export default async function SalesDashboardPage() {
   if (!auth.ok) redirect('/')
 
   const supabase = await createClient()
-  const admin = createAdminClient()
   const repId = auth.rep.id
 
   const startOfMonth = new Date()
@@ -41,7 +39,6 @@ export default async function SalesDashboardPage() {
     { data: openLeads },
     { data: recentLeads },
     { data: activities },
-    activeClientsAgg,
   ] = await Promise.all([
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId),
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId).eq('status', 'won'),
@@ -51,7 +48,6 @@ export default async function SalesDashboardPage() {
     supabase.from('leads').select('won_plan').eq('assigned_to', repId).not('status', 'in', '(won,lost,bad_lead,nurture)'),
     supabase.from('leads').select('id, business_name, contact_name, status, updated_at').eq('assigned_to', repId).order('updated_at', { ascending: false }).limit(10),
     supabase.from('lead_activities').select('id, activity_type, title, created_at, lead_id, leads(business_name)').eq('rep_id', repId).order('created_at', { ascending: false }).limit(15),
-    admin.from('businesses').select('plan').eq('account_status', 'active'),
   ])
 
   const sumCommissions = (rows: Array<{ commission_amount: number | null; bonus_amount: number | null }> | null) =>
@@ -69,13 +65,6 @@ export default async function SalesDashboardPage() {
     }
     return sum + COMMISSION_MAP.growth.base
   }, 0)
-
-  let liveClients = 0
-  let platformMrr = 0
-  for (const r of (activeClientsAgg?.data ?? [])) {
-    liveClients += 1
-    if (isAdminPlan(r.plan)) platformMrr += PLAN_PRICE_AUD[r.plan]
-  }
 
   const isFirstLogin = (leadsAssigned ?? 0) === 0 && (activities ?? []).length === 0
   const showMissingEmail = !auth.rep.notification_email
@@ -132,13 +121,6 @@ export default async function SalesDashboardPage() {
           value={formatCurrency(thisMonthEarned)}
           sub={`Lifetime: ${formatCurrency(lifetimeEarned)}`}
           accent="#E8622A"
-        />
-        <StatCard
-          icon={Users2}
-          label="Live Clients"
-          value={String(liveClients)}
-          sub={`Platform MRR: ${formatCurrency(platformMrr)}`}
-          accent="#22C55E"
         />
       </div>
 
