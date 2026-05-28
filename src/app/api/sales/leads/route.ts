@@ -17,7 +17,7 @@ const ALLOWED_SOURCES = new Set([
 ])
 
 export async function POST(req: Request) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const body = (await req.json().catch(() => ({}))) as {

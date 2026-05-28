@@ -4,8 +4,8 @@ import { requireSalesRep } from '@/lib/sales-auth'
 
 const ALLOWED_TYPES = new Set(['note', 'call', 'email', 'demo', 'proposal'])
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireSalesRep()
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
   const { id } = await ctx.params
 
@@ -26,7 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
   const { id } = await ctx.params
 

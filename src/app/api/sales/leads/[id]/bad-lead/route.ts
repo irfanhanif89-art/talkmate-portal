@@ -4,7 +4,7 @@ import { requireSalesRep } from '@/lib/sales-auth'
 import { notifyBadLead } from '@/lib/sales-notify'
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
   const { id } = await ctx.params
 

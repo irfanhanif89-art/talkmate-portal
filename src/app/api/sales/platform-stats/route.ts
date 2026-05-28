@@ -8,8 +8,8 @@ import { PLAN_PRICE_AUD, isAdminPlan } from '@/lib/admin-auth'
 
 export const revalidate = 300
 
-export async function GET() {
-  const auth = await requireSalesRep()
+export async function GET(req: Request) {
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()

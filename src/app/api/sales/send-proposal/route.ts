@@ -112,7 +112,7 @@ function postDemoHtml(opts: {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   if (!auth.rep.notification_email) {

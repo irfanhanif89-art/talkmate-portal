@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 
-export async function PATCH(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireSalesRep()
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const { id } = await ctx.params
