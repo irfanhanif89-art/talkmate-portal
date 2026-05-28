@@ -11,7 +11,15 @@ const ALLOWED_FIELDS = new Set([
   'truck_type', 'rate_type', 'driver_id', 'estimated_value',
   'scheduled_start', 'scheduled_end', 'actual_start', 'actual_end',
   'no_show', 'cancellation_reason',
-  // Removed: booking_type, service_requested, preferred_date, preferred_time, notes (Session 33)
+  // Session 53 (Bizzow scheduler) — new columns from migration 053.
+  // The status-stamp trigger handles actual_start/actual_end on
+  // started/completed transitions; the app can still set them
+  // explicitly here for backdate scenarios.
+  'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng',
+  'payment_method', 'color_hex', 'duration_minutes', 'notes',
+  // Removed: booking_type, service_requested, preferred_date, preferred_time (Session 33)
+  // notes was removed in Session 33 then re-added in Session 53 for the
+  // scheduler side panel's notes field.
   // sms_confirmation_sent intentionally omitted — add only if admin override needed
 ])
 
