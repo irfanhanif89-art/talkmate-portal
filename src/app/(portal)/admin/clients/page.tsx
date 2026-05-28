@@ -37,6 +37,7 @@ export default async function AdminClientsPage() {
       sales_rep_id,
       sales_reps:sales_rep_id(full_name)
     `)
+    .eq('is_demo', false)
     .order('created_at', { ascending: false })
 
   const businesses = (businessesRaw ?? []).map(b => {
@@ -52,6 +53,7 @@ export default async function AdminClientsPage() {
     .from('businesses')
     .select('id, name')
     .eq('is_partner', true)
+    .eq('is_demo', false)
     .order('name')
 
   // Session 18 — compute per-business quality summary for the dot

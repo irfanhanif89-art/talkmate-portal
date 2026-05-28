@@ -9,6 +9,7 @@ import LogActivityModal from './log-activity-modal'
 import CloseAndOnboardModal from './close-and-onboard-modal'
 import LostModal from './lost-modal'
 import BadLeadModal from './bad-lead-modal'
+import BookDemoModal from './BookDemoModal'
 
 interface Activity {
   id: string
@@ -28,7 +29,7 @@ interface Props {
   onRemoved: (id: string) => void
 }
 
-type ActiveModal = null | 'log' | 'won' | 'lost' | 'bad'
+type ActiveModal = null | 'log' | 'won' | 'lost' | 'bad' | 'book_demo'
 
 export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Props) {
   const [activities, setActivities] = useState<Activity[]>([])
@@ -111,6 +112,8 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
 
   const statusStyle = LEAD_STATUS_STYLES[lead.status]
   const isWon = lead.status === 'won'
+  const canBookDemo = !['won', 'lost', 'bad_lead', 'demo_booked'].includes(lead.status)
+  const [bookDemoSuccess, setBookDemoSuccess] = useState<string | null>(null)
 
   return (
     <>
@@ -316,12 +319,24 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
               style={{ ...secondaryBtn, color: '#22c55e', borderColor: 'rgba(34,197,94,0.3)' }}
             ><Trophy size={14} /> Close & onboard</button>
           )}
+          {canBookDemo && (
+            <button
+              onClick={() => { setBookDemoSuccess(null); setActiveModal('book_demo') }}
+              style={{ ...secondaryBtn, color: '#E8622A', borderColor: 'rgba(232,98,42,0.3)' }}
+            >Book Demo</button>
+          )}
           <button
             onClick={() => setActiveModal('bad')}
             style={{ ...secondaryBtn, color: '#94a3b8' }}
             title="Flag as bad lead"
           ><Trash2 size={14} /></button>
         </div>
+        {bookDemoSuccess && (
+          <div style={{
+            padding: '8px 14px', fontSize: 12, color: '#22c55e', fontWeight: 700,
+            background: 'rgba(34,197,94,0.1)', borderTop: '1px solid rgba(34,197,94,0.2)',
+          }}>{bookDemoSuccess}</div>
+        )}
       </aside>
 
       {activeModal === 'log' && (
@@ -353,6 +368,21 @@ export default function LeadDrawer({ lead, onClose, onUpdated, onRemoved }: Prop
           onSuccess={() => { setActiveModal(null); onRemoved(lead.id) }}
         />
       )}
+      <BookDemoModal
+        open={activeModal === 'book_demo'}
+        onClose={() => setActiveModal(null)}
+        leadId={lead.id}
+        defaultName={lead.contact_name ?? lead.business_name}
+        defaultEmail={lead.email ?? ''}
+        onSuccess={() => {
+          setActiveModal(null)
+          const updatedLead = { ...lead, status: 'demo_booked' as LeadStatus }
+          onUpdated(updatedLead)
+          loadActivities()
+          setBookDemoSuccess('Demo invite sent to ' + (lead.email ?? 'prospect'))
+          setTimeout(() => setBookDemoSuccess(null), 4000)
+        }}
+      />
     </>
   )
 }

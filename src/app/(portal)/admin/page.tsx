@@ -19,7 +19,7 @@ export default async function AdminPage() {
 
   const { data: businesses } = await adminClient.from('businesses').select(`
     id, name, business_type, plan, onboarding_completed, agent_status, preview_number, created_at, signup_at, owner_user_id, industry, account_status
-  `).order('created_at', { ascending: false }).limit(100)
+  `).eq('is_demo', false).order('created_at', { ascending: false }).limit(100)
 
   // Active vs pending split for the clients header card + pending banner.
   const activeClientCount = (businesses ?? []).filter(b => (b as { account_status?: string }).account_status === 'active').length

@@ -55,10 +55,10 @@ export default async function ContractorDetailPage({ params }: { params: Promise
     contractor.sales_rep_id
       ? admin
           .from('sales_reps')
-          .select('id, full_name, notification_email, status')
+          .select('id, full_name, notification_email, status, demo_industry, demo_calendly_url')
           .eq('id', contractor.sales_rep_id)
           .maybeSingle()
-      : Promise.resolve({ data: null as { id: string; full_name: string; notification_email: string | null; status: string } | null }),
+      : Promise.resolve({ data: null as { id: string; full_name: string; notification_email: string | null; status: string; demo_industry: string | null; demo_calendly_url: string | null } | null }),
   ])
 
   // Generate a fresh signed URL for the latest signed PDF if we have one.
