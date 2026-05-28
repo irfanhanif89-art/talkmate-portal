@@ -1,7 +1,10 @@
 -- =====================================================================
--- Migration 054: Bizzow-style scheduler grid.
--- (Note: brief specified 053; renamed to 054 because 053_critical_rls_fixes
--- was added between Session 43 and this work — see DECISIONS-scheduler.md.)
+-- Migration 057: Bizzow-style scheduler grid.
+-- (Originally numbered 054; renamed to 057 because 054/055/056 landed
+-- on `main` independently from a parallel work stream — see DECISIONS-
+-- scheduler.md. The schema_migrations row was updated to match on
+-- both preview (rgifivtzmjvanzqwgadq) and prod (mdsfdaefsxwrakgkyflr)
+-- so file order and DB tracking stay in sync.)
 --
 -- This is a SCHEMA-ONLY migration. It adds:
 --   1. New columns on `bookings`: color_hex, pickup_lat/lng,
