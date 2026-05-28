@@ -8,6 +8,7 @@ import { requireSalesRep } from '@/lib/sales-auth'
 // /won, /lost, /bad-lead endpoints which collect the extra metadata.
 const EDITABLE_FIELDS = new Set([
   'contact_name', 'phone', 'email', 'website', 'notes', 'industry', 'suburb', 'state',
+  'next_followup_at',
 ])
 const ALLOWED_STATUSES = new Set([
   'new', 'contacted', 'demo_booked', 'demo_done', 'proposal_sent', 'nurture',
@@ -20,6 +21,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
   const updates: Record<string, unknown> = {}
+
+  // Validate next_followup_at shape if provided (must be a valid ISO timestamp string or null).
+  if (body.next_followup_at !== undefined && body.next_followup_at !== null) {
+    if (typeof body.next_followup_at !== 'string') {
+      return NextResponse.json({ ok: false, error: 'next_followup_at must be an ISO timestamp string or null' }, { status: 400 })
+    }
+    const d = new Date(body.next_followup_at)
+    if (isNaN(d.getTime())) {
+      return NextResponse.json({ ok: false, error: 'next_followup_at is not a valid timestamp' }, { status: 400 })
+    }
+  }
 
   for (const [k, v] of Object.entries(body)) {
     if (EDITABLE_FIELDS.has(k)) updates[k] = v === '' ? null : v
@@ -66,8 +78,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .eq('id', id)
     .select(`
       id, business_name, contact_name, phone, email, industry, suburb, state,
-      website, source, notes, status, approval_status, won_plan, won_at,
-      lost_reason, bad_lead_reason, business_id, created_at, updated_at
+      website, source, notes, status, approval_status, won_plan, won_billing_cycle, won_at,
+      lost_reason, bad_lead_reason, business_id, next_followup_at, created_at, updated_at
     `)
     .single()
 
