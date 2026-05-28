@@ -13,7 +13,7 @@ Irfan asked for a Bizzow-style kanban-of-time scheduler so owners (Glen at GM To
 ### What ships
 
 **Session A (data + grid views + side panel):**
-1. **Migration `054_scheduler_bizzow_grid.sql`** — additive + idempotent.
+1. **Migration `057_scheduler_bizzow_grid.sql`** — additive + idempotent.
    - `bookings`: new columns `color_hex`, `pickup_lat/lng`, `dropoff_lat/lng`, `payment_method` (cash/card/invoice/insurance/account).
    - `bookings.status` enum extended with `started` (alongside existing pending/confirmed/cancelled/completed/no_show/declined).
    - `bookings_status_stamp` trigger: status → started auto-stamps `actual_start`; status → completed auto-stamps `actual_end` (only when the timestamp is currently null, preserving existing data).
@@ -53,7 +53,7 @@ Irfan asked for a Bizzow-style kanban-of-time scheduler so owners (Glen at GM To
 - Mobile data layer (`useBookings` etc.) — Phase 2 of the mobile project.
 
 ### Migration order
-- `054_scheduler_bizzow_grid.sql` runs on preview before merge, production after merge.
+- `057_scheduler_bizzow_grid.sql` runs on preview before merge, production after merge.
 
 ### Environment variables
 None required. Existing `GOOGLE_MAPS_SERVER_KEY` + `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` already wired.
@@ -63,7 +63,7 @@ None required. Existing `GOOGLE_MAPS_SERVER_KEY` + `NEXT_PUBLIC_GOOGLE_PLACES_AP
 - `npx tsc --noEmit` → clean.
 
 ### Pre-deploy checklist
-1. Apply `054_scheduler_bizzow_grid.sql` to preview Supabase (done during testing).
+1. Apply `057_scheduler_bizzow_grid.sql` to preview Supabase (done during testing).
 2. Smoke-test `/scheduler` on preview: Day/Week/Month views, click block → side panel, click empty slot → create panel, drag block → reschedule, drag bottom edge → resize, keyboard shortcuts.
 3. Apply `054` to production.
 4. Merge `dev` → `main`. Vercel auto-deploys.

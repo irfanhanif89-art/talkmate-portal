@@ -14,12 +14,20 @@ Below: the deltas, and how Session A bridged them.
 
 ---
 
-## D0. Migration number — 054, not 053
+## D0. Migration number — 057 (final), originally 054
 
 Brief said "As of Session 43, next migration number is 053." Reality:
-`053_critical_rls_fixes.sql` already exists in the migrations tree
-(Supabase advisor email 2026-05-28). Renamed mine to
-`054_scheduler_bizzow_grid.sql`.
+`053_critical_rls_fixes.sql` already existed (Supabase advisor email
+2026-05-28). Renamed mine to `057_scheduler_bizzow_grid.sql` and
+applied it as 054 to both preview and prod.
+
+After the merge, 054/055/056 turned out to also be in use on `main`
+from a parallel work stream (security advisor hardening). To keep the
+on-disk migration order monotonic, the file was renamed to
+`057_scheduler_bizzow_grid.sql` in a follow-up commit and the
+`supabase_migrations.schema_migrations.name` was updated to match on
+both projects. Same SQL, same applied state — only the filename
+and tracker row name changed.
 
 ---
 
@@ -59,7 +67,7 @@ created two-source-of-truth.
 Before: `pending | confirmed | cancelled | completed | no_show | declined`
 After:  `pending | confirmed | started | cancelled | completed | no_show | declined`
 
-Migration 054 drops + re-adds the CHECK constraint with `started`
+Migration 057 drops + re-adds the CHECK constraint with `started`
 included. Also adds a `bookings_status_stamp` trigger: when status
 transitions INTO `started`, `actual_start := now()` if null; when
 INTO `completed`, `actual_end := now()` if null.
@@ -141,7 +149,7 @@ session.
 
 ## D7. scheduler_settings — flat columns (chosen)
 
-Migration 054 added (per your selection):
+Migration 057 added (per your selection):
 - `default_start_hour INT DEFAULT 6`
 - `default_end_hour INT DEFAULT 20`
 - `show_weekend BOOLEAN DEFAULT true`
@@ -175,7 +183,7 @@ before Session B. The server-side `GOOGLE_MAPS_API_KEY` (used by
 
 ## D9. Driver price visibility — `driver_visible_bookings` view added
 
-Migration 054 creates:
+Migration 057 creates:
 ```sql
 CREATE VIEW driver_visible_bookings WITH (security_invoker = true) AS
 SELECT ..., CASE WHEN b.payment_method IN ('cash', 'card')
@@ -252,7 +260,7 @@ no migration touching it.
 
 ## What shipped in Session A
 
-**Migration `054_scheduler_bizzow_grid.sql`** — additive, idempotent.
+**Migration `057_scheduler_bizzow_grid.sql`** — additive, idempotent.
 - Bookings columns: `color_hex`, `pickup_lat/lng`, `dropoff_lat/lng`,
   `payment_method`.
 - Status enum extended with `started`.
@@ -331,7 +339,7 @@ no migration touching it.
 
 ## Pre-deploy checklist for Irfan
 
-1. Run migration 054 on preview Supabase
+1. Run migration 057 on preview Supabase
    (`rgifivtzmjvanzqwgadq`) first.
 2. Smoke-test `/scheduler` on preview:
    - Day view loads, click a block opens the side panel
@@ -339,7 +347,7 @@ no migration touching it.
    - Month view loads, click a day jumps to Day view
    - DriverFilterRow appears with the right counts
    - Realtime: open two tabs, change status in one, see it in the other
-3. Run migration 054 on production after preview verifies.
+3. Run migration 057 on production after preview verifies.
 4. Merge to `main` → Vercel auto-deploys.
 5. Verify on `app.talkmate.com.au/scheduler` for Glen (towing).
 
