@@ -16,6 +16,16 @@ const SCALAR_FIELDS = new Set([
   'cancellation_policy_enabled', 'cancellation_notice_hours', 'cancellation_fee_aud',
   'default_duration_tilt_minutes', 'default_duration_sideloader_minutes',
   'default_duration_minutes',
+  // Session 53 — flat grid-display columns from migration 053.
+  // Sanity-checked at the DB layer via scheduler_settings_hour_range_check
+  // (default_end_hour > default_start_hour),
+  // scheduler_settings_week_starts_check (0..6), and
+  // scheduler_settings_increment_check (5/10/15/20/30/60). Bad values
+  // come back as a 500 with the CHECK constraint name — UI surfaces a
+  // generic "Save failed" toast which is acceptable for an admin-only
+  // settings page.
+  'default_start_hour', 'default_end_hour', 'show_weekend',
+  'week_starts_on', 'time_increment_mins', 'group_by_driver',
 ])
 
 const JSON_FIELDS = new Set([

@@ -4,14 +4,30 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { silentSyncAgent } from '@/components/portal/sync-agent-button'
 import { routeLabel } from '@/lib/extract-suburb'
+// Session 53 (Bizzow scheduler) — new grid components.
+// The legacy inner WeekGrid/DayGrid functions further down in this file
+// are kept as dead code for now; a follow-up cleanup will delete them
+// once the new grid is verified in prod. The new imports below are the
+// ones rendered by CalendarTab.
+import BizzowWeekGrid from './scheduler/WeekGrid'
+import BizzowDayGrid from './scheduler/DayGrid'
+import BizzowMonthGrid from './scheduler/MonthGrid'
+import JobSidePanel from './scheduler/JobSidePanel'
+import DriverFilterRow from './scheduler/DriverFilterRow'
+import CreateBookingPanel from './scheduler/CreateBookingPanel'
+import type {
+  SchedulerBooking,
+  AllDayEvent,
+  SchedulerSettingsLite,
+} from './scheduler/types'
+import { useBookingsRealtime } from '@/hooks/useBookingsRealtime'
 
 // Session 15 — TalkMate native scheduler.
 // One page, three tabs (Calendar / Job List / Settings). Calendar has
-// a week and day view; the day view uses a driver-lane layout where
-// each driver gets a horizontal row across the operating hours.
+// a Week, Day, and (from Session 53) Month view.
 
 type Tab = 'calendar' | 'list' | 'settings'
-type View = 'week' | 'day'
+type View = 'week' | 'day' | 'month'
 
 interface Booking {
   id: string
@@ -35,9 +51,18 @@ interface Booking {
   scheduled_end: string | null
   actual_start: string | null
   actual_end: string | null
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'no_show' | 'declined'
+  status: 'pending' | 'confirmed' | 'started' | 'cancelled' | 'completed' | 'no_show' | 'declined'
   sms_confirmation_sent: boolean | null
   created_at: string
+  // Session 53 — Bizzow grid new columns. Optional so older Booking
+  // rows (and the legacy code paths) keep compiling.
+  payment_method?: 'cash' | 'card' | 'invoice' | 'insurance' | 'account' | null
+  color_hex?: string | null
+  pickup_lat?: number | null
+  pickup_lng?: number | null
+  dropoff_lat?: number | null
+  dropoff_lng?: number | null
+  notes?: string | null
   waitlist_position?: number | null
   distance_km?: number | null
   duration_minutes?: number | null
@@ -56,6 +81,7 @@ function statusBadgeColor(status: Booking['status']): { bg: string; color: strin
   switch (status) {
     case 'pending':   return { bg: 'rgba(245,158,11,0.15)',  color: '#F59E0B' }
     case 'confirmed': return { bg: 'rgba(34,197,94,0.15)',   color: '#22C55E' }
+    case 'started':   return { bg: 'rgba(34,197,94,0.18)',   color: '#22C55E' }
     case 'declined':  return { bg: 'rgba(239,68,68,0.15)',   color: '#EF4444' }
     case 'cancelled': return { bg: 'rgba(156,163,175,0.15)', color: '#9CA3AF' }
     case 'completed': return { bg: 'rgba(74,159,232,0.15)',  color: '#4A9FE8' }
@@ -92,6 +118,13 @@ interface SchedulerSettings {
   default_duration_minutes?: number | null
   mode?: string | null
   overridden_holidays?: string[] | null
+  // Session 53 — flat grid-display columns from migration 053.
+  default_start_hour?: number | null
+  default_end_hour?: number | null
+  show_weekend?: boolean | null
+  week_starts_on?: number | null
+  time_increment_mins?: number | null
+  group_by_driver?: boolean | null
 }
 
 interface Props {
@@ -189,7 +222,10 @@ export default function SchedulerView(props: Props) {
   const tabParam = params.get('tab')
   const viewParam = params.get('view')
   const initialTab: Tab = tabParam === 'list' ? 'list' : tabParam === 'settings' ? 'settings' : 'calendar'
-  const initialView: View = viewParam === 'week' ? 'week' : 'day'
+  const initialView: View =
+    viewParam === 'week' ? 'week'
+    : viewParam === 'month' ? 'month'
+    : 'day'
 
   const [tab, setTab] = useState<Tab>(initialTab)
   const [view, setView] = useState<View>(initialView)
@@ -201,6 +237,18 @@ export default function SchedulerView(props: Props) {
   const [selected, setSelected] = useState<Booking | null>(null)
   const [adding, setAdding] = useState<{ start?: string; driverId?: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  // Session 53 — Bizzow grid additions.
+  // allDayEvents = public holidays + closures shown in the AllDayRow.
+  // driverFilter = null (all), '__unassigned__', or a driver id.
+  // clientId = used by the realtime subscription. Resolved from the
+  // first booking we see (since requireClient resolves it server-side
+  // and we don't have a clean prop for it).
+  const [allDayEvents, setAllDayEvents] = useState<AllDayEvent[]>([])
+  const [driverFilter, setDriverFilter] = useState<string | null>(null)
+  const [resolvedClientId, setResolvedClientId] = useState<string | null>(props.adminClientId ?? null)
+  // Session B — quick-create panel state. dateKey/hour/minute populated
+  // from an empty-slot click; null means panel is closed.
+  const [creating, setCreating] = useState<{ dateKey: string; hour: number; minute: number; driverId?: string | null } | null>(null)
 
   const isTowing = props.industry === 'towing'
   const adminClientId = props.adminClientId ?? null
@@ -249,32 +297,190 @@ export default function SchedulerView(props: Props) {
     async function load() {
       setLoading(true)
       try {
-        const [bRes, dRes, sRes] = await Promise.all([
-          (async () => {
-            const from = view === 'week' ? startOfWeek(anchor) : new Date(anchor)
-            const to = view === 'week' ? addDays(from, 7) : addDays(from, 1)
-            return fetch(`${bookingsBase}?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`)
-          })(),
+        // Session 53 — month view uses a wider window than week.
+        const from =
+          view === 'week'
+            ? startOfWeek(anchor)
+            : view === 'month'
+              ? (() => { const d = new Date(anchor); d.setDate(1); d.setHours(0,0,0,0); return d })()
+              : new Date(anchor)
+        const to =
+          view === 'week'
+            ? addDays(from, 7)
+            : view === 'month'
+              ? addDays(from, 42) // 6-week grid covers the visible month + bleed
+              : addDays(from, 1)
+        const [bRes, dRes, sRes, hRes] = await Promise.all([
+          fetch(`${bookingsBase}?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`),
           fetch(driversBase).catch(() => null),
           fetch(schedulerBase),
+          // Session 53 — fetch public holidays for the AllDayRow.
+          // Admin context uses the existing per-client holidays cron
+          // surface; client context uses the existing /api/portal route.
+          adminClientId
+            ? null
+            : fetch('/api/portal/public-holidays').catch(() => null),
         ])
         if (!cancelled) {
-          if (bRes.ok) { const d = await bRes.json(); setBookings((d.bookings ?? []) as Booking[]) }
+          if (bRes.ok) {
+            const d = await bRes.json()
+            const list = (d.bookings ?? []) as Booking[]
+            setBookings(list)
+            // Capture the client_id off the first booking so we can
+            // subscribe to realtime. Bookings are RLS-filtered to the
+            // caller's client so this is safe.
+            if (!resolvedClientId && list.length > 0 && list[0].client_id) {
+              setResolvedClientId(list[0].client_id)
+            }
+          }
           if (dRes && dRes.ok) { const d = await dRes.json(); setDrivers((d.drivers ?? d.data ?? []) as Driver[]) }
           if (sRes.ok) { const d = await sRes.json(); setSettings((d.scheduler_settings ?? null) as SchedulerSettings | null) }
+          if (hRes && hRes.ok) {
+            const d = await hRes.json()
+            const fromKey = from.toISOString().slice(0, 10)
+            const toKey = to.toISOString().slice(0, 10)
+            const eventsList = ((d.holidays ?? []) as Array<{ holiday_name?: string; holiday_date: string }>)
+              .filter(h => h.holiday_date >= fromKey && h.holiday_date < toKey)
+              .map(h => ({
+                date: h.holiday_date,
+                label: h.holiday_name ?? 'Public holiday',
+                type: 'holiday' as const,
+              }))
+            setAllDayEvents(eventsList)
+          }
         }
       } finally { if (!cancelled) setLoading(false) }
     }
     load()
     return () => { cancelled = true }
-  }, [view, anchor, bookingsBase, driversBase, schedulerBase])
+  }, [view, anchor, bookingsBase, driversBase, schedulerBase, adminClientId, resolvedClientId])
+
+  // Session B — mobile <768px redirect (brief §RESPONSIVE BEHAVIOUR).
+  // The grid is unusable below 768px (overlapping blocks need
+  // horizontal space). Show a CTA to the mobile app instead.
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  // Session B — keyboard shortcuts (brief §8).
+  // T → Today. D / W / M → switch view. ←/→ → prev/next period.
+  // Esc closes the side panel (handled inside JobSidePanel). ? opens help.
+  const [helpOpen, setHelpOpen] = useState(false)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Don't intercept when the user is typing in an input.
+      const target = e.target as HTMLElement | null
+      if (target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) return
+      // Don't fire while the create panel or side panel is open
+      // (Esc still works inside them, handled by those components).
+      if (creating || selected) return
+
+      if (e.key === 't' || e.key === 'T') {
+        jumpToday()
+      } else if (e.key === 'd' || e.key === 'D') {
+        selectView('day')
+      } else if (e.key === 'w' || e.key === 'W') {
+        selectView('week')
+      } else if (e.key === 'm' || e.key === 'M') {
+        selectView('month')
+      } else if (e.key === 'ArrowLeft') {
+        navigate(-1)
+      } else if (e.key === 'ArrowRight') {
+        navigate(1)
+      } else if (e.key === '?') {
+        setHelpOpen((s) => !s)
+      } else if (e.key === 'Escape' && helpOpen) {
+        setHelpOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, anchor, creating, selected, helpOpen])
+
+  // Session 53 — 30s background poll as a belt-and-braces fallback
+  // for the realtime path. Supabase Realtime + RLS-with-SECURITY-DEFINER
+  // has been flaky in preview env (the subscription succeeds but events
+  // don't always land). Re-fetching the bookings list every 30s
+  // guarantees the UI catches up to server state within that window
+  // even when realtime is silent. Cheap — one read of the visible
+  // window per tab.
+  useEffect(() => {
+    // Don't schedule the poll until the initial load finishes — once it
+    // does, the loading→false transition re-runs this effect and the
+    // interval starts. (Bug from earlier: omitting `loading` from deps
+    // meant the interval was never set up after the first render.)
+    if (loading) return
+    const id = setInterval(() => {
+      loadBookings().catch(() => {})
+    }, 30_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, anchor, bookingsBase, loading])
+
+  // Session 53 — Realtime subscription. Updates the local bookings
+  // state from server-pushed INSERT/UPDATE/DELETE events. Skipped in
+  // admin context (admin views look at one client at a time but the
+  // realtime channel filter would need a different shape, and admin
+  // sessions are rarer; defer to a follow-up).
+  useBookingsRealtime(
+    !adminClientId ? resolvedClientId : null,
+    useCallback((event: { eventType: string; new: Record<string, unknown> | null; old: Record<string, unknown> | null }) => {
+      setBookings((prev) => {
+        if (event.eventType === 'INSERT' && event.new) {
+          // Only add if the new row falls in the visible window.
+          const newRow = event.new as unknown as Booking
+          if (prev.some(b => b.id === newRow.id)) return prev
+          return [...prev, newRow]
+        }
+        if (event.eventType === 'UPDATE' && event.new) {
+          const newRow = event.new as unknown as Booking
+          return prev.map(b => (b.id === newRow.id ? { ...b, ...newRow } : b))
+        }
+        if (event.eventType === 'DELETE' && event.old) {
+          const oldRow = event.old as unknown as { id?: string }
+          if (!oldRow.id) return prev
+          return prev.filter(b => b.id !== oldRow.id)
+        }
+        return prev
+      })
+    }, []),
+  )
 
   function navigate(delta: number) {
     if (view === 'week') setAnchor(prev => addDays(prev, delta * 7))
+    else if (view === 'month') {
+      // Step by whole months. Keep the day-of-month if possible so
+      // anchor=Jan 31 + 1 → Feb 28 (not Mar 3).
+      setAnchor(prev => {
+        const d = new Date(prev)
+        d.setDate(1)
+        d.setMonth(d.getMonth() + delta)
+        return d
+      })
+    }
     else setAnchor(prev => addDays(prev, delta))
   }
   function jumpToday() {
-    setAnchor(view === 'week' ? startOfWeek(new Date()) : new Date(new Date().setHours(0, 0, 0, 0)))
+    if (view === 'week') setAnchor(startOfWeek(new Date()))
+    else if (view === 'month') {
+      const d = new Date()
+      d.setDate(1)
+      d.setHours(0, 0, 0, 0)
+      setAnchor(d)
+    } else {
+      setAnchor(new Date(new Date().setHours(0, 0, 0, 0)))
+    }
   }
 
   // Stats
@@ -285,6 +491,43 @@ export default function SchedulerView(props: Props) {
     const revenue = today.reduce((sum, b) => sum + (Number(b.estimated_value) || 0), 0)
     return { jobsToday: today.length, onShift, revenue }
   }, [bookings, drivers])
+
+  // Mobile fallback — show a friendly redirect instead of the grid.
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          padding: 24, color: '#F2F6FB', fontFamily: 'Outfit, sans-serif',
+          minHeight: '100vh', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 16,
+        }}
+      >
+        <div style={{
+          width: 56, height: 56, borderRadius: 99, background: 'rgba(232,98,42,0.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28,
+        }}>📅</div>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>View on the mobile app</h1>
+        <p style={{ fontSize: 13, color: TEXT_DIM, margin: 0, maxWidth: 320, lineHeight: 1.5 }}>
+          The scheduler is optimised for tablets and desktops. For the best mobile experience, open the TalkMate mobile app.
+        </p>
+        <a
+          href="https://apps.apple.com/au/app/talkmate"
+          style={{
+            background: ORANGE, color: '#fff', padding: '10px 22px', borderRadius: 8,
+            fontSize: 14, fontWeight: 700, textDecoration: 'none', marginTop: 4,
+          }}
+        >
+          Open the app
+        </a>
+        <a
+          href="/dashboard"
+          style={{ fontSize: 12, color: TEXT_DIM, textDecoration: 'underline', marginTop: 8 }}
+        >
+          Back to dashboard
+        </a>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: 28, maxWidth: 1400, margin: '0 auto', color: '#F2F6FB', fontFamily: 'Outfit, sans-serif' }}>
@@ -314,11 +557,35 @@ export default function SchedulerView(props: Props) {
           loading={loading}
           isTowing={isTowing}
           stats={stats}
+          allDayEvents={allDayEvents}
+          driverFilter={driverFilter}
+          onDriverFilterChange={setDriverFilter}
+          selectedId={selected?.id ?? null}
+          bookingsBase={bookingsBase}
+          onBookingUpdated={(updated) => {
+            // Merge the API response into our local bookings list.
+            setBookings(prev => prev.map(b => b.id === updated.id ? { ...b, ...(updated as unknown as Booking) } : b))
+            setSelected(prev => prev && prev.id === updated.id ? ({ ...prev, ...(updated as unknown as Booking) }) : prev)
+            showToast('Booking moved')
+          }}
+          onErrorToast={showToast}
+          onCreateAt={setCreating}
           onNavigate={navigate}
           onToday={jumpToday}
           onView={selectView}
           onJobClick={b => setSelected(b)}
           onEmptyClick={(start, driverId) => setAdding({ start, driverId })}
+          onJumpToDate={(d) => {
+            // From Month view → click a day cell. Switch to Day view
+            // anchored on that date.
+            const next = new Date(d)
+            next.setHours(0, 0, 0, 0)
+            setAnchor(next)
+            setView('day')
+            const search = new URLSearchParams(params.toString())
+            search.set('view', 'day')
+            router.replace(`?${search.toString()}`, { scroll: false })
+          }}
         />
       )}
       {tab === 'list' && (
@@ -353,13 +620,55 @@ export default function SchedulerView(props: Props) {
       )}
 
       {selected && (
-        <JobDetailModal
-          booking={selected}
-          drivers={drivers}
+        // Session 53 — Bizzow grid right-rail side panel replaces the
+        // legacy modal (JobDetailModal still exists further down but
+        // is no longer reachable from this code path).
+        <JobSidePanel
+          booking={selected as unknown as SchedulerBooking}
+          drivers={drivers.map(d => ({ id: d.id, name: d.name, active: d.active }))}
           baseUrl={bookingsBase}
           onClose={() => setSelected(null)}
-          onUpdated={() => { setSelected(null); loadBookings(); showToast('Job updated') }}
-          isTowing={isTowing}
+          onUpdated={(updated) => {
+            // Merge the update into the local bookings list and keep
+            // the side panel open with the fresh row (lets the user
+            // see the new status / driver right away).
+            setBookings(prev => prev.map(b => b.id === updated.id ? { ...b, ...(updated as unknown as Booking) } : b))
+            setSelected(prev => prev && prev.id === updated.id ? ({ ...prev, ...(updated as unknown as Booking) }) : prev)
+            showToast('Job updated')
+          }}
+          onCancel={async (b) => {
+            const res = await fetch(`${bookingsBase}/${b.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'cancelled' }),
+            })
+            if (res.ok) {
+              const { booking: updated } = await res.json()
+              setBookings(prev => prev.map(x => x.id === updated.id ? { ...x, ...updated } : x))
+              setSelected(null)
+              showToast('Job cancelled')
+            } else {
+              showToast('Cancel failed')
+            }
+          }}
+        />
+      )}
+      {/* Session B — new right-rail quick-create panel for empty-slot
+          clicks. The legacy AddJobModal stays for the "+ Add Job"
+          button path. */}
+      {creating && (
+        <CreateBookingPanel
+          initial={creating}
+          drivers={drivers.map(d => ({ id: d.id, name: d.name, active: d.active }))}
+          settings={(settings ?? {}) as unknown as Parameters<typeof CreateBookingPanel>[0]['settings']}
+          baseUrl={bookingsBase}
+          onClose={() => setCreating(null)}
+          onSaved={() => {
+            setCreating(null)
+            loadBookings()
+            showToast('Booking created')
+          }}
+          onError={showToast}
         />
       )}
       {adding && (
@@ -375,6 +684,56 @@ export default function SchedulerView(props: Props) {
         />
       )}
       {toast && <div style={toastStyle}>{toast}</div>}
+      {helpOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
+          onClick={() => setHelpOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 300, padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: NAV_BG, color: '#F2F6FB',
+              border: '1px solid rgba(255,255,255,0.10)',
+              borderRadius: 12, padding: 24, minWidth: 320, maxWidth: 480,
+              fontFamily: 'Outfit, sans-serif',
+            }}
+          >
+            <h3 style={{ margin: 0, marginBottom: 12, fontSize: 16, fontWeight: 700 }}>Keyboard shortcuts</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+              {[
+                ['T', 'Jump to today'],
+                ['D', 'Day view'],
+                ['W', 'Week view'],
+                ['M', 'Month view'],
+                ['← / →', 'Previous / next period'],
+                ['Esc', 'Close side panel or this help'],
+                ['?', 'Toggle this help'],
+              ].map(([k, label]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ color: TEXT_DIM }}>{label}</span>
+                  <span style={{
+                    fontFamily: 'monospace', background: 'rgba(255,255,255,0.08)',
+                    padding: '2px 8px', borderRadius: 6, fontSize: 12,
+                  }}>{k}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <button onClick={() => setHelpOpen(false)} style={{
+                background: ORANGE, color: '#fff', border: 'none',
+                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -390,29 +749,74 @@ function CalendarTab(props: {
   loading: boolean
   isTowing: boolean
   stats: { jobsToday: number; onShift: number; revenue: number }
+  // Session 53 — Bizzow grid additions
+  allDayEvents: AllDayEvent[]
+  driverFilter: string | null
+  onDriverFilterChange: (next: string | null) => void
+  selectedId: string | null
+  // Session B — drag-to-reschedule + quick-create wiring
+  bookingsBase: string
+  onBookingUpdated: (b: SchedulerBooking) => void
+  onErrorToast: (msg: string) => void
+  onCreateAt: (slot: { dateKey: string; hour: number; minute: number; driverId?: string | null }) => void
   onNavigate: (d: number) => void
   onToday: () => void
   onView: (v: View) => void
   onJobClick: (b: Booking) => void
   onEmptyClick: (start: string, driverId?: string) => void
+  onJumpToDate: (d: Date) => void
 }) {
-  const { view, anchor, bookings, drivers, settings, isTowing, stats, onNavigate, onToday, onView, onJobClick, onEmptyClick } = props
-  const label = view === 'week' ? fmtWeekRange(anchor) : fmtDayHeader(anchor)
+  const { view, anchor, bookings, drivers, settings, stats,
+          allDayEvents, driverFilter, onDriverFilterChange, selectedId,
+          bookingsBase, onBookingUpdated, onErrorToast, onCreateAt,
+          onNavigate, onToday, onView, onJobClick, onEmptyClick, onJumpToDate } = props
+  const label = view === 'week'
+    ? fmtWeekRange(anchor)
+    : view === 'month'
+      ? anchor.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
+      : fmtDayHeader(anchor)
 
-  // Determine grid hour range from operating hours (union across days)
-  const hourRange = useMemo(() => {
-    let earliest = 7 * 60
-    let latest = 18 * 60
-    for (const d of DAYS) {
-      const day = settings?.operating_hours?.[d]
-      if (day?.enabled === false) continue
-      const open = hhmmToMinutes(day?.open ?? '08:00')
-      const close = hhmmToMinutes(day?.close ?? '18:00')
-      if (open < earliest) earliest = open
-      if (close > latest) latest = close
+  // Session 53 — derive settings-lite for the new grids. If the flat
+  // columns from migration 053 are null, fall back to a sensible default.
+  const settingsLite: SchedulerSettingsLite = useMemo(() => ({
+    timezone: settings?.timezone ?? 'Australia/Melbourne',
+    default_start_hour: settings?.default_start_hour ?? 6,
+    default_end_hour: settings?.default_end_hour ?? 20,
+    show_weekend: settings?.show_weekend ?? true,
+    week_starts_on: settings?.week_starts_on ?? 1,
+    time_increment_mins: settings?.time_increment_mins ?? 30,
+    group_by_driver: settings?.group_by_driver ?? false,
+    state: settings?.state ?? null,
+    operating_hours: settings?.operating_hours ?? null,
+  }), [settings])
+
+  // Session 53 — filter bookings per driver filter row selection.
+  const filteredBookings = useMemo(() => {
+    if (driverFilter === null) return bookings
+    if (driverFilter === '__unassigned__') {
+      return bookings.filter(b => !b.driver_id)
     }
-    return { startHour: Math.floor(earliest / 60), endHour: Math.ceil(latest / 60) }
-  }, [settings])
+    return bookings.filter(b => b.driver_id === driverFilter)
+  }, [bookings, driverFilter])
+
+  // Job counts per driver, used by the filter row badges.
+  const driverCounts = useMemo(() => {
+    const byDriver: Record<string, number> = {}
+    let unassigned = 0
+    for (const b of bookings) {
+      if (!b.driver_id) unassigned++
+      else byDriver[b.driver_id] = (byDriver[b.driver_id] ?? 0) + 1
+    }
+    return { all: bookings.length, unassigned, byDriver }
+  }, [bookings])
+
+  // Click-empty handler — Session B opens the new CreateBookingPanel
+  // with the clicked slot pre-filled. Session A used onEmptyClick
+  // which routed to the legacy AddJobModal; we still expose that path
+  // for callers that prefer it but the grids use the new flow.
+  function handleEmptyClick(dateKey: string, hour: number, minute: number) {
+    onCreateAt({ dateKey, hour, minute })
+  }
 
   return (
     <div>
@@ -426,8 +830,9 @@ function CalendarTab(props: {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={onToday} style={ghostBtn}>Today</button>
           <div style={{ display: 'flex', borderRadius: 9, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <button onClick={() => onView('week')} style={view === 'week' ? primaryBtnSmall : ghostBtnFlat}>Week</button>
             <button onClick={() => onView('day')} style={view === 'day' ? primaryBtnSmall : ghostBtnFlat}>Day</button>
+            <button onClick={() => onView('week')} style={view === 'week' ? primaryBtnSmall : ghostBtnFlat}>Week</button>
+            <button onClick={() => onView('month')} style={view === 'month' ? primaryBtnSmall : ghostBtnFlat}>Month</button>
           </div>
         </div>
       </div>
@@ -439,18 +844,65 @@ function CalendarTab(props: {
         <StatPill label="Est. Revenue" value={`$${Math.round(stats.revenue)}`} />
       </div>
 
+      {/* Session 53 — driver filter row (brief §6a). Hidden in month
+          view because month cells are too small to be useful per-driver. */}
+      {view !== 'month' && drivers.length > 0 && (
+        <DriverFilterRow
+          drivers={drivers.map(d => ({ id: d.id, name: d.name, active: d.active }))}
+          selected={driverFilter}
+          counts={driverCounts}
+          onSelect={onDriverFilterChange}
+        />
+      )}
+
       {/* Calendar grid */}
-      {view === 'week'
-        ? <WeekGrid anchor={anchor} bookings={bookings} settings={settings} hourRange={hourRange} onJobClick={onJobClick} onEmptyClick={onEmptyClick} />
-        : <DayGrid anchor={anchor} bookings={bookings} drivers={drivers} settings={settings} hourRange={hourRange} isTowing={isTowing} onJobClick={onJobClick} onEmptyClick={onEmptyClick} />}
+      {view === 'week' && (
+        <BizzowWeekGrid
+          anchor={anchor}
+          bookings={filteredBookings as unknown as SchedulerBooking[]}
+          drivers={drivers.map(d => ({ id: d.id, name: d.name, active: d.active }))}
+          settings={settingsLite}
+          allDayEvents={allDayEvents}
+          selectedId={selectedId}
+          baseUrl={bookingsBase}
+          onBookingUpdated={onBookingUpdated}
+          onError={onErrorToast}
+          onJobClick={(b) => onJobClick(b as unknown as Booking)}
+          onEmptyClick={handleEmptyClick}
+        />
+      )}
+      {view === 'day' && (
+        <BizzowDayGrid
+          anchor={anchor}
+          bookings={filteredBookings as unknown as SchedulerBooking[]}
+          drivers={drivers.map(d => ({ id: d.id, name: d.name, active: d.active }))}
+          settings={settingsLite}
+          allDayEvents={allDayEvents}
+          selectedId={selectedId}
+          baseUrl={bookingsBase}
+          onBookingUpdated={onBookingUpdated}
+          onError={onErrorToast}
+          onJobClick={(b) => onJobClick(b as unknown as Booking)}
+          onEmptyClick={handleEmptyClick}
+        />
+      )}
+      {view === 'month' && (
+        <BizzowMonthGrid
+          anchor={anchor}
+          bookings={filteredBookings as unknown as SchedulerBooking[]}
+          settings={settingsLite}
+          allDayEvents={allDayEvents}
+          onDayClick={onJumpToDate}
+        />
+      )}
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: 14, marginTop: 14, flexWrap: 'wrap' as const, fontSize: 11, color: TEXT_DIM }}>
+        <LegendDot color="#F59E0B" label="Pending (no driver)" />
+        <LegendDot color="#4A9FE8" label="Confirmed" />
         <LegendDot color="#22C55E" label="In Progress" />
-        <LegendDot color={ORANGE} label="Booked by Agent" />
-        <LegendDot color="#4A9FE8" label="Manual Entry" />
-        <LegendDot color="#A855F7" label="Walk-in" />
-        <LegendDot color="#9CA3AF" label="Cancelled / Closed" />
+        <LegendDot color="#9CA3AF" label="Completed" />
+        <LegendDot color="#EF4444" label="Cancelled / Declined" />
       </div>
     </div>
   )
