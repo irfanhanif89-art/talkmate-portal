@@ -1,5 +1,85 @@
 # TalkMate Portal — Deployment Handoff
 
+---
+
+## Session 53/54 — Bizzow-style Scheduler Grid (2026-05-28)
+
+### Branch
+`feature/scheduler-bizzow-grid` (from `dev`)
+
+### Why
+Irfan asked for a Bizzow-style kanban-of-time scheduler so owners (Glen at GM Towing) can plan their week at a glance — time on Y, days as columns, jobs as colored blocks. Replaces the 1460-line driver-lane layout in the `/scheduler` page while preserving every load-bearing feature (Hayden SMS confirmation loop, waitlist, agent sync, settings tab, job list tab).
+
+### What ships
+
+**Session A (data + grid views + side panel):**
+1. **Migration `054_scheduler_bizzow_grid.sql`** — additive + idempotent.
+   - `bookings`: new columns `color_hex`, `pickup_lat/lng`, `dropoff_lat/lng`, `payment_method` (cash/card/invoice/insurance/account).
+   - `bookings.status` enum extended with `started` (alongside existing pending/confirmed/cancelled/completed/no_show/declined).
+   - `bookings_status_stamp` trigger: status → started auto-stamps `actual_start`; status → completed auto-stamps `actual_end` (only when the timestamp is currently null, preserving existing data).
+   - `scheduler_settings`: flat grid-display columns `default_start_hour`, `default_end_hour`, `show_weekend`, `week_starts_on`, `time_increment_mins`, `group_by_driver`.
+   - `driver_visible_bookings` SQL view — strips price when `payment_method ∉ {cash, card}`. Aliases column names to the brief's expected shape for driver-side consumers.
+   - Two indexes on `(client_id, scheduled_start)` and `(driver_id, scheduled_start)` for grid range queries.
+   - Adds `bookings` to the `supabase_realtime` publication.
+   - Adds `bookings_owner_select_realtime` policy (inline subquery, no SECURITY DEFINER) so Supabase Realtime workers can evaluate RLS. Additive — existing `bookings_client_access` policy preserved.
+
+2. **3 new API routes:**
+   - `GET /api/portal/scheduler-feed?from&to`
+   - `PATCH /api/portal/bookings/[id]/reschedule` — date/time/duration with conflict detection + force-override.
+   - `PATCH /api/portal/bookings/[id]/reassign` — driver change with conflict detection. Auto-promotes pending → confirmed when assigning a driver.
+
+3. **9 new components in `src/components/portal/scheduler/`** — `WeekGrid`, `DayGrid`, `MonthGrid`, `JobBlock`, `JobSidePanel`, `NowIndicator`, `AllDayRow`, `DriverFilterRow`, `CreateBookingPanel` (Session B), plus `types.ts`, `layout.ts`, `useSchedulerDnd.ts`.
+
+4. **2 helpers** — `src/lib/scheduler-time.ts` (tz-aware wallclock/iso conversion) + `src/hooks/useBookingsRealtime.ts`.
+
+5. **`scheduler-view.tsx`** — view toggle gained Month; CalendarTab renders the new Bizzow grids; legacy `<JobDetailModal>` swapped for `<JobSidePanel>`. Legacy inner components left as dead code for instant rollback.
+
+6. **30-second poll fallback** — `scheduler-view.tsx` re-fetches the visible bookings window every 30s as belt-and-braces for the realtime path.
+
+**Session B:**
+1. **Drag-to-reschedule** via `@dnd-kit/core`. `useSchedulerDnd` centralizes the flow with conflict-dialog fallback on 409.
+2. **Edge-resize** on JobBlock — drag the bottom edge to change duration, snapped to `time_increment_mins`.
+3. **Driver swimlanes** in DayGrid when `group_by_driver = true` — one sub-column per active driver + Unassigned lane.
+4. **`CreateBookingPanel`** — right-rail slide-in for empty-slot clicks with Google Places autocomplete. Field parity with the mobile AddBookingModal. Existing `AddJobModal` retained for the "+ Add Job" button.
+5. **Admin parity** at `/admin/clients/[clientId]/portal/scheduler` (already existed; verified).
+6. **Keyboard shortcuts** — T / D / W / M / ←→ / ? / Esc.
+7. **Mobile <768px redirect** — "View on mobile app" CTA instead of the grid.
+
+### What was deliberately NOT changed
+- 1460-line `scheduler-view.tsx` shell (tabs, sync, settings save, list tab).
+- Legacy inner `WeekGrid`/`DayGrid`/`JobDetailModal` functions — dead code, follow-up cleanup PR.
+- Existing `bookings_client_access` RLS policy — preserved. New realtime policy is additive.
+- `dispatch_jobs` + `/admin/dispatch` — explicit non-goal per brief.
+- Mobile data layer (`useBookings` etc.) — Phase 2 of the mobile project.
+
+### Migration order
+- `054_scheduler_bizzow_grid.sql` runs on preview before merge, production after merge.
+
+### Environment variables
+None required. Existing `GOOGLE_MAPS_SERVER_KEY` + `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` already wired.
+
+### Build status
+- `npm run build` → `✓ Compiled successfully in 22.6s` (178 routes).
+- `npx tsc --noEmit` → clean.
+
+### Pre-deploy checklist
+1. Apply `054_scheduler_bizzow_grid.sql` to preview Supabase (done during testing).
+2. Smoke-test `/scheduler` on preview: Day/Week/Month views, click block → side panel, click empty slot → create panel, drag block → reschedule, drag bottom edge → resize, keyboard shortcuts.
+3. Apply `054` to production.
+4. Merge `dev` → `main`. Vercel auto-deploys.
+
+### Rollback
+- UI: revert the JSX swap in `scheduler-view.tsx` (4 places). Legacy components are still in the file.
+- DB: forward-only migration. Safe to leave columns + view + policy + publication entry in place even if the UI rolls back.
+
+### Known caveats
+- **Realtime in preview env**: subscription establishes (`SUBSCRIBED`) but server-side `UPDATE` events didn't always reach the browser during testing — likely a project-level realtime config quirk. The 30s poll covers the gap.
+- **Drag-across-lane reassign in swimlanes**: visual swimlanes ship; drag-across-lane → `/reassign` is not wired. Follow-up.
+- **Google Places lat/lng capture**: `CreateBookingPanel` uses formatted-address-only `AddressAutocomplete`. The new lat/lng columns exist but aren't populated by the form. Follow-up.
+- **Legacy inner components**: ~700 lines of dead code in `scheduler-view.tsx`. Follow-up cleanup PR.
+
+---
+
 **Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management) + Session 22 (Pricing overhaul — setup fees, annual billing, commission bonus, website + portal + Sales HQ)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)

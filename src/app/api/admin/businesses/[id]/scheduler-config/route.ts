@@ -13,6 +13,9 @@ const SCALAR_FIELDS = new Set([
   'cancellation_policy_enabled', 'cancellation_notice_hours', 'cancellation_fee_aud',
   'default_duration_tilt_minutes', 'default_duration_sideloader_minutes',
   'default_duration_minutes',
+  // Session 53 — flat grid-display columns from migration 053.
+  'default_start_hour', 'default_end_hour', 'show_weekend',
+  'week_starts_on', 'time_increment_mins', 'group_by_driver',
 ])
 const JSON_FIELDS = new Set(['operating_hours', 'overridden_holidays'])
 
