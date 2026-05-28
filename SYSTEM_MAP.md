@@ -3,7 +3,8 @@
 **Last updated:** 2026-05-28
 **Last session:** 52
 **Main SHA:** 5d31418
-**Next migration number:** 057
+**Next migration number:** 058
+**Active spec:** Mobile Sales Rep Phase 2 sub-project 1 (Live API) — see [`docs/superpowers/specs/2026-05-28-mobile-sales-rep-phase2-live-api-design.md`](docs/superpowers/specs/2026-05-28-mobile-sales-rep-phase2-live-api-design.md) and [`docs/superpowers/plans/2026-05-28-mobile-sales-rep-phase2-live-api.md`](docs/superpowers/plans/2026-05-28-mobile-sales-rep-phase2-live-api.md). Estimated 4 stages, 40 tasks, ~2 weeks calendar time.
 **Repo:** irfanhanif89-art/talkmate-portal
 **Production URL:** https://app.talkmate.com.au
 **Supabase project:** mdsfdaefsxwrakgkyflr
