@@ -45,7 +45,12 @@ ALTER TABLE public.bookings
   ADD COLUMN IF NOT EXISTS pickup_lng numeric(10,7),
   ADD COLUMN IF NOT EXISTS dropoff_lat numeric(10,7),
   ADD COLUMN IF NOT EXISTS dropoff_lng numeric(10,7),
-  ADD COLUMN IF NOT EXISTS payment_method text;
+  ADD COLUMN IF NOT EXISTS payment_method text,
+  -- `notes` is added defensively: present on preview (some earlier
+  -- migration), missing on prod (Session 33 removed it). The side
+  -- panel + CreateBookingPanel both read/write it, and the
+  -- driver_visible_bookings view below references it.
+  ADD COLUMN IF NOT EXISTS notes text;
 
 -- color_hex sanity check (allow #RGB or #RRGGBB, case-insensitive, or NULL).
 ALTER TABLE public.bookings DROP CONSTRAINT IF EXISTS bookings_color_hex_check;
