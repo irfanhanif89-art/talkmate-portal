@@ -418,7 +418,7 @@ const ALLOWED_SOURCES = new Set(['cold_call', 'referral', 'walk_in', 'online', '
 const LEAD_SELECT = `
   id, business_name, contact_name, phone, email, industry, suburb, state,
   website, source, notes, status, approval_status,
-  won_plan, won_billing_cycle, won_at, won_mrr,
+  won_plan, won_billing_cycle, won_at,
   lost_reason, bad_lead_reason, business_id,
   next_followup_at, created_at, updated_at, assigned_to
 `
@@ -461,13 +461,9 @@ export async function POST(req: Request) {
 
 (Preserve the existing POST body exactly as it was.)
 
-- [ ] **Step 2: Confirm `won_billing_cycle` and `won_mrr` are real columns**
+- [ ] **Step 2: Schema verified — `won_billing_cycle` exists, `won_mrr` does NOT**
 
-```bash
-grep -n "won_billing_cycle\|won_mrr" supabase/migrations/*.sql
-```
-
-If either is missing from the schema, drop it from the SELECT. Migration 037 added `won_billing_cycle`; verify `won_mrr` exists too. If not present, mobile derives MRR from `won_plan` via the pricing table.
+Pre-verified against prod `information_schema` on 2026-05-28. `leads.won_billing_cycle` exists (added by migration 037). `won_mrr` does NOT exist — dropped from the SELECT. Mobile derives MRR client-side from `won_plan` via the pricing table.
 
 - [ ] **Step 3: Smoke test**
 
@@ -602,48 +598,52 @@ export async function GET(req: Request) {
   const { data: rows, error } = await admin
     .from('commissions')
     .select(`
-      id, lead_id, business_id, status,
-      base_amount, bonus_amount, total_amount,
-      plan, billing_cycle, won_at,
-      approved_at, paid_at, clawback_period_ends_at,
-      leads:lead_id ( business_name ),
+      id, lead_id, business_id, status, plan,
+      commission_amount, bonus_amount,
+      approved_at, paid_at, clawback_period_ends_at, created_at,
+      leads:lead_id ( business_name, won_at, won_billing_cycle ),
       businesses:business_id ( name )
     `)
-    .eq('sales_rep_id', auth.rep.id)
-    .order('won_at', { ascending: false })
+    .eq('rep_id', auth.rep.id)
+    .order('created_at', { ascending: false })
     .limit(500)
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
-  // Flatten joined fields for the mobile consumer.
-  const flattened = (rows ?? []).map((c: any) => ({
-    id: c.id,
-    lead_id: c.lead_id,
-    business_id: c.business_id,
-    business_name: c.businesses?.name ?? c.leads?.business_name ?? '(unknown)',
-    plan: c.plan,
-    billing_cycle: c.billing_cycle,
-    base_amount: c.base_amount,
-    bonus_amount: c.bonus_amount,
-    total: c.total_amount ?? (c.base_amount ?? 0) + (c.bonus_amount ?? 0),
-    status: c.status,
-    won_at: c.won_at,
-    approved_at: c.approved_at,
-    paid_at: c.paid_at,
-    clawback_period_ends_at: c.clawback_period_ends_at,
-  }))
+  // Reshape into the contract mobile expects.
+  // Schema notes (verified against prod information_schema 2026-05-28):
+  //   - rep FK is `rep_id`, NOT `sales_rep_id`
+  //   - first-month commission column is `commission_amount`, NOT `base_amount`
+  //   - no `total_amount` column — compute base + bonus client-side
+  //   - no `won_at` or `billing_cycle` on commissions — joined from leads
+  const flattened = (rows ?? []).map((c: any) => {
+    const base = Number(c.commission_amount ?? 0)
+    const bonus = Number(c.bonus_amount ?? 0)
+    return {
+      id: c.id,
+      lead_id: c.lead_id,
+      business_id: c.business_id,
+      business_name: c.businesses?.name ?? c.leads?.business_name ?? '(unknown)',
+      plan: c.plan,
+      billing_cycle: c.leads?.won_billing_cycle ?? null,
+      base_amount: base,
+      bonus_amount: bonus,
+      total: base + bonus,
+      status: c.status,
+      won_at: c.leads?.won_at ?? c.created_at,
+      approved_at: c.approved_at,
+      paid_at: c.paid_at,
+      clawback_period_ends_at: c.clawback_period_ends_at,
+    }
+  })
 
   return NextResponse.json({ ok: true, commissions: flattened })
 }
 ```
 
-- [ ] **Step 3: Verify column names match your schema**
+- [ ] **Step 3: Schema verified — see code comments above**
 
-```bash
-grep -n "base_amount\|bonus_amount\|total_amount" supabase/migrations/*.sql
-```
-
-If your `commissions` table uses different column names (e.g. `amount_base` vs `base_amount`), adapt the SELECT.
+Pre-verified against prod `information_schema` on 2026-05-28. Three schema-vs-plan mismatches captured in code comments.
 
 - [ ] **Step 4: Smoke test**
 
@@ -692,7 +692,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const { data: leads, error } = await admin
     .from('leads')
-    .select('id, business_name, contact_name, status, won_plan, won_mrr, updated_at')
+    .select('id, business_name, contact_name, status, won_plan, updated_at')
     .eq('assigned_to', auth.rep.id)
     .neq('status', 'lost')
     .neq('status', 'bad_lead')
@@ -2858,7 +2858,7 @@ Verify each count against `SELECT status, count(*) FROM leads WHERE assigned_to 
 
 - [ ] **Step 5: Commissions tab shows Pending/Approved/Paid groupings**
 
-- [ ] **Step 6: Hero total matches `SUM(total_amount) FROM commissions WHERE sales_rep_id = '<jade-id>' AND status IN ('pending', 'approved')`**
+- [ ] **Step 6: Hero total matches `SUM(commission_amount + COALESCE(bonus_amount, 0)) FROM commissions WHERE rep_id = '<jade-id>' AND status IN ('pending', 'approved')`**
 
 ---
 

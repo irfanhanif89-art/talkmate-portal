@@ -12,12 +12,50 @@ import { requireSalesRep } from '@/lib/sales-auth'
 //     calling rep, never trust the request body.
 //   leads.assigned_by references auth.users(id).
 
+// Lead columns mobile + web both consume. Kept narrow to minimise payload.
+const LEAD_SELECT = `
+  id, business_name, contact_name, phone, email, industry, suburb, state,
+  website, source, notes, status, approval_status,
+  won_plan, won_billing_cycle, won_at,
+  lost_reason, bad_lead_reason, business_id,
+  next_followup_at, created_at, updated_at, assigned_to
+`
+
 const ALLOWED_SOURCES = new Set([
   'cold_call', 'referral', 'walk_in', 'online', 'other',
 ])
 
+export async function GET(req: Request) {
+  const auth = await requireSalesRep(req)
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
+
+  const url = new URL(req.url)
+  const includeBadLead = url.searchParams.get('include') === 'bad_lead'
+  const statusFilter = url.searchParams.get('status')
+
+  const admin = createAdminClient()
+  let query = admin
+    .from('leads')
+    .select(LEAD_SELECT)
+    .eq('assigned_to', auth.rep.id)
+    .order('updated_at', { ascending: false })
+    .limit(500)
+
+  if (!includeBadLead) {
+    query = query.neq('status', 'bad_lead')
+  }
+  if (statusFilter) {
+    query = query.eq('status', statusFilter)
+  }
+
+  const { data: leads, error } = await query
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, leads: leads ?? [] })
+}
+
 export async function POST(req: Request) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const body = (await req.json().catch(() => ({}))) as {

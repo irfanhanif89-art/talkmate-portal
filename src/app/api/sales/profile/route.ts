@@ -38,7 +38,7 @@ function splitName(full: string): { first: string; last: string } {
 }
 
 export async function PATCH(req: Request) {
-  const auth = await requireSalesRep()
+  const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const body = (await req.json().catch(() => ({}))) as UpdateBody
