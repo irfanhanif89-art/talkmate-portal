@@ -240,7 +240,20 @@ async function handleEndOfCall(
   const callerName = call.customer?.name ?? null
   const startedAt = call.startedAt ?? null
   const endedAt = call.endedAt ?? new Date().toISOString()
-  const durationSeconds = computeDuration(startedAt, endedAt)
+  let durationSeconds = computeDuration(startedAt, endedAt)
+
+  // Vapi does not send startedAt in end-of-call-report. If duration is 0
+  // and we have a vapiCallId, fetch started_at from the call.started row.
+  if (durationSeconds === 0 && vapiCallId) {
+    const { data: existing } = await supabase
+      .from('calls')
+      .select('started_at')
+      .eq('vapi_call_id', vapiCallId)
+      .maybeSingle()
+    if (existing?.started_at) {
+      durationSeconds = computeDuration(existing.started_at, endedAt)
+    }
+  }
   const endedReason = call.endedReason ?? msg.endedReason ?? null
   const transcript = call.transcript ?? msg.transcript ?? ''
   const recordingUrl = call.recordingUrl ?? msg.recordingUrl
