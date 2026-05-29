@@ -327,6 +327,12 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 - **H12–H15** — Vapi agent health alerts (note: Session 28 reused the H8–H15 labels for its own four parts; the original audit items here remain)
 - **H29, H32** — Remaining deferred audit items
 
+### Preview Supabase schema drift (surfaced Session 56, 2026-05-29)
+The preview Supabase project (`rgifivtzmjvanzqwgadq`, see Memory note `preview-supabase-schema-drift.md`) is significantly behind prod (`mdsfdaefsxwrakgkyflr`). Measured drift: 15 tables missing entirely (incl. `rep_notifications`, `lead_followups`, `agent_health_alerts`, `proposal_tracking`, etc.), `businesses` missing 20 columns, `dispatch_jobs` missing 45 columns, `drivers` missing 9 columns. Cause: preview was created 2026-05-19 from a partial snapshot, many prod migrations were applied outside the Supabase CLI tooling and never propagated. Practical impact: local dev pointed at preview Supabase will fail with "column does not exist" on most pages — **local `.env.local` must use the same Supabase keys as Vercel's Development env (which share with Production), not Vercel's Preview env**. Vercel preview-deploy URLs can't be used to E2E-verify features that touch missing columns; verify against the prod deploy instead. Fix deferred to a dedicated rebuild session: pg_dump prod schema-only + apply to preview (preview has effectively no data — 7 auth users, 2 contractors, 2 businesses, zero in all other tables — so it's safe to disrupt). ~2-3 hours.
+
+### Embed bug fixed in Session 56
+`/admin/clients` previously used PostgREST embedded join `sales_reps:sales_rep_id(full_name)` which had been silently returning empty data since Session 41 — the CLOSED BY REP column always rendered "—" even for businesses with an assigned rep, because the FK metadata is missing from PostgREST's schema cache for this project. Fix shipped in commit `e33edb4`: drop the embed, fetch sales_reps by id list in a second query, map back. CLOSED BY REP will populate correctly once a real rep is assigned to a business.
+
 ### Security — Daily Reminder (added 2026-05-28, remove each line as completed)
 **ROTATE 4 LEAKED TOKENS.**
 
