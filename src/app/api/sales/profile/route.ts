@@ -1,4 +1,4 @@
-// PATCH /api/sales/profile — Session 47.
+// PATCH /api/sales/profile — Session 47, updated Session 56.
 //
 // Reps can self-edit their own profile fields:
 //   - full_name           (sales_reps.full_name + contractors.first/last)
@@ -7,6 +7,7 @@
 //   - abn                 (contractors.abn — validated against ATO checksum)
 //   - bank_bsb            (contractors.bank_bsb)
 //   - bank_account_number (contractors.bank_account_number)
+//   - demo_calendly_url   (sales_reps.demo_calendly_url - validated to start with https://calendly.com/)
 //
 // Every change writes an admin_audit_log row with the before/after diff
 // and fires a Telegram alert so admins notice (especially for banking +
@@ -27,6 +28,7 @@ interface UpdateBody {
   abn?: unknown
   bank_bsb?: unknown
   bank_account_number?: unknown
+  demo_calendly_url?: unknown
 }
 
 function splitName(full: string): { first: string; last: string } {
@@ -114,6 +116,19 @@ export async function PATCH(req: Request) {
     contractorUpdate.bank_account_number = trimmed
   }
 
+  if ('demo_calendly_url' in body) {
+    const trimmed = body.demo_calendly_url == null
+      ? null
+      : String(body.demo_calendly_url).trim() || null
+    if (trimmed && !trimmed.startsWith('https://calendly.com/')) {
+      return NextResponse.json(
+        { ok: false, error: 'invalid_calendly_url' },
+        { status: 400 },
+      )
+    }
+    repUpdate.demo_calendly_url = trimmed
+  }
+
   if (Object.keys(repUpdate).length === 0 && Object.keys(contractorUpdate).length === 0) {
     return NextResponse.json({ ok: true })
   }
@@ -121,7 +136,7 @@ export async function PATCH(req: Request) {
   // ────── Snapshot before-state for audit diff ──────
   const { data: repBefore } = await admin
     .from('sales_reps')
-    .select('full_name, phone, notification_email')
+    .select('full_name, phone, notification_email, demo_calendly_url')
     .eq('id', auth.rep.id)
     .maybeSingle()
 

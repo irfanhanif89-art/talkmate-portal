@@ -22,6 +22,7 @@ export async function GET() {
       tos_accepted_at, tos_accepted_version,
       created_at, signup_at
     `)
+    .eq('is_demo', false)
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })

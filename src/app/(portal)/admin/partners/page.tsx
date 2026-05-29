@@ -32,6 +32,7 @@ export default async function AdminPartnersPage() {
     .from('businesses')
     .select('id, name, partner_tier, partner_commission_rate')
     .eq('is_partner', true)
+    .eq('is_demo', false)
     .order('name', { ascending: true })
 
   const partnerIds = (partners ?? []).map(p => p.id)
@@ -44,6 +45,7 @@ export default async function AdminPartnersPage() {
       .from('businesses')
       .select('id, referred_by, plan')
       .in('referred_by', partnerIds)
+      .eq('is_demo', false)
     referrals = data ?? []
   }
 

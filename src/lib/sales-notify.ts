@@ -414,7 +414,61 @@ export function commissionRevokedEmailHtml(opts: { repName: string; businessName
   `)
 }
 
+// Sent to a prospect from sales@talkmate.com.au when a rep sends them
+// a demo booking invite. Reply-to is set to the rep's notification
+// email so the prospect can reply directly to the rep.
+export async function sendDemoBookingInviteEmail(opts: {
+  toEmail: string
+  prospectName: string
+  calendlyUrl: string
+  repFullName: string
+  repReplyToEmail: string
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[sales-notify] sendDemoBookingInviteEmail: RESEND_API_KEY missing - skipping')
+    return
+  }
+  try {
+    const res = await sendEmail({
+      from: 'TalkMate Sales <sales@talkmate.com.au>',
+      to: opts.toEmail,
+      replyTo: opts.repReplyToEmail,
+      subject: 'Your TalkMate Demo - Book a Time That Suits You',
+      html: demoBookingInviteEmailHtml(opts),
+    })
+    if (res && res.ok === false) {
+      const errMsg = res.error ?? 'unknown error'
+      console.error('[sales-notify] sendDemoBookingInviteEmail returned not-ok', errMsg)
+      sendTelegram(
+        `Warning: Demo booking invite email returned not-ok for ${opts.prospectName} (${opts.toEmail}). Rep ${opts.repFullName} may need to resend manually. (${errMsg})`,
+      )
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[sales-notify] sendDemoBookingInviteEmail threw', msg)
+    sendTelegram(
+      `Warning: Demo booking invite email failed for ${opts.prospectName} (${opts.toEmail}). Rep ${opts.repFullName} may need to resend manually. (${msg})`,
+    )
+  }
+}
+
 export { ADMIN_EMAIL, PORTAL_URL }
+
+function demoBookingInviteEmailHtml(opts: {
+  prospectName: string
+  calendlyUrl: string
+  repFullName: string
+}) {
+  return emailWrap(`
+    <h2 style="margin: 0 0 12px; font-size: 19px; font-weight: 800;">Your TalkMate Demo - Book a Time That Suits You</h2>
+    <p>Hi ${escapeHtml(opts.prospectName)},</p>
+    <p>Thanks for your time today. As discussed, here is your link to book your personalised TalkMate demo.</p>
+    <p style="margin: 22px 0;">${btn(opts.calendlyUrl, 'Book My Demo')}</p>
+    <p>The demo takes around 15 to 20 minutes. You will see the TalkMate portal live, hear the AI receptionist in action, and get all your questions answered.</p>
+    <p>If you have any questions before then, reply to this email and I will get back to you.</p>
+    <p style="margin-top: 24px; font-size: 13px; color: #34495e;">${escapeHtml(opts.repFullName)}<br/>TalkMate Sales Team</p>
+  `)
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, ch => (

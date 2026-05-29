@@ -45,6 +45,7 @@ export default async function SalesProfilePage() {
         initialAbn={contractor?.abn ?? ''}
         initialBsb={contractor?.bank_bsb ?? ''}
         initialAccount={contractor?.bank_account_number ?? ''}
+        initialDemoCalendlyUrl={auth.rep.demo_calendly_url ?? ''}
         hasContractor={!!auth.rep.contractor_id}
       />
 

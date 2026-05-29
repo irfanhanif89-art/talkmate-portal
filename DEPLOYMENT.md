@@ -2,6 +2,120 @@
 
 ---
 
+## Session 56 — Demo system (2026-05-29)
+
+### Branch
+`feature/session-56-demo-system` (from `dev`)
+
+### Why
+Sales reps needed a single hub for running demos: a live phone agent they can spin up per industry, a fully-interactive portal preview to show prospects, and a Book Demo flow that emails a Calendly link and advances the lead to `demo_booked`. The previous `/sales/demo` page was a 14-card industry grid that did not match how reps actually pitch.
+
+### What ships
+
+**1. Migration `059_demo_system.sql`** — additive + idempotent. **ALREADY APPLIED to prod (`mdsfdaefsxwrakgkyflr`)**.
+- `sales_reps`: new columns `demo_industry text`, `demo_calendly_url text`. Both nullable.
+- `businesses`: new column `is_demo boolean NOT NULL DEFAULT false`. Partial index `idx_businesses_is_demo WHERE is_demo = true`.
+- `rep_notifications.type` CHECK extended to allow `demo_booked` (alongside the existing 5 types).
+- Sets `demo_industry='towing'` for `jadebarber2812@gmail.com` and `navya.baiyer@gmail.com`.
+- **Repurposes existing business `ad380eb3-a0b5-4566-9107-e0b075ac48e8`** (already owned by `hello@talkmate.com.au`, named "Towing", zero calls) as the towing demo. The brief originally specified an INSERT with `owner_user_id = hello@talkmate.com.au`, but `businesses.owner_user_id` is UNIQUE, so we UPDATE the existing row instead: name → "Gold Coast Towing (Demo)", phone/address/greeting set, `is_demo=true`, services seeded into the `businesses.services` jsonb column.
+- 10 calls seeded into `calls` (caller names, outcomes, durations, summaries). Idempotent via `NOT EXISTS`.
+- 3 bookings seeded into `bookings` (uses `client_id` FK to businesses, not `business_id`; `caller_phone` not `caller_number`).
+- **Schema corrections from the original brief**: `businesses.name` (not `business_name`); no `suburb`/`state`/`postcode` columns; `bookings.caller_phone` + `client_id` FK; `lead_activities.activity_type` + required `title`; `rep_notifications.message` (not `body`); `business_services` table does not exist (services live in `businesses.services` jsonb).
+
+**2. `src/lib/demo-config.ts`** — single source of truth for demo constants. Exports:
+- `DEMO_BUSINESS_IDS` — towing → `ad380eb3-a0b5-4566-9107-e0b075ac48e8`
+- `DEMO_INDUSTRIES` — 13 industries, only `towing` has `available: true`
+- `DEMO_TOWING_SNAPSHOT` / `DEMO_BUSINESS_SNAPSHOTS` — canonical state restored by the reset cron
+- Helpers: `getDemoIndustry`, `getDemoBusinessId`, `validateDemoPortalToken`, `getDemoPortalSecret`
+
+**3. Interactive demo portal** — new route group `src/app/sales-demo/[industry]/*`. Token-gated via `DEMO_PORTAL_SECRET` env. All reads/writes via `createAdminClient()` (service role). Six tabs: Dashboard, Calls, Bookings, Services, Settings, Team. Orange "DEMO MODE" banner fixed at top. Sidebar nav with active-item highlight. Settings tab POSTs to `/api/sales-demo/[industry]/update-settings` (guarded by `.eq('is_demo', true)`). Team invite modal is UI-only (no DB write to avoid orphan auth users). Bookings/Services status changes are visual-only in this session.
+
+**4. Reset-demo cron** — `/api/cron/reset-demo-business` runs every 4 hours at minute 17 (`17 */4 * * *`). Restores each demo business's `name/business_type/industry/phone_number/address/plan/account_status/greeting/services` from `DEMO_BUSINESS_SNAPSHOTS`. Calls/bookings untouched. Guarded by `.eq('is_demo', true)` defense-in-depth.
+
+**5. `/sales/demo` rewrite** — 14-card grid replaced. Three sections: Your Demo Agent (industry label + big phone number + Load Agent button calling `/api/sales/launch-demo`), Live Portal Preview (Open Demo Portal button with token-appended URL, disabled if no industry), Overview Video (YouTube/Vimeo/MP4 auto-detect, placeholder if `NEXT_PUBLIC_DEMO_VIDEO_URL` empty).
+
+**6. Book Demo flow:**
+- New `POST /api/sales/leads/[id]/book-demo` — auth via `requireSalesRep`, ownership check, Calendly URL resolution (rep's > env fallback), Resend email send, lead status → `demo_booked`, `lead_activities` insert (`activity_type='demo'`), `rep_notifications` insert (`type='demo_booked'`).
+- New `sendDemoBookingInviteEmail` in `src/lib/sales-notify.ts` — matches the existing `emailWrap`/`btn` pattern.
+- New `BookDemoModal` component — two states (no-Calendly warning vs. send form), fetches `/api/sales/me` on open.
+- Wired into `lead-drawer.tsx` action bar (hidden when status is `won/lost/bad_lead/demo_booked`) and `HitListClient.tsx` priority cards.
+
+**7. Profile Calendly URL field** — Demo Settings card in `profile-form.tsx` with one URL input. Validates `https://calendly.com/` prefix client-side and server-side. PATCH `/api/sales/profile` extended to accept `demo_calendly_url`. `requireSalesRep` SELECT widened to include both new columns.
+
+**8. Admin filter** — `.eq('is_demo', false)` added to 7 admin business queries across `(portal)/admin/clients`, `onboarding-queue`, `admin/page`, `partners` (2), `trials`, `layout`, and `api/admin/clients/route.ts`. `api/admin/approve-agent` correctly skipped (single-row lookup by id).
+
+**9. Admin demo UI:**
+- New `POST /api/admin/sales-reps/[id]/demo-config` — `requireAdmin`, validates against `DEMO_INDUSTRIES` keys, writes `admin_audit_log` with action `rep_demo_industry_updated`.
+- "Demo Configuration" card in `contractor-detail-view.tsx` — dropdown for `demo_industry` (unavailable industries greyed with "(Coming soon)"), read-only display of `demo_calendly_url`.
+- New `/admin/demo-accounts` page — lists `is_demo=true` businesses with per-business call+booking counts, "Open Demo Portal" and "Impersonate" buttons.
+- "Demo Accounts" entry added to `AdminSidebarLayout.tsx` after Contractors, FlaskConical icon.
+
+### Env vars — REQUIRED on Vercel (production + preview)
+
+| Name | Where to set | Value | Notes |
+|---|---|---|---|
+| `DEMO_PORTAL_SECRET` | Server-only | Generate with `openssl rand -base64 32` | Guards `/sales-demo/[industry]` route via `validateDemoPortalToken`. |
+| `NEXT_PUBLIC_DEMO_PORTAL_TOKEN` | Public | **Same value as `DEMO_PORTAL_SECRET`** | Public mirror — only gates demo-mode, not real data. Used by the rep-side client to construct the demo URL. |
+| `NEXT_PUBLIC_DEMO_CALENDLY_URL` | Public | `https://calendly.com/hello-talkmate/30min` | TalkMate master fallback when a rep hasn't set their personal link. |
+| `NEXT_PUBLIC_DEMO_VIDEO_URL` | Public | `` (empty string for now) | Set after the Higgsfield overview video is created. Empty = `/sales/demo` shows the placeholder card. |
+
+To set them:
+```
+vercel env add DEMO_PORTAL_SECRET production
+vercel env add NEXT_PUBLIC_DEMO_PORTAL_TOKEN production
+vercel env add NEXT_PUBLIC_DEMO_CALENDLY_URL production
+vercel env add NEXT_PUBLIC_DEMO_VIDEO_URL production
+```
+After adding, redeploy: `vercel redeploy <latest-prod-url>` or push to `main` to trigger a fresh build.
+
+### Post-deploy smoke tests
+
+- `/sales/demo` loads for a sales rep — shows the single industry card with the demo phone number.
+- "Load Demo Agent" returns 200 and a green "Agent ready" badge.
+- "Open Demo Portal" opens `/sales-demo/towing?token=<correct>` in a new tab → orange banner + sidebar + Dashboard.
+- `/sales-demo/towing?token=wrong` → "Demo link not valid" page (URL preserved).
+- Demo portal Dashboard shows 10 calls + 3 bookings counts. Calls tab lists 10. Bookings tab lists 3. Services tab lists 5.
+- Lead drawer "Book Demo" → modal → submit with valid email → toast → lead badge updates to "Demo Booked" → Resend log shows the email.
+- `/admin/clients` does NOT show "Gold Coast Towing (Demo)".
+- `/admin/demo-accounts` shows the demo business with counts + Open Demo Portal + Impersonate buttons.
+- Contractor detail page → Demo Configuration → change industry → "Saved" badge → audit log row appears.
+
+### Manual setup after deploy
+
+- Generate the secret and add it to BOTH `DEMO_PORTAL_SECRET` and `NEXT_PUBLIC_DEMO_PORTAL_TOKEN` (they must match).
+- Ask Navya and Jade to set their personal Calendly URLs in `/sales/profile` → Demo Settings (they each need a free Calendly account).
+- Update SYSTEM_MAP.md with the Session 56 entry.
+
+### Mobile parity (deferred — separate session in `talkmate-mobile` repo)
+
+The `talkmate-mobile` repo is not cloned on this machine. The Part 8 mobile diffs from the original brief are deferred to a separate session. Full mobile spec (verbatim from the original brief):
+
+**8a. `/api/sales/me` response** — `demo_industry` and `demo_calendly_url` are now columns on `sales_reps`. The `/api/sales/me` endpoint already returns the full row (this session widened `requireSalesRep`'s SELECT), so no mobile API change needed.
+
+**8b. `DemoScreen` rewrite (mobile)** — File: `src/screens/sales/DemoScreen.js` (or equivalent in `talkmate-mobile`). Replace the 14-card layout with three sections:
+- Demo Agent: if `rep.demo_industry` is set, show industry name + demo phone number from `/api/sales/me` response (fallback `EXPO_PUBLIC_DEMO_PHONE_DISPLAY`) + "Load Agent" button calling `POST /api/sales/launch-demo`. Else show "Contact your manager to configure your demo industry."
+- Demo Portal: "Open Demo Portal" button → `Linking.openURL('https://app.talkmate.com.au/sales-demo/{industry}?token={token}')`. Opens in device browser.
+- Overview Video: if `EXPO_PUBLIC_DEMO_VIDEO_URL` is set → "Watch Overview Video" button → `Linking.openURL(videoUrl)`. Else greyed "Video coming soon".
+
+**8c. `LeadDetailScreen` Book Demo modal (mobile)** — File: `src/screens/sales/LeadDetailScreen.js`. Add "Book Demo" to the action button row alongside Mark Won / Mark Lost / Followup. On press, open a modal (reuse Followup modal pattern). Fields: Prospect Name (pre-filled from `lead.contact_name`), Prospect Email (keyboard type email). "Send Demo Invite" button → `POST /api/sales/leads/[id]/book-demo`. On success: toast "Invite sent!", close modal, update lead status locally to `demo_booked`. On error if no Calendly URL: show "Add your Calendly link in Profile settings first."
+
+**8d. `ProfileScreen` Calendly URL field (mobile)** — File: `src/screens/sales/ProfileScreen.js`. Add a "Demo Settings" section with a "Calendly Booking Link" text input. On save → PATCH `/api/sales/profile` with `demo_calendly_url`. Validate `https://calendly.com/` prefix client-side (server already validates).
+
+**Mobile env vars to add to `talkmate-mobile/.env`:**
+- `EXPO_PUBLIC_DEMO_PHONE_DISPLAY` — same value as the portal's `NEXT_PUBLIC_DEMO_PHONE_DISPLAY`.
+- `EXPO_PUBLIC_DEMO_VIDEO_URL` — empty for now (match the portal).
+- `EXPO_PUBLIC_DEMO_PORTAL_TOKEN` — same value as `NEXT_PUBLIC_DEMO_PORTAL_TOKEN`.
+
+### Out-of-scope deviations from the original brief
+
+- **UUIDs in seed data**: the brief used IDs like `demo-towing-0000-0000-000000000001` which contain `m` and `o` (not valid hex), so the `::uuid` cast would have failed. Calls use `de0a0c01-0000-0000-0000-00000000000X` (X=1..10), bookings use `de0a0b01-0000-0000-0000-00000000000X` (X=1..3). All valid hex.
+- **Demo business creation**: brief said INSERT a new business owned by `hello@talkmate.com.au`. That user already owned a business and `businesses.owner_user_id` is UNIQUE — so we UPDATE the existing row instead. The business UUID `ad380eb3-a0b5-4566-9107-e0b075ac48e8` is the canonical demo id and is hardcoded in `demo-config.ts`.
+- **Services seeding**: `business_services` table does not exist. Services are stored in the `businesses.services` JSONB column.
+- **Reset cron**: added (not in original brief). Restores demo state every 4 hours so reps don't see each other's edits.
+- **Bookings/Services edit interactivity**: visual-only in the demo portal this session. The Settings tab is the only interactive write surface. The brief described both as fully interactive — deferred to keep this session shippable.
+
+---
+
 ## Session 53/54 — Bizzow-style Scheduler Grid (2026-05-28)
 
 ### Branch

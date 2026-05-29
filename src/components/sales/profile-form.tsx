@@ -12,6 +12,7 @@ interface Props {
   initialAbn: string
   initialBsb: string
   initialAccount: string
+  initialDemoCalendlyUrl: string
   /** Whether the rep has a contractor record. Banking section is only
    *  shown for contractor-flow reps; legacy manual reps don't have
    *  these fields. */
@@ -20,7 +21,7 @@ interface Props {
 
 export default function ProfileForm({
   initialFullName, initialEmail, initialPhone, initialNotificationEmail,
-  initialAbn, initialBsb, initialAccount, hasContractor,
+  initialAbn, initialBsb, initialAccount, initialDemoCalendlyUrl, hasContractor,
 }: Props) {
   const [fullName, setFullName] = useState(initialFullName)
   const [phone, setPhone] = useState(initialPhone)
@@ -28,6 +29,7 @@ export default function ProfileForm({
   const [abn, setAbn] = useState(initialAbn)
   const [bsb, setBsb] = useState(initialBsb)
   const [account, setAccount] = useState(initialAccount)
+  const [demoCalendlyUrl, setDemoCalendlyUrl] = useState(initialDemoCalendlyUrl)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -57,11 +59,18 @@ export default function ProfileForm({
       setSaving(false)
       return
     }
+    const trimmedCalendly = demoCalendlyUrl.trim()
+    if (trimmedCalendly && !trimmedCalendly.startsWith('https://calendly.com/')) {
+      setError('Calendly link must start with https://calendly.com/')
+      setSaving(false)
+      return
+    }
 
     const body: Record<string, string | null> = {
       full_name: fullName.trim(),
       phone: phone.trim() || null,
       notification_email: trimmedNotif || null,
+      demo_calendly_url: trimmedCalendly || null,
     }
     if (hasContractor) {
       body.abn = abn.trim()
@@ -174,6 +183,29 @@ export default function ProfileForm({
           </div>
         </div>
       )}
+
+      {/* Demo Settings section */}
+      <div style={card}>
+        <h2 style={cardTitle}>Demo Settings</h2>
+        <p style={cardHint}>
+          Configure how prospects book demos with you.
+        </p>
+
+        <Field label="Your Calendly Booking Link" hint="Prospects will use this link to book their demo with you. Create a free account at calendly.com if you don't have one.">
+          <input
+            type="url"
+            value={demoCalendlyUrl}
+            onChange={e => { setDemoCalendlyUrl(e.target.value); clearMsg() }}
+            placeholder="https://calendly.com/your-name/talkmate-demo"
+            style={inputStyle}
+          />
+          {demoCalendlyUrl.trim().length > 0 && !demoCalendlyUrl.trim().startsWith('https://calendly.com/') && (
+            <p style={inlineWarning}>
+              Link must start with https://calendly.com/
+            </p>
+          )}
+        </Field>
+      </div>
 
       {error && (
         <div style={errorBox}>

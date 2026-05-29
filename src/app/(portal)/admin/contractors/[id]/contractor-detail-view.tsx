@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Plus, AlertTriangle, Send, Pencil } from 'lucide-react'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/sales-format'
 import EditRepModal from '@/components/admin/EditRepModal'
+import { DEMO_INDUSTRIES } from '@/lib/demo-config'
 
 export interface DetailContractor {
   id: string
@@ -61,6 +62,8 @@ interface LinkedRep {
   full_name: string
   notification_email: string | null
   status: string
+  demo_industry: string | null
+  demo_calendly_url: string | null
 }
 
 interface Props {
@@ -126,6 +129,9 @@ export default function ContractorDetailView({
   const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; message: string } | null>(null)
+  const [demoIndustry, setDemoIndustry] = useState<string>(linkedRep?.demo_industry ?? '')
+  const [demoSaving, setDemoSaving] = useState(false)
+  const [demoSaved, setDemoSaved] = useState(false)
 
   const showToast = (kind: 'ok' | 'err', message: string) => {
     setToast({ kind, message })
@@ -207,6 +213,29 @@ export default function ContractorDetailView({
     }
   }
 
+  const saveDemoIndustry = async (value: string) => {
+    if (!linkedRep) return
+    setDemoSaving(true)
+    try {
+      const res = await fetch(`/api/admin/sales-reps/${linkedRep.id}/demo-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ demo_industry: value || null }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        showToast('err', json.error || 'Could not save demo industry')
+      } else {
+        setDemoSaved(true)
+        window.setTimeout(() => setDemoSaved(false), 2000)
+      }
+    } catch {
+      showToast('err', 'Could not save demo industry')
+    } finally {
+      setDemoSaving(false)
+    }
+  }
+
   return (
     <div style={wrap}>
       {toast && (
@@ -272,6 +301,75 @@ export default function ContractorDetailView({
         <div style={kvRow}><div style={kvKey}>Bank BSB</div><div style={kvVal}>{contractor.bank_bsb || 'Not provided'}</div></div>
         <div style={kvRow}><div style={kvKey}>Account No.</div><div style={kvVal}>{contractor.bank_account_number || 'Not provided'}</div></div>
         <div style={kvRow}><div style={kvKey}>Created</div><div style={kvVal}>{formatDate(contractor.created_at)}</div></div>
+      </div>
+
+      {/* Demo Configuration */}
+      <div style={card}>
+        <h2 style={sectionTitle}>Demo Configuration</h2>
+        <div style={kvRow}>
+          <div style={kvKey}>Demo Industry</div>
+          <div style={{ ...kvVal, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {linkedRep ? (
+              <>
+                <select
+                  value={demoIndustry}
+                  disabled={demoSaving}
+                  onChange={(e) => {
+                    setDemoIndustry(e.target.value)
+                    saveDemoIndustry(e.target.value)
+                  }}
+                  style={{
+                    background: '#061322',
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: 8,
+                    padding: '6px 10px',
+                    fontSize: 13,
+                    fontFamily: 'inherit',
+                    cursor: demoSaving ? 'not-allowed' : 'pointer',
+                    opacity: demoSaving ? 0.7 : 1,
+                  }}
+                >
+                  <option value="">Not assigned</option>
+                  {DEMO_INDUSTRIES.map((ind) => (
+                    ind.available ? (
+                      <option key={ind.key} value={ind.key}>{ind.label}</option>
+                    ) : (
+                      <option key={ind.key} value={ind.key} disabled>{ind.label} (Coming soon)</option>
+                    )
+                  ))}
+                </select>
+                {demoSaving && (
+                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>Saving...</span>
+                )}
+                {demoSaved && !demoSaving && (
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, color: '#22c55e',
+                    background: 'rgba(34,197,94,0.12)',
+                    border: '1px solid rgba(34,197,94,0.3)',
+                    padding: '2px 8px', borderRadius: 6,
+                  }}>Saved</span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>No linked sales rep</span>
+            )}
+          </div>
+        </div>
+        <div style={kvRow}>
+          <div style={kvKey}>Demo Booking Link</div>
+          <div style={kvVal}>
+            {linkedRep?.demo_calendly_url ? (
+              <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'rgba(255,255,255,0.8)', wordBreak: 'break-all' }}>
+                {linkedRep.demo_calendly_url}
+              </span>
+            ) : (
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>
+                Not set - rep must add this in their profile
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Agreement */}
