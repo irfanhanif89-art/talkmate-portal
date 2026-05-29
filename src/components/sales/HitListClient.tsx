@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Phone, FileText, ExternalLink, X } from 'lucide-react'
 import { daysSince } from '@/lib/sales-format'
+import BookDemoModal from './BookDemoModal'
 
 export interface HitListItem {
   priority: 1 | 2 | 3 | 4 | 5
@@ -22,9 +23,16 @@ interface Props {
   repFirstName: string
 }
 
+interface BookDemoTarget {
+  leadId: string
+  defaultName: string
+  defaultEmail: string
+}
+
 export default function HitListClient({ items: initial, repFirstName }: Props) {
   const [items, setItems] = useState(initial)
   const [dismissing, setDismissing] = useState<string | null>(null)
+  const [bookDemoTarget, setBookDemoTarget] = useState<BookDemoTarget | null>(null)
 
   async function dismiss(followupId: string) {
     setDismissing(followupId)
@@ -105,6 +113,16 @@ export default function HitListClient({ items: initial, repFirstName }: Props) {
                         style={btnStyle('#E8622A')}
                       ><FileText size={12} /> Send Proposal</Link>
                     )}
+                    {!['won', 'lost', 'bad_lead', 'demo_booked'].includes(item.status) && (
+                      <button
+                        onClick={() => setBookDemoTarget({
+                          leadId: item.leadId,
+                          defaultName: item.contactName ?? item.businessName,
+                          defaultEmail: '',
+                        })}
+                        style={{ ...btnStyle('#E8622A'), border: '1px solid rgba(232,98,42,0.4)', cursor: 'pointer' }}
+                      >Book Demo</button>
+                    )}
                     {item.priority === 1 && item.followupId && (
                       <button
                         onClick={() => dismiss(item.followupId!)}
@@ -118,6 +136,26 @@ export default function HitListClient({ items: initial, repFirstName }: Props) {
             )
           })}
         </div>
+      )}
+
+      {bookDemoTarget && (
+        <BookDemoModal
+          open={true}
+          onClose={() => setBookDemoTarget(null)}
+          leadId={bookDemoTarget.leadId}
+          defaultName={bookDemoTarget.defaultName}
+          defaultEmail={bookDemoTarget.defaultEmail}
+          onSuccess={() => {
+            setItems(prev =>
+              prev.map(i =>
+                i.leadId === bookDemoTarget.leadId
+                  ? { ...i, status: 'demo_booked' }
+                  : i,
+              ),
+            )
+            setBookDemoTarget(null)
+          }}
+        />
       )}
     </div>
   )

@@ -35,6 +35,7 @@ export default async function OnboardingQueuePage() {
     `)
     .in('account_status', ['pending', 'pending_payment'])
     .eq('onboarded_by', 'sales_rep')
+    .eq('is_demo', false)
     .order('created_at', { ascending: true })
 
   if ((pendingLeads?.length ?? 0) === 0 && (pendingBusinesses?.length ?? 0) === 0) {

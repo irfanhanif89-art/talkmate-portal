@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
-  LogOut, Shield, Upload, Menu, X, ClipboardList, BarChart3,
+  LogOut, Shield, Upload, Menu, X, ClipboardList, BarChart3, FlaskConical,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -40,6 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/sales-team',         label: 'Sales Team',        icon: TrendingUp },
   { href: '/admin/sales-pipeline',     label: 'Sales Pipeline',    icon: BarChart3 },
   { href: '/admin/contractors',        label: 'Contractors',       icon: FileText },
+  { href: '/admin/demo-accounts',      label: 'Demo Accounts',     icon: FlaskConical },
   { href: '/admin/leads-import',       label: 'Import Leads',      icon: Upload },
   { href: '/admin/sales-scripts',      label: 'Sales Resources',   icon: BookOpen },
   { href: '/admin/sms-failures',       label: 'SMS Failures',      icon: MessageSquareX },

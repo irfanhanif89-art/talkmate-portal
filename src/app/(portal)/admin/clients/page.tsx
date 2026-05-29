@@ -17,6 +17,10 @@ export default async function AdminClientsPage() {
   if (userProfile?.role !== 'admin' && !isSuperAdmin) redirect('/dashboard')
 
   const admin = createAdminClient()
+  // Session 56: dropped PostgREST embedded join `sales_reps:sales_rep_id(full_name)`.
+  // The schema cache for that FK has been stale since Session 41 — prod silently
+  // returned empty rep names in the CLOSED BY REP column. Adding `.eq('is_demo', false)`
+  // made the same broken embed fail hard with PGRST200. Fetch separately and map.
   const { data: businessesRaw } = await admin
     .from('businesses')
     .select(`
@@ -34,17 +38,32 @@ export default async function AdminClientsPage() {
       sms_used_this_month,
       golive_verified, golive_verified_at,
       billing_cycle, setup_fee_waived, setup_fee_amount,
-      sales_rep_id,
-      sales_reps:sales_rep_id(full_name)
+      sales_rep_id
     `)
+    .eq('is_demo', false)
     .order('created_at', { ascending: false })
 
+  const repIds = Array.from(new Set(
+    (businessesRaw ?? [])
+      .map(b => (b as { sales_rep_id: string | null }).sales_rep_id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  ))
+  const repNameById: Record<string, string> = {}
+  if (repIds.length > 0) {
+    const { data: repRows } = await admin
+      .from('sales_reps')
+      .select('id, full_name')
+      .in('id', repIds)
+    for (const r of (repRows ?? []) as Array<{ id: string; full_name: string }>) {
+      repNameById[r.id] = r.full_name
+    }
+  }
+
   const businesses = (businessesRaw ?? []).map(b => {
-    const repRel = (b as { sales_reps?: { full_name: string } | { full_name: string }[] | null }).sales_reps
-    const rep = Array.isArray(repRel) ? repRel[0] : repRel
+    const rid = (b as { sales_rep_id: string | null }).sales_rep_id
     return {
       ...b,
-      sales_rep_name: rep?.full_name ?? null,
+      sales_rep_name: rid ? (repNameById[rid] ?? null) : null,
     }
   })
 
@@ -52,6 +71,7 @@ export default async function AdminClientsPage() {
     .from('businesses')
     .select('id, name')
     .eq('is_partner', true)
+    .eq('is_demo', false)
     .order('name')
 
   // Session 18 — compute per-business quality summary for the dot

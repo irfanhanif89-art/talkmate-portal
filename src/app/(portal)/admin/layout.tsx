@@ -31,7 +31,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       .eq('status', 'won').is('business_id', null),
     admin.from('businesses').select('id', { count: 'exact', head: true })
       .in('account_status', ['pending', 'pending_payment'])
-      .eq('onboarded_by', 'sales_rep'),
+      .eq('onboarded_by', 'sales_rep')
+      .eq('is_demo', false),
   ])
   const pendingOnboardingCount = (pendingLeads ?? 0) + (pendingBiz ?? 0)
 

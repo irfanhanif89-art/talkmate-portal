@@ -14,6 +14,8 @@ export interface SalesRepRow {
   onboarded_via: 'manual' | 'contractor_flow' | null
   contractor_id: string | null
   notification_email: string | null
+  demo_industry: string | null
+  demo_calendly_url: string | null
 }
 
 type RequireSalesRepResult =
@@ -63,7 +65,7 @@ export async function requireSalesRep(req?: Request): Promise<RequireSalesRepRes
   const admin = createAdminClient()
   const { data: rep } = await admin
     .from('sales_reps')
-    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id, notification_email')
+    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id, notification_email, demo_industry, demo_calendly_url')
     .eq('user_id', userId)
     .maybeSingle()
 

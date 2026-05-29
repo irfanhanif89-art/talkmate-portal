@@ -29,6 +29,7 @@ export default async function AdminTrialsPage() {
       created_at
     `)
     .eq('account_status', 'trial')
+    .eq('is_demo', false)
     .order('trial_end_date', { ascending: true })
 
   return (

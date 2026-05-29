@@ -1,218 +1,361 @@
 'use client'
 
 import { useState } from 'react'
-import {
-  Truck, UtensilsCrossed, Home, Wrench, Stethoscope, Droplets, Zap, Wind,
-  Heart, ShoppingBag, Briefcase, Sparkles, Dumbbell, Car, Copy, Check,
-  Loader2, Phone, type LucideIcon,
-} from 'lucide-react'
-import { SALES_INDUSTRY_SLUGS, SALES_INDUSTRY_LABELS, type SalesIndustrySlug } from '@/lib/industry-slugs'
-import { DEMO_TALKING_POINTS } from '@/lib/demo-talking-points'
+import { Film, Loader2, Check } from 'lucide-react'
+import { DEMO_INDUSTRIES } from '@/lib/demo-config'
 
 interface Props {
+  demoIndustry: string | null
   demoDisplay: string
+  demoPortalToken: string
+  demoVideoUrl: string
 }
 
-const INDUSTRY_ICONS: Record<SalesIndustrySlug, LucideIcon> = {
-  towing: Truck,
-  restaurants: UtensilsCrossed,
-  real_estate: Home,
-  trades: Wrench,
-  healthcare: Stethoscope,
-  plumbing: Droplets,
-  electrical: Zap,
-  hvac: Wind,
-  ndis: Heart,
-  retail: ShoppingBag,
-  professional: Briefcase,
-  beauty: Sparkles,
-  gym: Dumbbell,
-  auto: Car,
+function resolveIndustryLabel(key: string | null): string {
+  if (!key) return ''
+  const found = DEMO_INDUSTRIES.find((i) => i.key === key)
+  return found ? found.label : key
 }
 
-export default function DemoLauncherClient({ demoDisplay }: Props) {
-  const [active, setActive] = useState<SalesIndustrySlug | null>(null)
-  const [loading, setLoading] = useState<SalesIndustrySlug | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+function extractYouTubeId(url: string): string | null {
+  const watchMatch = url.match(/youtube\.com\/watch\?.*v=([^&]+)/)
+  if (watchMatch) return watchMatch[1]
+  const shortMatch = url.match(/youtu\.be\/([^?]+)/)
+  if (shortMatch) return shortMatch[1]
+  return null
+}
 
-  async function load(slug: SalesIndustrySlug) {
-    setLoading(slug); setError(null)
-    const res = await fetch('/api/sales/launch-demo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ industry: slug }),
-    })
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok || !body.ok) {
-      setError(body?.error ?? 'Could not load demo.')
-      setLoading(null)
-      return
+function extractVimeoId(url: string): string | null {
+  const match = url.match(/vimeo\.com\/(\d+)/)
+  return match ? match[1] : null
+}
+
+const cardStyle: React.CSSProperties = {
+  background: '#0A1E38',
+  border: '1px solid rgba(255,255,255,0.06)',
+  borderRadius: 12,
+  padding: '24px 28px',
+}
+
+export default function DemoLauncherClient({
+  demoIndustry,
+  demoDisplay,
+  demoPortalToken,
+  demoVideoUrl,
+}: Props) {
+  const [loadingAgent, setLoadingAgent] = useState(false)
+  const [agentReady, setAgentReady] = useState(false)
+  const [agentError, setAgentError] = useState<string | null>(null)
+  const [videoCopied, setVideoCopied] = useState(false)
+
+  const industryLabel = resolveIndustryLabel(demoIndustry)
+
+  async function handleLoadAgent() {
+    if (!demoIndustry) return
+    setLoadingAgent(true)
+    setAgentError(null)
+    setAgentReady(false)
+    try {
+      const res = await fetch('/api/sales/launch-demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ industry: demoIndustry }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok || !body.ok) {
+        setAgentError(body?.error ?? 'Could not load demo agent.')
+      } else {
+        setAgentReady(true)
+        setTimeout(() => setAgentReady(false), 5000)
+      }
+    } catch {
+      setAgentError('Network error. Please try again.')
+    } finally {
+      setLoadingAgent(false)
     }
-    setActive(slug)
-    setLoading(null)
   }
 
-  async function copyNumber() {
-    if (!demoDisplay) return
+  async function handleCopyVideoLink() {
+    if (!demoVideoUrl) return
     try {
-      await navigator.clipboard.writeText(demoDisplay.replace(/\s+/g, ''))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(demoVideoUrl)
+      setVideoCopied(true)
+      setTimeout(() => setVideoCopied(false), 2000)
     } catch {
       // best-effort
     }
   }
 
-  const activePoints = active ? DEMO_TALKING_POINTS[active] : null
+  const portalDisabled = !demoIndustry || !demoPortalToken
+  const portalHref =
+    demoIndustry && demoPortalToken
+      ? `/sales-demo/${demoIndustry}?token=${demoPortalToken}`
+      : '#'
+
+  // Resolve video embed
+  const youtubeId = demoVideoUrl ? extractYouTubeId(demoVideoUrl) : null
+  const vimeoId = !youtubeId && demoVideoUrl ? extractVimeoId(demoVideoUrl) : null
+  const isDirectVideo = demoVideoUrl && !youtubeId && !vimeoId
 
   return (
-    <div style={{ padding: '24px 24px 60px', fontFamily: 'Outfit, sans-serif' }}>
-      <div style={{ marginBottom: 22 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>Demo Launcher</h1>
-        <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginTop: 4 }}>
-          Pick an industry. Load the right demo agent onto your number, then call it from your phone in front of the prospect.
+    <div style={{ padding: '24px 24px 60px', fontFamily: 'Outfit, system-ui, sans-serif', maxWidth: 960, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0, color: 'white', letterSpacing: '-0.5px' }}>
+          Demo Hub
+        </h1>
+        <p style={{ fontSize: 16, color: '#7BAED4', margin: '8px 0 0' }}>
+          Everything you need to run a great demo call.
         </p>
       </div>
 
-      <div style={{
-        background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: 12, padding: 18, marginBottom: 22,
-        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-      }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 9, flexShrink: 0,
-          background: 'rgba(232,98,42,0.15)', color: '#E8622A',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Phone size={18} />
+      {/* Sections */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+        {/* Section 1 - Your Demo Agent */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'white', margin: '0 0 16px' }}>
+            Your Demo Agent
+          </h2>
+
+          {demoIndustry ? (
+            <div>
+              <p style={{ fontSize: 14, color: '#7BAED4', margin: '0 0 12px' }}>
+                Industry: <span style={{ color: 'white', fontWeight: 600 }}>{industryLabel}</span>
+              </p>
+
+              {/* Phone number box */}
+              <div style={{
+                background: '#061322',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10,
+                padding: '16px 20px',
+                marginBottom: 12,
+              }}>
+                <div style={{ fontSize: 11, color: '#7BAED4', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                  Demo Phone Number
+                </div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: '#E8622A', letterSpacing: 1 }}>
+                  {demoDisplay || 'Not configured'}
+                </div>
+                <div style={{ fontSize: 14, color: '#7BAED4', marginTop: 8 }}>
+                  Give this number to your prospect. Ask them to call it right now.
+                </div>
+              </div>
+
+              {/* Load Demo Agent button */}
+              <button
+                onClick={handleLoadAgent}
+                disabled={loadingAgent}
+                style={{
+                  width: '100%',
+                  padding: '14px 20px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: loadingAgent ? '#7B3A1A' : '#E8622A',
+                  color: 'white',
+                  fontFamily: 'Outfit, system-ui, sans-serif',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: loadingAgent ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  marginBottom: 10,
+                }}
+              >
+                {loadingAgent && <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />}
+                {loadingAgent ? 'Loading...' : 'Load Demo Agent'}
+              </button>
+
+              {agentReady && (
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  borderRadius: 99,
+                  background: 'rgba(34,197,94,0.15)',
+                  border: '1px solid rgba(34,197,94,0.35)',
+                  color: '#22c55e',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  marginBottom: 8,
+                }}>
+                  <Check size={13} /> Agent ready
+                </div>
+              )}
+
+              {agentError && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 9,
+                  background: 'rgba(239,68,68,0.1)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                  color: '#ef4444',
+                  fontSize: 13,
+                  marginBottom: 8,
+                }}>
+                  {agentError}
+                </div>
+              )}
+
+              <p style={{ fontSize: 12, color: '#7BAED4', margin: 0 }}>
+                Always load the agent before your demo call.
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 10,
+              padding: '24px 20px',
+              color: '#7BAED4',
+              fontSize: 14,
+            }}>
+              <p style={{ margin: '0 0 6px', color: 'white', fontWeight: 600 }}>
+                Your demo industry has not been configured yet.
+              </p>
+              <p style={{ margin: 0 }}>
+                Contact your manager to get this set up.
+              </p>
+            </div>
+          )}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: '#7BAED4', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            Demo Phone Number
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: 1, marginTop: 2 }}>
-            {demoDisplay || 'Not configured'}
-          </div>
-        </div>
-        {demoDisplay && (
-          <button
-            onClick={copyNumber}
+
+        {/* Section 2 - Live Portal Preview */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>
+            Live Portal Preview
+          </h2>
+          <p style={{ fontSize: 14, color: '#7BAED4', margin: '0 0 20px' }}>
+            Show your prospect exactly what their dashboard looks like. Fully interactive.
+          </p>
+
+          <a
+            href={portalDisabled ? undefined : portalHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={portalDisabled ? 'Configure your demo industry first.' : undefined}
+            onClick={portalDisabled ? (e) => e.preventDefault() : undefined}
             style={{
-              padding: '10px 14px', borderRadius: 9, cursor: 'pointer',
-              background: copied ? '#22c55e' : 'rgba(232,98,42,0.12)',
-              color: copied ? 'white' : '#E8622A',
-              border: '1px solid ' + (copied ? '#22c55e' : 'rgba(232,98,42,0.3)'),
-              fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', gap: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '14px 28px',
+              borderRadius: 10,
+              background: '#061322',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.12)',
+              fontFamily: 'Outfit, system-ui, sans-serif',
+              fontSize: 15,
+              fontWeight: 700,
+              textDecoration: 'none',
+              cursor: portalDisabled ? 'not-allowed' : 'pointer',
+              opacity: portalDisabled ? 0.4 : 1,
+              transition: 'opacity 0.2s',
             }}
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy number'}
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <div style={{
-          marginBottom: 16, padding: '12px 16px', borderRadius: 9,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
-          color: '#ef4444', fontSize: 13,
-        }}>{error}</div>
-      )}
-
-      <div className="demo-grid" style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-        gap: 12,
-        marginBottom: 28,
-      }}>
-        {SALES_INDUSTRY_SLUGS.map(slug => {
-          const Icon = INDUSTRY_ICONS[slug]
-          const isActive = active === slug
-          const isLoading = loading === slug
-          return (
-            <div
-              key={slug}
-              style={{
-                background: '#0A1E38',
-                border: `1px solid ${isActive ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.06)'}`,
-                borderRadius: 11, padding: 16,
-                display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start',
-              }}
-            >
-              <div style={{
-                width: 36, height: 36, borderRadius: 9,
-                background: isActive ? 'rgba(34,197,94,0.15)' : 'rgba(232,98,42,0.12)',
-                color: isActive ? '#22c55e' : '#E8622A',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Icon size={18} />
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>
-                {SALES_INDUSTRY_LABELS[slug]}
-              </div>
-              {isActive ? (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 99,
-                  background: 'rgba(34,197,94,0.15)', color: '#22c55e',
-                  border: '1px solid rgba(34,197,94,0.35)',
-                }}>
-                  <Check size={11} /> Active
-                </span>
-              ) : (
-                <button
-                  onClick={() => load(slug)}
-                  disabled={isLoading}
-                  style={{
-                    width: '100%', padding: '8px 12px', borderRadius: 8, border: 'none',
-                    background: isLoading ? '#7B3A1A' : '#E8622A', color: 'white',
-                    fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 700,
-                    cursor: isLoading ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}
-                >
-                  {isLoading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : null}
-                  {isLoading ? 'Loading' : 'Load Demo'}
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {activePoints && active && (
-        <div style={{
-          background: '#0A1E38', border: '1px solid rgba(34,197,94,0.3)',
-          borderRadius: 12, padding: 20,
-        }}>
-          <div style={{
-            fontSize: 11, fontWeight: 800, color: '#22c55e',
-            letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10,
-          }}>
-            {SALES_INDUSTRY_LABELS[active]} — Prep
-          </div>
-          <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 16 }}>
-            Number to call: <strong style={{ color: 'white' }}>{demoDisplay}</strong>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'white', marginBottom: 8 }}>Talking points</div>
-            <ul style={{ margin: 0, paddingLeft: 18, color: '#7BAED4', fontSize: 13, lineHeight: 1.7 }}>
-              {activePoints.points.map((p, i) => <li key={i}>{p}</li>)}
-            </ul>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'white', marginBottom: 6 }}>Opener</div>
-            <div style={{
-              padding: '12px 14px', borderRadius: 9, fontSize: 13, color: '#7BAED4',
-              background: '#061322', border: '1px solid rgba(255,255,255,0.08)',
-              fontStyle: 'italic', lineHeight: 1.6,
-            }}>&ldquo;{activePoints.opener}&rdquo;</div>
-          </div>
+            Open Demo Portal
+          </a>
         </div>
-      )}
+
+        {/* Section 3 - Overview Video */}
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>
+            TalkMate Overview Video
+          </h2>
+          <p style={{ fontSize: 14, color: '#7BAED4', margin: '0 0 20px' }}>
+            Share this with prospects after your demo call.
+          </p>
+
+          {demoVideoUrl ? (
+            <div>
+              {/* Video embed */}
+              {youtubeId && (
+                <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${youtubeId}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0, left: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: 0,
+                      borderRadius: 8,
+                    }}
+                    allowFullScreen
+                    title="TalkMate Overview"
+                  />
+                </div>
+              )}
+
+              {vimeoId && (
+                <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+                  <iframe
+                    src={`https://player.vimeo.com/video/${vimeoId}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0, left: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: 0,
+                      borderRadius: 8,
+                    }}
+                    allowFullScreen
+                    title="TalkMate Overview"
+                  />
+                </div>
+              )}
+
+              {isDirectVideo && (
+                <video
+                  controls
+                  src={demoVideoUrl}
+                  style={{ width: '100%', borderRadius: 8, marginBottom: 16 }}
+                />
+              )}
+
+              {/* Copy Video Link button */}
+              <button
+                onClick={handleCopyVideoLink}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 9,
+                  border: '1px solid ' + (videoCopied ? '#22c55e' : 'rgba(232,98,42,0.3)'),
+                  background: videoCopied ? 'rgba(34,197,94,0.15)' : 'rgba(232,98,42,0.12)',
+                  color: videoCopied ? '#22c55e' : '#E8622A',
+                  fontFamily: 'Outfit, system-ui, sans-serif',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                {videoCopied ? <Check size={14} /> : null}
+                {videoCopied ? 'Copied!' : 'Copy Video Link'}
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              border: '1px dashed rgba(255,255,255,0.12)',
+              borderRadius: 10,
+              padding: '40px 20px',
+              textAlign: 'center',
+              color: '#7BAED4',
+            }}>
+              <Film size={28} style={{ opacity: 0.5, marginBottom: 12 }} />
+              <p style={{ margin: '0 0 4px', fontWeight: 600, color: 'white' }}>Video coming soon</p>
+              <p style={{ margin: 0, fontSize: 13 }}>
+                This will show your TalkMate overview video once it is ready.
+              </p>
+            </div>
+          )}
+        </div>
+
+      </div>
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
