@@ -1,9 +1,18 @@
 // Twilio inbound SMS webhook — POST /api/webhooks/twilio/sms-inbound
 //
-// Receives inbound text messages from Twilio and lands them in
-// sms_conversations / sms_messages so they appear in the in-portal
-// inbox. Looks up the receiving business by the Twilio "To" number
-// (businesses.twilio_phone_number, added in migration 060).
+// Receives inbound text messages from Twilio and:
+//   1. Lands them in sms_conversations / sms_messages so they appear
+//      in the in-portal inbox (Sprint Session 1)
+//   2. Fans the same payload out to Vapi (https://api.vapi.ai/twilio/sms)
+//      so Vapi's existing SMS auto-reply behaviour is preserved
+//      (Session sprint 1 follow-up — 2026-05-31). We return Vapi's
+//      TwiML response verbatim so the auto-reply still reaches the
+//      caller exactly as before.
+//
+// Business lookup: by the Twilio "To" number against
+// businesses.twilio_phone_number (added in migration 060), falling
+// back to businesses.talkmate_number for clients onboarded before
+// the column existed.
 //
 // Auth: HMAC-SHA1 signature validation using TWILIO_AUTH_TOKEN.
 // When the env var is unset we accept unauthenticated so the first
@@ -16,8 +25,8 @@
 // Twilio handles the actual "STOP confirmation" reply on its end —
 // we don't send one ourselves.
 //
-// Always returns 200 with empty TwiML so Twilio doesn't retry on
-// internal failures.
+// On internal failures we still fall back to empty TwiML so Twilio
+// doesn't retry — better to lose an auto-reply than to retry-storm.
 
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
@@ -27,6 +36,17 @@ import { normaliseAuPhone } from '@/lib/sms'
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 const STOP_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'])
 const START_KEYWORDS = new Set(['START', 'YES', 'UNSTOP'])
+
+// Vapi's Twilio-compatible SMS endpoint. Identical request shape to
+// what Twilio would otherwise POST directly, so we just relay the raw
+// form body and return whatever TwiML Vapi sends back.
+const VAPI_SMS_URL = 'https://api.vapi.ai/twilio/sms'
+
+// If Vapi takes longer than this to respond we give up and return an
+// empty TwiML to Twilio. Twilio's own webhook timeout is 15s; keeping
+// our forward under that prevents Twilio from killing the connection
+// before we've returned a response.
+const VAPI_FORWARD_TIMEOUT_MS = 12_000
 
 function twimlResponse(body = EMPTY_TWIML, status = 200): NextResponse {
   return new NextResponse(body, {
@@ -226,5 +246,50 @@ export async function POST(request: NextRequest) {
     console.error('[twilio-inbound] sms_messages insert failed', msgErr.message)
   }
 
-  return twimlResponse()
+  // Compliance: do NOT forward opt-out / opt-back-in keywords to Vapi.
+  // After someone STOPs, the last thing they should get is another
+  // auto-reply from the AI agent. Twilio handles the actual STOP
+  // confirmation SMS at the carrier level.
+  if (STOP_KEYWORDS.has(trimmedBody) || START_KEYWORDS.has(trimmedBody)) {
+    return twimlResponse()
+  }
+
+  // Fan out to Vapi so Vapi's existing SMS auto-reply still fires.
+  // We forward the raw body verbatim — Vapi expects the exact shape
+  // Twilio would have sent if it were pointed at Vapi directly.
+  return forwardToVapi(rawBody)
+}
+
+// ── Vapi fan-out ────────────────────────────────────────────────────────
+
+async function forwardToVapi(rawBody: string): Promise<NextResponse> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), VAPI_FORWARD_TIMEOUT_MS)
+  try {
+    const vapiRes = await fetch(VAPI_SMS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: rawBody,
+      signal: controller.signal,
+    })
+    const vapiBody = await vapiRes.text()
+    // Vapi's response is TwiML — pass it through so the customer
+    // receives the auto-reply Vapi has been generating all along.
+    const contentType = vapiRes.headers.get('content-type') ?? 'text/xml'
+    if (!vapiRes.ok) {
+      console.warn('[twilio-inbound] vapi fan-out non-OK', {
+        status: vapiRes.status, body: vapiBody.slice(0, 200),
+      })
+      return twimlResponse()
+    }
+    return new NextResponse(vapiBody, {
+      status: 200,
+      headers: { 'Content-Type': contentType },
+    })
+  } catch (e) {
+    console.warn('[twilio-inbound] vapi fan-out failed', (e as Error).message)
+    return twimlResponse()
+  } finally {
+    clearTimeout(timer)
+  }
 }
