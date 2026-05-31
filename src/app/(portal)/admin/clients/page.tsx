@@ -39,7 +39,8 @@ export default async function AdminClientsPage() {
       sms_used_this_month,
       golive_verified, golive_verified_at,
       billing_cycle, setup_fee_waived, setup_fee_amount,
-      sales_rep_id
+      sales_rep_id,
+      kb_sync_status, winback_enabled, review_requests_enabled
     `)
     .eq('is_demo', false)
     .order('created_at', { ascending: false })
@@ -60,11 +61,25 @@ export default async function AdminClientsPage() {
     }
   }
 
+  // Sprint Session 1 follow-up — aggregate unread SMS per business so
+  // the admin clients list can show a single number per row. Pull all
+  // active conversations once and reduce client-side; the partial
+  // idx_sms_conversations_business_id index keeps this O(n).
+  const { data: unreadRows } = await admin
+    .from('sms_conversations')
+    .select('business_id, unread_count')
+    .eq('status', 'active')
+  const unreadByBusiness: Record<string, number> = {}
+  for (const r of (unreadRows ?? []) as Array<{ business_id: string; unread_count: number | null }>) {
+    unreadByBusiness[r.business_id] = (unreadByBusiness[r.business_id] ?? 0) + (r.unread_count ?? 0)
+  }
+
   const businesses = (businessesRaw ?? []).map(b => {
     const rid = (b as { sales_rep_id: string | null }).sales_rep_id
     return {
       ...b,
       sales_rep_name: rid ? (repNameById[rid] ?? null) : null,
+      unread_sms: unreadByBusiness[(b as { id: string }).id] ?? 0,
     }
   })
 

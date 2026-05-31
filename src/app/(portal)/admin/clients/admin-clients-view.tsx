@@ -264,7 +264,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Unread', 'KB', 'WB', 'Rv', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -272,7 +272,8 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={16} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={20} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+
                   No clients match this filter.
                 </td>
               </tr>
@@ -364,6 +365,65 @@ export default function AdminClientsView({
                   <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700, background: `${statusColor(b.account_status)}22`, color: statusColor(b.account_status) }}>
                     {statusLabel(b.account_status)}
                   </span>
+                </td>
+                {/* Sprint Session 1 follow-up — 4 admin SMS / KB / automation chips */}
+                <td style={{ padding: '12px 12px' }}>
+                  {(() => {
+                    const n = b.unread_sms ?? 0
+                    if (n === 0) return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>0</span>
+                    return (
+                      <Link href={`/admin/clients/${b.id}/portal/inbox`} style={{ textDecoration: 'none' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
+                          background: '#E8622A', color: 'white', cursor: 'pointer',
+                        }}>{n > 99 ? '99+' : n}</span>
+                      </Link>
+                    )
+                  })()}
+                </td>
+                <td style={{ padding: '12px 12px' }}>
+                  {(() => {
+                    const s = b.kb_sync_status ?? 'synced'
+                    const map = {
+                      synced:  { bg: 'rgba(34,197,94,0.14)',  fg: '#22C55E', label: 'S', tip: 'Knowledge base synced' },
+                      pending: { bg: 'rgba(251,191,36,0.16)', fg: '#FBBF24', label: 'P', tip: 'KB has unsaved changes' },
+                      syncing: { bg: 'rgba(74,159,232,0.16)', fg: '#4A9FE8', label: '…', tip: 'KB sync in flight' },
+                      error:   { bg: 'rgba(239,68,68,0.16)',  fg: '#EF4444', label: 'E', tip: 'KB sync failed' },
+                    } as const
+                    const cfg = map[s as keyof typeof map] ?? map.synced
+                    return (
+                      <Link href={`/admin/clients/${b.id}/portal/train`} style={{ textDecoration: 'none' }} title={cfg.tip}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99,
+                          background: cfg.bg, color: cfg.fg, cursor: 'pointer',
+                        }}>{cfg.label}</span>
+                      </Link>
+                    )
+                  })()}
+                </td>
+                <td style={{ padding: '12px 8px' }}>
+                  {(() => {
+                    const on = b.winback_enabled === true || (b.winback_enabled === null && true) // default true
+                    return (
+                      <span title={on ? 'Win-back ON' : 'Win-back OFF'} style={{
+                        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                        background: on ? '#22C55E' : 'rgba(255,255,255,0.18)',
+                        boxShadow: on ? '0 0 0 3px rgba(34,197,94,0.18)' : 'none',
+                      }} />
+                    )
+                  })()}
+                </td>
+                <td style={{ padding: '12px 8px' }}>
+                  {(() => {
+                    const on = b.review_requests_enabled === true
+                    return (
+                      <span title={on ? 'Reviews ON' : 'Reviews OFF'} style={{
+                        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                        background: on ? '#22C55E' : 'rgba(255,255,255,0.18)',
+                        boxShadow: on ? '0 0 0 3px rgba(34,197,94,0.18)' : 'none',
+                      }} />
+                    )
+                  })()}
                 </td>
                 <td style={{ padding: '12px 16px' }}>
                   <Link href={`/admin/clients/${b.id}/golive`} style={{ textDecoration: 'none' }}>
