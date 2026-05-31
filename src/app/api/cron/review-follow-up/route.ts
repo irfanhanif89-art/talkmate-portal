@@ -23,6 +23,12 @@ const MAX_PER_RUN = 50
 const MIN_CALL_DURATION_SECONDS = 30
 const DEFAULT_DELAY_HOURS = 2
 const DEFAULT_THROTTLE_DAYS = 90
+// Sprint 1 hardening — minimum call sentiment (0-10) to solicit a public
+// Google review. Calls scoring below this are skipped; unscored (null)
+// calls are still asked (preserves prior behaviour). Prod score range is
+// 2-8, avg ~6.3; 6 cleanly excludes the poor band (2-5) including all
+// 'pending'-status calls without suppressing solid interactions.
+const MIN_REVIEW_SCORE = 6
 
 interface BusinessForReview {
   id: string
@@ -89,12 +95,18 @@ export async function GET(request: Request) {
     // is cheap even with a long calls history.
     const { data: calls } = await supabase
       .from('calls')
-      .select('id, business_id, caller_number, ended_at, duration_seconds, was_abandoned, review_request_sent')
+      .select('id, business_id, caller_number, ended_at, duration_seconds, was_abandoned, review_request_sent, intelligence_score')
       .eq('business_id', biz.id)
       .eq('review_request_sent', false)
       .eq('was_abandoned', false)
       .lt('ended_at', olderThanIso)
       .gte('duration_seconds', MIN_CALL_DURATION_SECONDS)
+      // Sentiment gate (Sprint 1 hardening): never solicit a public Google
+      // review off a poor interaction. intelligence_score is the 0-10
+      // sentiment signal (intelligence_status is a workflow label, not
+      // sentiment, so it is NOT used here). Unscored calls (null) keep the
+      // prior behaviour — only scored-and-negative calls are suppressed.
+      .or(`intelligence_score.is.null,intelligence_score.gte.${MIN_REVIEW_SCORE}`)
       .order('ended_at', { ascending: true })
       .limit(MAX_PER_RUN - sent)
 
@@ -141,12 +153,16 @@ export async function GET(request: Request) {
       // Build message
       const bizName = biz.name ?? 'us'
       const custom = (biz.review_request_custom_message ?? '').trim()
-      const message = (custom
+      let message = (custom
         ? custom
         : `Thanks for choosing ${bizName}! We would love your feedback: ${biz.google_review_url}`
       )
         .replace(/\{business_name\}/gi, bizName)
         .replace(/\{review_url\}/gi, biz.google_review_url ?? '')
+      // Compliance (Australian Spam Act): review requests are commercial SMS
+      // and need a functional unsubscribe. STOP is honoured at the Twilio
+      // inbound webhook; append unless the operator's copy already has it.
+      if (!/\bstop\b/i.test(message)) message += ' Reply STOP to opt out.'
 
       const fromNumber = biz.twilio_phone_number ?? biz.talkmate_number ?? undefined
 

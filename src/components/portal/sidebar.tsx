@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getPlan } from '@/lib/plan'
+import { useBusinessType } from '@/context/business-type-context'
 import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, Star, MessageCircle, DollarSign, CreditCard, User as UserIcon,
@@ -55,6 +56,10 @@ export default function PortalSidebar(props: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const planConfig = getPlan(props.plan)
+  // Sprint 1 hardening — the realtime unread subscription filters on this
+  // so a client's browser only wakes on its own SMS events, not every
+  // tenant's. Sourced from BusinessTypeProvider (set in the portal layout).
+  const { businessId } = useBusinessType()
   const [hovering, setHovering] = useState<string | null>(null)
   // Session 11 — gate sensitive nav items by portal role. Defaults to
   // 'owner' so admin users + legacy contexts keep full visibility.
@@ -91,9 +96,14 @@ export default function PortalSidebar(props: Props) {
       } catch { /* silent */ }
     }
     void refresh()
+    // Guard against an empty businessId (legacy/admin contexts where the
+    // provider value isn't set) — without a filter we'd subscribe to every
+    // tenant's conversation events, so skip the realtime sub entirely and
+    // rely on the initial fetch.
+    if (!businessId) return () => { cancelled = true }
     const channel = supabase
       .channel('sidebar-sms-unread')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_conversations' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_conversations', filter: `business_id=eq.${businessId}` }, () => {
         void refresh()
       })
       .subscribe()
@@ -101,7 +111,7 @@ export default function PortalSidebar(props: Props) {
       cancelled = true
       void supabase.removeChannel(channel)
     }
-  }, [])
+  }, [businessId])
 
   async function logout() {
     const supabase = createClient()
