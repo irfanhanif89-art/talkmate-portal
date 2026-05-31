@@ -144,7 +144,10 @@ export default function ChatbotAdminView({
     }
   }
 
-  const widgetSrc = '/widget/talkmate-chat.js'
+  // Match the client portal embed snippet exactly: absolute URL + data-business-id
+  // + the business UUID, so the snippet shown here is copy-paste identical to what
+  // the client sees and actually works on an external site.
+  const widgetSrc = process.env.NEXT_PUBLIC_WIDGET_SCRIPT_URL || 'https://app.talkmate.com.au/widget/talkmate-chat.js'
 
   return (
     <div style={{ padding: 28, maxWidth: 1100, margin: '0 auto' }}>
@@ -314,16 +317,16 @@ export default function ChatbotAdminView({
 
         {/* Slug (read only) */}
         <Field label="Slug">
-          <span style={{ fontSize: 13, color: 'white', fontFamily: 'monospace' }}>{config.slug ?? '—'}</span>
+          <span style={{ fontSize: 13, color: 'white', fontFamily: 'monospace' }}>{config.slug ?? '-'}</span>
         </Field>
 
-        {config.slug && (
+        {clientId && (
           <div style={{
             marginTop: 6, padding: '10px 12px', borderRadius: 9,
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
             fontSize: 11, color: '#7BAED4', wordBreak: 'break-all' as const, fontFamily: 'monospace',
           }}>
-            {`<script src="${widgetSrc}" data-business="${config.slug}" async></script>`}
+            {`<script src="${widgetSrc}" data-business-id="${clientId}"></script>`}
           </div>
         )}
 
