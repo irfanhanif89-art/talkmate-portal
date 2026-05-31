@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import OnboardingChecklist from '@/components/portal/onboarding-checklist'
 import RetroactiveTCBanner from '@/components/portal/retroactive-tc-banner'
-import RoiCounter from '@/components/portal/roi-counter'
 import ContextualUpsellBanner from '@/components/portal/contextual-upsell'
 import NpsModal from '@/components/portal/nps-modal'
 import SocialProofToaster from '@/components/portal/social-proof-toaster'
@@ -140,7 +139,7 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
 export function DashboardClient({
   business, stats, outcomes, chartData, recentCalls: initialCalls, businessName,
   callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
-  revenueProtected, benchmarkLabel, payingForItself, planMonthlyPrice, planLimit,
+  planLimit,
   daysActive, daysSinceSignup, onboardingSteps, needsNps, partner,
   pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0, crmHealthHasContacts = false,
 }: Props) {
@@ -149,7 +148,6 @@ export function DashboardClient({
   const [liveCalls, setLiveCalls] = useState<Call[]>(initialCalls)
   const [npsOpen, setNpsOpen] = useState(false)
   const [npsClosed, setNpsClosed] = useState(false)
-  const [payingDismissed, setPayingDismissed] = useState(false)
 
   useEffect(() => {
     if (needsNps && !npsClosed) {
@@ -270,17 +268,10 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* ROI counter + paying-for-itself banner */}
-      <RoiCounter
-        amount={revenueProtected}
-        benchmarkLabel={benchmarkLabel}
-        paying={{
-          has: payingForItself && !payingDismissed,
-          dayOfMonth: new Date().getDate(),
-          planCost: planMonthlyPrice,
-        }}
-        onDismissPaying={() => setPayingDismissed(true)}
-      />
+      {/* Recovered-revenue ROI now lives in <RoiSection /> at the top of the
+          dashboard (single honest source of truth). The old RoiCounter
+          "revenue protected" card was removed to avoid showing two different
+          revenue estimates on the same page. */}
 
       {/* 4 stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
