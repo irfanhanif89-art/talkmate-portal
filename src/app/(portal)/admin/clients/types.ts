@@ -58,6 +58,13 @@ export interface AdminBusiness {
   billing_cycle?: 'monthly' | 'annual' | null
   setup_fee_waived?: boolean | null
   setup_fee_amount?: number | null
+  // Sprint Session 1 follow-up — admin clients list adds 4 new columns
+  // sourced from migrations 060-062. unread_sms is aggregated server-side
+  // by the page, the rest come directly off the businesses row.
+  kb_sync_status?: 'synced' | 'pending' | 'syncing' | 'error' | null
+  winback_enabled?: boolean | null
+  review_requests_enabled?: boolean | null
+  unread_sms?: number
 }
 
 export interface PartnerOption {
