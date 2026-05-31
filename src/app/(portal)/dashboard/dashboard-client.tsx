@@ -5,13 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import OnboardingChecklist from '@/components/portal/onboarding-checklist'
 import RetroactiveTCBanner from '@/components/portal/retroactive-tc-banner'
-import RoiCounter from '@/components/portal/roi-counter'
 import ContextualUpsellBanner from '@/components/portal/contextual-upsell'
 import NpsModal from '@/components/portal/nps-modal'
 import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
 import ReceptionistStats from '@/components/portal/receptionist-stats'
+import RoiSection from './roi-section'
 import AgentQualityCard from '@/components/portal/agent-quality-card'
 import SmsUsageCard from '@/components/portal/sms-usage-card'
 import { INDUSTRY_AVG_UPSELL_PER_CALL, INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
@@ -139,7 +139,7 @@ function BarChart({ data }: { data: { date: string; count: number }[] }) {
 export function DashboardClient({
   business, stats, outcomes, chartData, recentCalls: initialCalls, businessName,
   callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
-  revenueProtected, benchmarkLabel, payingForItself, planMonthlyPrice, planLimit,
+  planLimit,
   daysActive, daysSinceSignup, onboardingSteps, needsNps, partner,
   pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0, crmHealthHasContacts = false,
 }: Props) {
@@ -148,7 +148,6 @@ export function DashboardClient({
   const [liveCalls, setLiveCalls] = useState<Call[]>(initialCalls)
   const [npsOpen, setNpsOpen] = useState(false)
   const [npsClosed, setNpsClosed] = useState(false)
-  const [payingDismissed, setPayingDismissed] = useState(false)
 
   useEffect(() => {
     if (needsNps && !npsClosed) {
@@ -203,6 +202,11 @@ export function DashboardClient({
           Welcome back{firstName ? `, ${firstName}` : ''}
         </h1>
       </div>
+
+      {/* ROI hero + breakdown (Sprint features 2) — self-fetches
+          /api/dashboard/roi. Sits at the very top above all existing
+          content; nothing below is removed. */}
+      <RoiSection />
 
       {/* Session 6 — trial progress card. Self-fetches; renders nothing
           when the account isn't on trial. */}
@@ -264,17 +268,10 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* ROI counter + paying-for-itself banner */}
-      <RoiCounter
-        amount={revenueProtected}
-        benchmarkLabel={benchmarkLabel}
-        paying={{
-          has: payingForItself && !payingDismissed,
-          dayOfMonth: new Date().getDate(),
-          planCost: planMonthlyPrice,
-        }}
-        onDismissPaying={() => setPayingDismissed(true)}
-      />
+      {/* Recovered-revenue ROI now lives in <RoiSection /> at the top of the
+          dashboard (single honest source of truth). The old RoiCounter
+          "revenue protected" card was removed to avoid showing two different
+          revenue estimates on the same page. */}
 
       {/* 4 stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>

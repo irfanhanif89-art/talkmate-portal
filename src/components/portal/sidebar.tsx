@@ -10,7 +10,7 @@ import {
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
   Truck, Car, ClipboardList, Tag, MapPin, CalendarDays, HelpCircle,
-  Inbox as InboxIcon, Sparkles,
+  Inbox as InboxIcon, Sparkles, Globe,
 } from 'lucide-react'
 
 interface Props {
@@ -180,6 +180,9 @@ export default function PortalSidebar(props: Props) {
         // Available on every plan; the page itself shows a pending-sync
         // badge when the user has unsynced changes.
         { href: '/train', label: 'Train TalkMate', icon: Sparkles, show: isManagerOrOwner },
+        // Sprint features 2 — AI Website Chatbot. Same manager/owner gating as
+        // Train; the page itself renders a plan-locked upgrade prompt on Starter.
+        { href: '/chatbot', label: 'Chatbot', icon: Globe, show: isManagerOrOwner },
         // Agent Settings + Call Routing are config — staff (view-only)
         // don't get a nav entry. They can still hit /calls etc.
         { href: '/settings', label: 'Agent Settings', icon: Settings, show: isManagerOrOwner },

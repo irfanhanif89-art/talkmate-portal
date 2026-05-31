@@ -6,7 +6,7 @@ import {
   Lock, Users, PhoneCall, BookOpen,
   UserCheck, Crown, ClipboardList, ExternalLink, ArrowLeft,
   Tag, MapPin, CalendarDays, MessageCircle, ShieldCheck,
-  Inbox as InboxIcon, Sparkles,
+  Inbox as InboxIcon, Sparkles, Bot,
 } from 'lucide-react'
 
 interface NavItem {
@@ -48,6 +48,8 @@ const SECTIONS: Section[] = [
       { href: '/settings', label: 'Agent Settings', icon: Settings },
       { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall },
       { href: '/settings/service-area', label: 'Service Area', icon: MapPin },
+      // Sprint Session 2 — website chatbot config + captured leads.
+      { href: '/chatbot', label: 'Website Chatbot', icon: Bot },
     ],
   },
   {

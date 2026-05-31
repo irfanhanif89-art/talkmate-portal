@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import SyncAgentButton from '@/components/portal/sync-agent-button'
+import { computeRoiForBusiness, formatRoiDollars } from '@/lib/roi'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,9 @@ export default async function AdminDashboardPage({
       .eq('business_id', clientId).eq('active', true),
   ])
 
+  // Recovered-revenue ROI summary (this month), computed directly from the DB.
+  const roi = await computeRoiForBusiness(admin, clientId, 'this_month')
+
   return (
     <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
@@ -45,6 +49,27 @@ export default async function AdminDashboardPage({
           initialLastSyncedAt={biz?.agent_last_synced_at ?? null}
           adminClientId={clientId}
         />
+      </div>
+
+      {/* Recovered-revenue ROI (this month) — Sprint Session 2 admin parity. */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0A1E38, #071829)',
+        border: '1px solid rgba(232,98,42,0.3)', borderRadius: 14, padding: 22, marginBottom: 22,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Estimated recovered revenue — this month</div>
+            <div style={{ fontSize: 34, fontWeight: 800, color: 'white', letterSpacing: '-1px', marginTop: 4 }}>{formatRoiDollars(roi.totalEstimatedRevenue)}</div>
+          </div>
+          <div style={{ fontSize: 12, color: '#7BAED4' }}>Avg job value {formatRoiDollars(roi.avgJobValue)}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <RoiBreak label="After-hours calls" count={roi.callsAfterHours.count} value={roi.callsAfterHours.estimatedValue} />
+          <RoiBreak label="Win-backs sent" count={roi.winbacksSent.count} value={roi.winbacksSent.estimatedValue} />
+          <RoiBreak label="Chat leads" count={roi.chatLeads.count} value={roi.chatLeads.estimatedValue} />
+          <RoiBreak label="Review requests" count={roi.reviewRequestsSent.count} />
+          <RoiBreak label="Total calls answered" count={roi.totalCallsAnswered} />
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 22 }}>
@@ -74,6 +99,18 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: 18 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 800, color: 'white', marginTop: 6 }}>{value}</div>
+    </div>
+  )
+}
+
+function RoiBreak({ label, count, value }: { label: string; count: number; value?: number }) {
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10, padding: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: 'white', marginTop: 4 }}>{count}</div>
+      {value != null && (
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#E8622A', marginTop: 2 }}>{formatRoiDollars(value)}</div>
+      )}
     </div>
   )
 }
