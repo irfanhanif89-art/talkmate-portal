@@ -12,6 +12,7 @@ import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
 import ReceptionistStats from '@/components/portal/receptionist-stats'
+import RoiSection from './roi-section'
 import AgentQualityCard from '@/components/portal/agent-quality-card'
 import SmsUsageCard from '@/components/portal/sms-usage-card'
 import { INDUSTRY_AVG_UPSELL_PER_CALL, INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
@@ -203,6 +204,11 @@ export function DashboardClient({
           Welcome back{firstName ? `, ${firstName}` : ''}
         </h1>
       </div>
+
+      {/* ROI hero + breakdown (Sprint features 2) — self-fetches
+          /api/dashboard/roi. Sits at the very top above all existing
+          content; nothing below is removed. */}
+      <RoiSection />
 
       {/* Session 6 — trial progress card. Self-fetches; renders nothing
           when the account isn't on trial. */}

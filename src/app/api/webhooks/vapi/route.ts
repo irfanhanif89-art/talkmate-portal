@@ -677,6 +677,15 @@ async function maybeSendWinback(
       winback_sent: true,
       winback_sent_at: new Date().toISOString(),
     }).eq('id', callRowId)
+    // Sprint Session 2 — ROI audit trail. The ROI dashboard calculates from
+    // source tables directly, so this insert is supplementary (not relied on
+    // for the headline number); failures must never break win-back sending.
+    await supabase.from('roi_events').insert({
+      business_id: businessId,
+      event_type: 'winback_sent',
+      source_id: callRowId,
+      source_table: 'calls',
+    }).then(() => {}, () => {})
   } else {
     console.warn('[vapi-webhook] winback send failed', { vapiCallId, reason: result.reason, error: result.error })
   }

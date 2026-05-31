@@ -186,6 +186,14 @@ export async function GET(request: Request) {
         call_id: call.id,
         platform: 'google',
       })
+      // Sprint Session 2 — ROI audit trail (supplementary; the dashboard counts
+      // review_requests directly). Never let a logging failure break the cron.
+      await supabase.from('roi_events').insert({
+        business_id: biz.id,
+        event_type: 'review_request_sent',
+        source_id: call.id,
+        source_table: 'calls',
+      }).then(() => {}, () => {})
 
       sent += 1
       results.push({ businessId: biz.id, callId: call.id, result: 'sent' })

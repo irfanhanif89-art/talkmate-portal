@@ -198,7 +198,13 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       if (biz && biz.plan !== newPlan) {
-        await supabase.from('businesses').update({ plan: newPlan }).eq('id', biz.id)
+        // Sprint Session 2 — the AI chatbot is a Growth/Pro entitlement. A
+        // downgrade to Starter must switch it off so the public widget stops
+        // serving (the widget route also enforces plan at read time, this is
+        // the belt to that suspenders).
+        const planPatch: Record<string, unknown> = { plan: newPlan }
+        if (newPlan === 'starter') planPatch.chatbot_enabled = false
+        await supabase.from('businesses').update(planPatch).eq('id', biz.id)
         await sendAdminTelegram(
           `Plan change: ${biz.name ?? 'Unknown'} moved from ${biz.plan} to ${newPlan} via Stripe.`,
         ).catch(() => {})
