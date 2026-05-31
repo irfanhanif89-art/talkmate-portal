@@ -18,7 +18,7 @@ export default async function ChatbotPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, plan, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug')
+    .select('id, name, plan, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, chatbot_allowed_domains')
     .eq('owner_user_id', user.id)
     .limit(1)
     .maybeSingle()
@@ -34,6 +34,7 @@ export default async function ChatbotPage() {
     primaryColor: (business.chatbot_primary_color as string | null) ?? '#E8622A',
     collectLeadsAfter: (business.chatbot_collect_leads_after as number | null) ?? 2,
     slug: (business.slug as string | null) ?? null,
+    allowedDomains: (business.chatbot_allowed_domains as string[] | null) ?? [],
   }
 
   return <ChatbotView business={dto} />

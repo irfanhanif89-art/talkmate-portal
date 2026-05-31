@@ -18,7 +18,7 @@ export default async function AdminChatbotPage({
   const [{ data: biz }, { data: sessionRows }] = await Promise.all([
     admin
       .from('businesses')
-      .select('chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan')
+      .select('chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan, chatbot_allowed_domains')
       .eq('id', clientId)
       .maybeSingle(),
     admin
@@ -37,6 +37,7 @@ export default async function AdminChatbotPage({
     collectLeadsAfter: biz?.chatbot_collect_leads_after ?? null,
     slug: biz?.slug ?? null,
     plan: biz?.plan ?? null,
+    allowedDomains: (biz?.chatbot_allowed_domains as string[] | null) ?? [],
   }
 
   const sessions: ChatSessionRow[] = (sessionRows ?? []).map((s) => ({
