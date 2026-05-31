@@ -1,0 +1,553 @@
+'use client'
+
+import { useCallback, useMemo, useState } from 'react'
+import { Sparkles, Plus, Pencil, Trash2, Save, X, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+
+export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'error'
+
+export type CategoryKey = 'faq' | 'service' | 'hours' | 'pricing' | 'team' | 'custom'
+
+export interface KbEntryDTO {
+  id: string
+  category: CategoryKey
+  question: string
+  answer: string
+  sortOrder: number
+  updatedAt: string
+}
+
+interface Props {
+  businessName: string
+  hasVapiAgent: boolean
+  initialEntries: KbEntryDTO[]
+  initialSyncStatus: SyncStatus
+  initialLastSyncedAt: string | null
+  // When set, all API calls go to /api/knowledge-base?adminClientId=...
+  // so admins can edit/sync on behalf of a client.
+  adminClientId?: string | null
+}
+
+function withAdmin(path: string, adminClientId: string | null | undefined): string {
+  if (!adminClientId) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}adminClientId=${encodeURIComponent(adminClientId)}`
+}
+
+interface TabConfig {
+  key: CategoryKey
+  label: string
+  questionLabel: string
+  answerLabel: string
+  emptyHint: string
+}
+
+const TABS: TabConfig[] = [
+  { key: 'faq',     label: 'FAQs',           questionLabel: 'Customer question', answerLabel: 'Your answer',         emptyHint: 'No FAQs added yet. Add your first one so TalkMate knows what to say.' },
+  { key: 'service', label: 'Services',       questionLabel: 'Service name',      answerLabel: 'Description and pricing', emptyHint: 'No services added yet. Add your first one so TalkMate knows what you offer.' },
+  { key: 'hours',   label: 'Business Hours', questionLabel: 'Day or period',     answerLabel: 'Hours (e.g. Mon-Fri 8am-6pm)', emptyHint: 'No business hours added yet. Add your standard opening times.' },
+  { key: 'pricing', label: 'Pricing',        questionLabel: 'Service or item',   answerLabel: 'Price and details',   emptyHint: 'No pricing added yet. Add the prices TalkMate should quote.' },
+  { key: 'team',    label: 'Team',           questionLabel: 'Team member name',  answerLabel: 'Role and what they handle', emptyHint: 'No team members added yet. Add the people TalkMate can route calls to.' },
+  { key: 'custom',  label: 'Custom',         questionLabel: 'Topic',             answerLabel: 'Information',         emptyHint: 'No custom information added yet. Add anything else TalkMate should know.' },
+]
+
+const ORANGE = '#E8622A'
+
+function fmtSyncedAgo(iso: string | null): string {
+  if (!iso) return 'Never'
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
+  if (!Number.isFinite(secs)) return 'Never'
+  if (secs < 60) return 'just now'
+  const mins = Math.round(secs / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.round(hrs / 24)
+  return `${days}d ago`
+}
+
+export default function TrainView(props: Props) {
+  const [entries, setEntries] = useState<KbEntryDTO[]>(props.initialEntries)
+  const [activeTab, setActiveTab] = useState<CategoryKey>('faq')
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(props.initialSyncStatus)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(props.initialLastSyncedAt)
+  const [syncing, setSyncing] = useState(false)
+  const [syncFlash, setSyncFlash] = useState<'success' | 'error' | null>(null)
+
+  // Editor state — addingFor=category means an inline "add" form for that tab
+  const [addingFor, setAddingFor] = useState<CategoryKey | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftQuestion, setDraftQuestion] = useState('')
+  const [draftAnswer, setDraftAnswer] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const entriesForTab = useMemo(
+    () => entries
+      .filter(e => e.category === activeTab)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    [entries, activeTab],
+  )
+
+  const config = TABS.find(t => t.key === activeTab)!
+
+  const startAdd = useCallback((cat: CategoryKey) => {
+    setAddingFor(cat)
+    setEditingId(null)
+    setDraftQuestion('')
+    setDraftAnswer('')
+    setFormError(null)
+  }, [])
+
+  const startEdit = useCallback((entry: KbEntryDTO) => {
+    setEditingId(entry.id)
+    setAddingFor(null)
+    setDraftQuestion(entry.question)
+    setDraftAnswer(entry.answer)
+    setFormError(null)
+  }, [])
+
+  const cancelForm = useCallback(() => {
+    setEditingId(null)
+    setAddingFor(null)
+    setDraftQuestion('')
+    setDraftAnswer('')
+    setFormError(null)
+  }, [])
+
+  function validate(): string | null {
+    const q = draftQuestion.trim()
+    const a = draftAnswer.trim()
+    if (!q) return 'Question is required.'
+    if (q.length > 200) return 'Question is too long (200 char max).'
+    if (a.length < 10) return 'Answer must be at least 10 characters.'
+    if (a.length > 2000) return 'Answer is too long (2000 char max).'
+    return null
+  }
+
+  async function saveNew() {
+    const err = validate()
+    if (err) { setFormError(err); return }
+    setBusy(true)
+    setFormError(null)
+    try {
+      const r = await fetch(withAdmin('/api/knowledge-base', props.adminClientId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: addingFor,
+          question: draftQuestion.trim(),
+          answer: draftAnswer.trim(),
+        }),
+      })
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok || !d.entry) {
+        setFormError(typeof d.error === 'string' ? d.error : 'Save failed')
+        return
+      }
+      const e = d.entry as { id: string; category: CategoryKey; question: string; answer: string; sort_order: number; updated_at: string }
+      setEntries(prev => [...prev, {
+        id: e.id,
+        category: e.category,
+        question: e.question,
+        answer: e.answer,
+        sortOrder: e.sort_order,
+        updatedAt: e.updated_at,
+      }])
+      setSyncStatus('pending')
+      cancelForm()
+    } catch (e) {
+      setFormError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveEdit(id: string) {
+    const err = validate()
+    if (err) { setFormError(err); return }
+    setBusy(true)
+    setFormError(null)
+    try {
+      const r = await fetch(withAdmin(`/api/knowledge-base/${id}`, props.adminClientId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: draftQuestion.trim(),
+          answer: draftAnswer.trim(),
+        }),
+      })
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok || !d.entry) {
+        setFormError(typeof d.error === 'string' ? d.error : 'Update failed')
+        return
+      }
+      const e = d.entry as { id: string; category: CategoryKey; question: string; answer: string; sort_order: number; updated_at: string }
+      setEntries(prev => prev.map(x => x.id === id ? {
+        id: e.id,
+        category: e.category,
+        question: e.question,
+        answer: e.answer,
+        sortOrder: e.sort_order,
+        updatedAt: e.updated_at,
+      } : x))
+      setSyncStatus('pending')
+      cancelForm()
+    } catch (e) {
+      setFormError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(id: string) {
+    if (!window.confirm('Delete this entry?')) return
+    setBusy(true)
+    try {
+      const r = await fetch(withAdmin(`/api/knowledge-base/${id}`, props.adminClientId), { method: 'DELETE' })
+      if (!r.ok) return
+      setEntries(prev => prev.filter(x => x.id !== id))
+      setSyncStatus('pending')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function syncNow() {
+    if (syncing) return
+    setSyncing(true)
+    setSyncStatus('syncing')
+    setSyncFlash(null)
+    try {
+      const r = await fetch(withAdmin('/api/knowledge-base/sync', props.adminClientId), { method: 'POST' })
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok) {
+        setSyncStatus('error')
+        setSyncFlash('error')
+        return
+      }
+      setSyncStatus('synced')
+      setLastSyncedAt(new Date().toISOString())
+      setSyncFlash('success')
+      setTimeout(() => setSyncFlash(null), 3000)
+      void d
+    } catch {
+      setSyncStatus('error')
+      setSyncFlash('error')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // ─────────── render ───────────
+
+  return (
+    <div style={{
+      padding: '28px 32px', maxWidth: 980, margin: '0 auto',
+      color: '#F1F5F9', fontFamily: 'Outfit, sans-serif',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 24 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12, background: 'rgba(232,98,42,0.12)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <Sparkles size={22} color={ORANGE} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'white', margin: 0 }}>Train TalkMate</h1>
+          <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 4, marginBottom: 0, lineHeight: 1.5 }}>
+            Teach TalkMate about your business so it answers every question perfectly.
+          </p>
+        </div>
+      </div>
+
+      {/* Sync status bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px',
+        marginBottom: 18, borderRadius: 12,
+        background: syncStatus === 'pending' ? 'rgba(251,191,36,0.08)'
+          : syncStatus === 'error' ? 'rgba(239,68,68,0.08)'
+          : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${
+          syncStatus === 'pending' ? 'rgba(251,191,36,0.25)'
+            : syncStatus === 'error' ? 'rgba(239,68,68,0.25)'
+            : 'rgba(255,255,255,0.08)'
+        }`,
+      }}>
+        {syncStatus === 'syncing' ? <Clock size={16} color="#7BAED4" /> :
+          syncStatus === 'pending' ? <AlertCircle size={16} color="#FBBF24" /> :
+          syncStatus === 'error' ? <AlertCircle size={16} color="#EF4444" /> :
+          <CheckCircle2 size={16} color="#22C55E" />}
+        <div style={{ flex: 1, fontSize: 13 }}>
+          {syncStatus === 'syncing' && <span style={{ color: '#7BAED4' }}>Syncing your changes to TalkMate...</span>}
+          {syncStatus === 'pending' && <span style={{ color: '#FBBF24' }}>You have unsaved changes. Sync now to update your agent.</span>}
+          {syncStatus === 'error' && <span style={{ color: '#EF4444' }}>Sync failed. Try again.</span>}
+          {syncStatus === 'synced' && (
+            <span style={{ color: '#C8D8EA' }}>
+              Last synced {fmtSyncedAgo(lastSyncedAt)}
+              {!props.hasVapiAgent && <span style={{ color: '#7BAED4', marginLeft: 8 }}>(agent not configured yet)</span>}
+            </span>
+          )}
+          {syncFlash === 'success' && <span style={{ color: '#22C55E', marginLeft: 12 }}>Synced just now</span>}
+          {syncFlash === 'error' && <span style={{ color: '#EF4444', marginLeft: 12 }}>Sync failed - try again</span>}
+        </div>
+        <button
+          type="button"
+          onClick={syncNow}
+          disabled={syncing || syncStatus === 'syncing'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '7px 14px', borderRadius: 8,
+            background: ORANGE, color: 'white', border: 'none',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'inherit',
+            opacity: syncing || syncStatus === 'syncing' ? 0.5 : 1,
+          }}
+        >
+          <RefreshCw size={12} /> {syncing ? 'Syncing...' : 'Sync Now'}
+        </button>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{
+        display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)',
+        marginBottom: 18, overflowX: 'auto',
+      }}>
+        {TABS.map(tab => {
+          const active = tab.key === activeTab
+          const count = entries.filter(e => e.category === tab.key).length
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => { setActiveTab(tab.key); cancelForm() }}
+              style={{
+                padding: '10px 16px',
+                background: 'transparent', border: 'none',
+                color: active ? 'white' : '#7BAED4',
+                borderBottom: active ? `2px solid ${ORANGE}` : '2px solid transparent',
+                fontSize: 13, fontWeight: active ? 700 : 500,
+                cursor: 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {tab.label}
+              {count > 0 && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '1px 6px',
+                  borderRadius: 99,
+                  background: active ? ORANGE : 'rgba(255,255,255,0.08)',
+                  color: active ? 'white' : '#7BAED4',
+                }}>{count}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Entry list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {entriesForTab.length === 0 && addingFor !== activeTab && (
+          <div style={{
+            padding: 24, textAlign: 'center',
+            border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12,
+            color: '#7BAED4', fontSize: 13,
+          }}>
+            {config.emptyHint}
+          </div>
+        )}
+
+        {entriesForTab.map(entry => (
+          editingId === entry.id ? (
+            <EditorCard
+              key={entry.id}
+              titleLabel={config.questionLabel}
+              answerLabel={config.answerLabel}
+              question={draftQuestion}
+              answer={draftAnswer}
+              onQuestionChange={setDraftQuestion}
+              onAnswerChange={setDraftAnswer}
+              onSave={() => saveEdit(entry.id)}
+              onCancel={cancelForm}
+              busy={busy}
+              error={formError}
+              saveLabel="Save changes"
+            />
+          ) : (
+            <article
+              key={entry.id}
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 12, padding: '14px 16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{entry.question}</div>
+                  <div style={{
+                    fontSize: 13, color: '#7BAED4', marginTop: 6, lineHeight: 1.5,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
+                    overflow: 'hidden',
+                  }}>
+                    {entry.answer}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => startEdit(entry)}
+                  aria-label="Edit"
+                  style={{
+                    background: 'transparent', border: '1px solid rgba(255,255,255,0.08)',
+                    color: '#7BAED4', borderRadius: 8, padding: 8,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(entry.id)}
+                  aria-label="Delete"
+                  style={{
+                    background: 'transparent', border: '1px solid rgba(239,68,68,0.18)',
+                    color: '#EF4444', borderRadius: 8, padding: 8,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </article>
+          )
+        ))}
+
+        {addingFor === activeTab && (
+          <EditorCard
+            titleLabel={config.questionLabel}
+            answerLabel={config.answerLabel}
+            question={draftQuestion}
+            answer={draftAnswer}
+            onQuestionChange={setDraftQuestion}
+            onAnswerChange={setDraftAnswer}
+            onSave={saveNew}
+            onCancel={cancelForm}
+            busy={busy}
+            error={formError}
+            saveLabel="Add entry"
+          />
+        )}
+
+        {addingFor !== activeTab && (
+          <button
+            type="button"
+            onClick={() => startAdd(activeTab)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '12px 16px', marginTop: 4,
+              background: 'rgba(232,98,42,0.06)',
+              border: '1px dashed rgba(232,98,42,0.3)',
+              borderRadius: 12, color: ORANGE,
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <Plus size={15} /> Add {config.label.replace(/s$/, '').toLowerCase()}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface EditorCardProps {
+  titleLabel: string
+  answerLabel: string
+  question: string
+  answer: string
+  onQuestionChange: (v: string) => void
+  onAnswerChange: (v: string) => void
+  onSave: () => void
+  onCancel: () => void
+  busy: boolean
+  error: string | null
+  saveLabel: string
+}
+
+function EditorCard(props: EditorCardProps) {
+  return (
+    <div style={{
+      background: 'rgba(232,98,42,0.06)',
+      border: '1px solid rgba(232,98,42,0.25)',
+      borderRadius: 12, padding: 16,
+    }}>
+      <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+        {props.titleLabel}
+      </label>
+      <input
+        type="text"
+        value={props.question}
+        onChange={e => props.onQuestionChange(e.target.value)}
+        maxLength={200}
+        style={{
+          width: '100%', padding: '9px 12px', borderRadius: 8,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          color: '#F1F5F9', fontSize: 14, fontFamily: 'inherit',
+          marginBottom: 12, outline: 'none', boxSizing: 'border-box',
+        }}
+      />
+      <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+        {props.answerLabel}
+      </label>
+      <textarea
+        value={props.answer}
+        onChange={e => props.onAnswerChange(e.target.value)}
+        rows={4}
+        maxLength={2000}
+        style={{
+          width: '100%', padding: '9px 12px', borderRadius: 8,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          color: '#F1F5F9', fontSize: 14, fontFamily: 'inherit',
+          outline: 'none', resize: 'vertical', boxSizing: 'border-box',
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+        {props.error && (
+          <span style={{ fontSize: 12, color: '#EF4444' }}>{props.error}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={props.onCancel}
+          style={{
+            background: 'transparent', border: 'none',
+            color: '#7BAED4', fontSize: 12, fontWeight: 500,
+            cursor: 'pointer', padding: '8px 12px', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}
+        >
+          <X size={14} /> Cancel
+        </button>
+        <button
+          type="button"
+          onClick={props.onSave}
+          disabled={props.busy}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 16px', borderRadius: 8,
+            background: ORANGE, color: 'white', border: 'none',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            fontFamily: 'inherit',
+            opacity: props.busy ? 0.5 : 1,
+          }}
+        >
+          <Save size={13} /> {props.busy ? 'Saving...' : props.saveLabel}
+        </button>
+      </div>
+    </div>
+  )
+}

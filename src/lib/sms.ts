@@ -59,6 +59,15 @@ export type SmsType =
   | 'dispatch_customer_accepted'
   | 'dispatch_customer_en_route'
   | 'dispatch_customer_completed'
+  // Session sprint 1 — missed call win-back + Google review follow-up.
+  // Both bypass plan limits because the pricing page promises them on
+  // every plan including starter, and missing them silently would be
+  // worse than the marginal Twilio cost.
+  | 'missed_call_winback'
+  | 'review_request'
+  // Session sprint 1 — manual reply from a human in the SMS inbox.
+  // Counts against quota: it's a deliberate customer touchpoint.
+  | 'inbox_reply'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -89,7 +98,27 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   // Customer-facing dispatch_customer_* messages stay on quota.
   'dispatch_driver_invite',
   'dispatch_driver_job_notification',
+  // Session sprint 1 — both win-back and review requests are headline
+  // features promised on every plan including starter. They cannot be
+  // gated by quota or the value-prop breaks.
+  'missed_call_winback',
+  'review_request',
 ])
+
+// Session sprint 1 — sent_by classification for the inbox view.
+// Defaults derived from smsType so existing callers don't need updates.
+type InboxSentBy =
+  | 'system' | 'ai' | 'human' | 'vapi'
+  | 'winback' | 'review_request' | 'dispatch' | 'callback'
+
+function deriveSentBy(smsType: SmsType): InboxSentBy {
+  if (smsType === 'missed_call_winback') return 'winback'
+  if (smsType === 'review_request') return 'review_request'
+  if (smsType === 'inbox_reply') return 'human'
+  if (smsType.startsWith('dispatch')) return 'dispatch'
+  if (smsType === 'callback_reminder' || smsType === 'callback_confirmation' || smsType === 'dispatcher_callback_alert') return 'callback'
+  return 'system'
+}
 
 // Session 30 — Telegram alert on infrastructure-level SMS failures so we
 // see Twilio outages, missing credentials, or malformed numbers in real
@@ -125,6 +154,14 @@ export interface SendSMSOptions {
   // TWILIO_CONFIRMATION_NUMBER so the Twilio webhook on that line
   // can route YES/NO replies cleanly to /api/twilio/sms-reply.
   from?: string
+  // Session sprint 1 — inbox logging. When provided, the outbound
+  // SMS is appended to that conversation. When omitted, we upsert a
+  // conversation by (business_id, to_phone) so win-back, review and
+  // legacy callers all surface in the inbox view automatically.
+  conversationId?: string
+  // Defaults to `system` (or a value derived from smsType). Used to
+  // label the bubble in the inbox: winback / review_request / human / etc.
+  sentBy?: InboxSentBy
 }
 
 export interface SendSMSResult {
@@ -304,6 +341,22 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
     })
   }
 
+  // Session sprint 1 — also surface the outbound message in the SMS
+  // inbox. logToInbox is best-effort: if it fails we still report
+  // success to the caller because the SMS itself was delivered.
+  void logToInbox(supabase, {
+    clientId: opts.clientId,
+    toPhone: to,
+    body: opts.message,
+    twilioSid: sid ?? null,
+    sentBy: opts.sentBy ?? deriveSentBy(opts.smsType),
+    conversationId: opts.conversationId ?? null,
+  }).catch(err => {
+    console.error('[sms] logToInbox failed', {
+      clientId: opts.clientId, smsType: opts.smsType, sid, error: (err as Error).message,
+    })
+  })
+
   // Increment counter via an atomic Postgres RPC. The earlier read-then-
   // update pattern silently lost increments (Session 20 hotfix: GM Towing's
   // 'other' SMS landed in sms_log but the counter stayed at 0). The RPC
@@ -328,6 +381,87 @@ export async function sendSMS(opts: SendSMSOptions): Promise<SendSMSResult> {
   }
 
   return { success: true, sid }
+}
+
+// ────────────────────────── inbox logging (Session sprint 1) ─────────
+// Appends an outbound message to the SMS inbox. Upserts the
+// conversation by (business_id, phone_number) so win-back / review
+// requests / Make.com sends all end up in the right thread even when
+// the caller didn't pass conversationId. Best-effort: any failure here
+// is logged but does not roll back the Twilio send.
+
+interface LogToInboxArgs {
+  clientId: string
+  toPhone: string          // already normalised to E.164
+  body: string
+  twilioSid: string | null
+  sentBy: InboxSentBy
+  conversationId: string | null
+}
+
+async function logToInbox(
+  supabase: ReturnType<typeof createAdminClient>,
+  args: LogToInboxArgs,
+): Promise<void> {
+  let conversationId = args.conversationId
+
+  if (!conversationId) {
+    // Look up contact by (client_id, phone) so we can link the
+    // conversation row. Brand-new outbound to an unknown phone is
+    // fine — contact_id stays null and gets backfilled on the first
+    // inbound reply.
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('client_id', args.clientId)
+      .eq('phone', args.toPhone)
+      .eq('is_merged', false)
+      .maybeSingle()
+    const contactId = (contact?.id as string | undefined) ?? null
+
+    // Upsert the conversation. The (business_id, phone_number) UNIQUE
+    // constraint from migration 060 means this is idempotent.
+    const preview = args.body.length > 80 ? `${args.body.slice(0, 77)}...` : args.body
+    const { data: convo, error: convoErr } = await supabase
+      .from('sms_conversations')
+      .upsert({
+        business_id: args.clientId,
+        contact_id: contactId,
+        phone_number: args.toPhone,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: preview,
+      }, { onConflict: 'business_id,phone_number' })
+      .select('id')
+      .single()
+    if (convoErr || !convo) {
+      console.error('[sms] sms_conversations upsert failed', convoErr?.message)
+      return
+    }
+    conversationId = convo.id as string
+  } else {
+    // Existing conversation passed in — just refresh the preview/timestamp.
+    const preview = args.body.length > 80 ? `${args.body.slice(0, 77)}...` : args.body
+    await supabase
+      .from('sms_conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_message_preview: preview,
+      })
+      .eq('id', conversationId)
+  }
+
+  const { error: msgErr } = await supabase.from('sms_messages').insert({
+    conversation_id: conversationId,
+    business_id: args.clientId,
+    direction: 'outbound',
+    body: args.body,
+    status: 'sent',
+    twilio_message_sid: args.twilioSid,
+    sent_by: args.sentBy,
+  })
+  if (msgErr) {
+    console.error('[sms] sms_messages insert failed', msgErr.message)
+  }
 }
 
 // ────────────────────────── templates ────────────────────────────────
