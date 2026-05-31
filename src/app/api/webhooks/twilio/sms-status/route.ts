@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
   if (!messageSid || !HANDLED_STATUSES.has(messageStatus)) {
     // Acknowledge but don't process — Twilio fires multiple statuses
     // per message and we only need the first useful one.
-    return new NextResponse('', { status: 204 })
+    return new NextResponse(null, { status: 204 })
   }
 
   const supabase = createAdminClient()
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
         .update({ status: 'delivered' })
         .eq('id', existing.id)
     }
-    return new NextResponse('', { status: 204 })
+    return new NextResponse(null, { status: 204 })
   }
 
   // From this point on we're logging a Vapi auto-reply (or any other
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   if (!business) {
     // Unknown sender — common for ops numbers (Hayden's dispatcher
     // loop, demo lines). Don't error; just no-op.
-    return new NextResponse('', { status: 204 })
+    return new NextResponse(null, { status: 204 })
   }
 
   const toPhone = normaliseAuPhone(toRaw) ?? toRaw
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
   if (!body) {
     // Without the body we have nothing to show in the Inbox. Log and
     // bail — the message still went out, just won't appear in the UI.
-    return new NextResponse('', { status: 204 })
+    return new NextResponse(null, { status: 204 })
   }
 
   // Upsert contact + conversation so the Inbox has somewhere to land
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
     .single()
   if (convoErr || !convo) {
     console.error('[twilio-status] sms_conversations upsert failed', convoErr?.message)
-    return new NextResponse('', { status: 204 })
+    return new NextResponse(null, { status: 204 })
   }
 
   const { error: msgErr } = await supabase.from('sms_messages').insert({
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     console.error('[twilio-status] sms_messages insert failed', msgErr.message)
   }
 
-  return new NextResponse('', { status: 204 })
+  return new NextResponse(null, { status: 204 })
 }
 
 interface BusinessRow { id: string }
