@@ -2,6 +2,136 @@
 
 ---
 
+## Sprint Session 1 — Two-way SMS Inbox + Train TalkMate + Win-back + Reviews (2026-05-31)
+
+### Branch
+`feature/sprint-features-1` (from `dev` on portal, from `main` on website — the website repo has no `dev`)
+
+### Why
+First sprint of the customer-care automation rollout: surface every inbound SMS in an in-portal inbox with AI-suggested replies, give clients a self-service knowledge-base editor that syncs to their Vapi agent, auto-text callers who hang up before the agent picks up, and ask happy customers for a Google review after the call.
+
+### What ships
+
+**Migrations** — all three applied to **preview Supabase only** (`rgifivtzmjvanzqwgadq`). **Prod migration is the first manual handoff step.**
+
+1. `060_sms_conversations.sql`
+   - `businesses.twilio_phone_number text`, `businesses.twilio_phone_sid text` + index
+   - `contacts.sms_opted_out boolean DEFAULT false`, `contacts.sms_opted_out_at timestamptz`
+   - `sms_conversations` (id, business_id, contact_id, phone_number, last_message_at, last_message_preview, unread_count, status, timestamps; UNIQUE business_id+phone_number)
+   - `sms_messages` (id, conversation_id, business_id, direction, body, status, twilio_message_sid, sent_by, read_at, created_at)
+   - RLS via `private.get_current_client_id()`
+   - `supabase_realtime` publication ADDed for both tables (powers the live inbox)
+   - Indexes on (business_id, last_message_at DESC), (conversation_id, created_at), partial index on twilio_message_sid
+   - `sms_conversations_set_updated_at` trigger
+
+2. `061_knowledge_base.sql`
+   - `knowledge_base_entries` (business_id, category enum, question, answer, is_active, sort_order, timestamps)
+   - `knowledge_base_sync_log` (status, entries_synced, error_message)
+   - `businesses.kb_sync_status` enum + `kb_last_synced_at`
+   - RLS, indexes including a partial index for the pending-pump cron
+   - `kb_entries_mark_pending` AFTER INSERT/UPDATE/DELETE trigger flips `businesses.kb_sync_status` to `pending` automatically
+
+3. `062_winback_reviews.sql`
+   - `calls`: was_abandoned, abandoned_at, winback_sent, winback_sent_at, review_request_sent, review_request_sent_at
+     (we **reuse** the existing `calls.duration_seconds` rather than introduce a duplicate column)
+   - `review_requests` (business_id, contact_id, call_id, platform, sms_message_id, sent_at)
+   - `contacts.last_review_request_sent_at` for the 90-day throttle
+   - `businesses.google_review_url`, `review_requests_enabled`, `review_request_delay_hours`, `review_request_custom_message`, `winback_enabled`, `winback_custom_message`, `avg_job_value`
+   - Partial indexes for the review-follow-up and winback-pending pumps
+
+**Brief deviations applied** (locked in for the rest of the sprint):
+| Brief | Actual schema | Action |
+|---|---|---|
+| Migration numbers 038/039/040 | Latest live migration is 059 | Renumbered to 060/061/062 |
+| `businesses.vapi_assistant_id` | Column is `vapi_agent_id` | Code uses `vapi_agent_id` everywhere |
+| `businesses.plan_type` | Column is `plan` | Code uses `plan` |
+| `contacts.business_id` | Column is `client_id` | New tables use `business_id` per brief; contacts joins use `contacts.client_id` |
+| `calls.call_duration_seconds` (new) | `calls.duration_seconds` already exists | Reused existing column |
+| `get_current_client_id()` | Lives in `private` schema | Policies call `private.get_current_client_id()` |
+| `grok-3` for AI suggest | Codebase default is `grok-4.20-0309-non-reasoning` | Used codebase default |
+| `import twilio` + `twilio.validateRequest()` | Package not installed | Inlined HMAC-SHA1 signature check with Node `crypto` |
+
+**Library changes**
+- `src/lib/sms.ts` — added 3 new SmsType (`missed_call_winback`, `review_request`, `inbox_reply`); the first two BYPASS plan quota (pricing page promises them on every plan). New `conversationId` + `sentBy` options. New `logToInbox` helper upserts the sms_conversation and appends to sms_messages on every successful Twilio send — so win-back, review, and Make.com-originated SMS all show up in the inbox automatically.
+- `src/lib/kb-block.ts` — new shared helper that builds the `BUSINESS KNOWLEDGE:` system-prompt block (anchored regex so injectKbBlock can replace it cleanly without touching other prompt sections).
+- `src/lib/resolve-business.ts` — new helper for routes that support both `?adminClientId=...` (admin-as-client) and the default owner_user_id lookup.
+
+**Routes**
+- **Twilio inbound webhook** — `POST /api/webhooks/twilio/sms-inbound`. HMAC-SHA1 signature validation. STOP/START keyword handling (sets `contacts.sms_opted_out`). Business lookup by `businesses.twilio_phone_number` with fallback to `talkmate_number`. Always returns empty TwiML.
+- **SMS conversations API** — `GET /api/sms/conversations` (list), `GET/POST/PATCH /api/sms/conversations/[id]` (thread/reply/mark-read), `POST /api/sms/conversations/[id]/suggest` (Grok AI suggest). All accept `?adminClientId=...` for admin-as-client mode.
+- **Knowledge base API** — `GET/POST /api/knowledge-base` (list + create), `PATCH/DELETE /api/knowledge-base/[id]` (edit + soft delete). All accept `?adminClientId=...`.
+- **KB sync** — `POST /api/knowledge-base/sync` (user-triggered) and `GET /api/cron/kb-sync` (every 5 min). Both call shared `performKbSync(businessId)` which fetches active entries → builds BUSINESS KNOWLEDGE block → PATCHes the Vapi assistant's `systemPrompt` preserving provider/model/temperature/tools.
+- **Review follow-up cron** — `GET /api/cron/review-follow-up` (every 15 min, bounded to 50 sends/run). Selects calls where ended_at < now - delay_hours, duration > 30s, not abandoned, contact not opted out, not throttled (90 days), business has `review_requests_enabled=true` and a `google_review_url`. Sends via sendSMS, inserts `review_requests`, stamps `contacts.last_review_request_sent_at`.
+- **Vapi webhook extension** — `src/app/api/webhooks/vapi/route.ts` extended (not replaced). After existing logic, if `duration_seconds < 15` AND `ended_reason ∈ {customer-hangup, customer-did-not-answer, voicemail, silence-timed-out}`, mark `was_abandoned=true`, then (if `winback_enabled` and contact not opted out and not already sent) send the win-back SMS via sendSMS with `smsType=missed_call_winback`, stamp `winback_sent`.
+
+**Pages**
+- `src/app/(portal)/inbox/page.tsx` + `inbox-view.tsx` — Two-panel SMS inbox. Realtime via Supabase channels on sms_messages INSERT and sms_conversations UPDATE. AI Suggest button hits the Grok route. Mobile collapses to single pane. Starter plan sees an upgrade pitch (Inbox is Growth+ per pricing matrix).
+- `src/app/(portal)/train/page.tsx` + `train-view.tsx` — Tabbed Train TalkMate editor (FAQs / Services / Hours / Pricing / Team / Custom). Inline add/edit/delete. Sync status bar with Sync Now button.
+- `src/app/(portal)/settings/page.tsx` — new "⚡ Automation" tab with win-back toggle + custom message, review requests toggle + Google URL + delay + custom message + avg_job_value, and a stats row (win-backs / reviews this month).
+- `src/app/admin/clients/[clientId]/portal/inbox/page.tsx` and `.../train/page.tsx` — Admin-as-client wrappers that reuse the same client components with `adminClientId={clientId}` so all API calls hit the admin override. The existing `.../settings/page.tsx` already redirects through the impersonate flow, so the new Automation tab is reachable via that path too.
+
+**Navigation**
+- Client portal sidebar (`src/components/portal/sidebar.tsx`): added Inbox (with orange unread badge, realtime updates from sms_conversations) and Train TalkMate. Inbox is plan-gated with GROWTH lockTag on Starter.
+- Admin portal shell (`src/components/admin/admin-portal-shell.tsx`): added Inbox and Train TalkMate to mirror the client portal.
+
+**Website (talkmate-website)**
+- Homepage `src/app/page.tsx` — new "Customer care, automated" section with 4 cards: Two-way SMS Inbox, Train TalkMate, Missed Call Win-back, Google Review Requests. Inserted between Integrations (09) and Industries (10).
+- `/features` page — 4 new feature rows added to the CORE array. Uses Lucide Inbox / Sparkles / PhoneMissed / Star.
+- `PricingCards.tsx` — Starter feature list now includes Train TalkMate + Missed Call Win-back + Google Review Requests. Growth feature list now includes "Two-way SMS inbox with AI suggested replies".
+- No em dashes added. No mention of Vapi / Twilio / ElevenLabs / Make.com.
+
+**vercel.json** — added two crons:
+- `/api/cron/kb-sync` — `*/5 * * * *`
+- `/api/cron/review-follow-up` — `*/15 * * * *`
+
+### Env vars
+**No new keys required.** Existing env vars carry the work:
+- `TWILIO_AUTH_TOKEN` — signature validation on the inbound webhook
+- `TWILIO_ACCOUNT_SID` — existing
+- `VAPI_API_KEY` — KB sync to the Vapi assistant
+- `CRON_SECRET` — bearer auth on both new cron routes
+- `NEXT_PUBLIC_APP_URL` — used to construct the canonical webhook URL for Twilio signature comparison; must be set to `https://app.talkmate.com.au`
+- `GROK_API_KEY` — AI Suggest reply
+
+### Deploy steps (in order)
+
+1. **Apply migrations to prod Supabase** (`mdsfdaefsxwrakgkyflr`) — in order: 060 → 061 → 062. Verify each in the SQL editor with a `SELECT * FROM <new_table> LIMIT 1` and check the `businesses` columns appear.
+2. **Merge `feature/sprint-features-1` → `dev`** on talkmate-portal. Vercel preview will pick up the new crons.
+3. **Smoke test the preview**:
+   - Twilio webhook URL → `https://<preview>.vercel.app/api/webhooks/twilio/sms-inbound`. Send a manual SMS, verify it lands in sms_messages.
+   - Visit `/inbox` as a Growth/Pro client.
+   - Visit `/train`, add an FAQ, click Sync Now.
+   - Visit `/settings` → Automation tab, toggle reviews on, save.
+4. **Merge `dev` → `main`** to push to prod once smoke tests pass.
+5. **Twilio Console** (manual — Donna or Irfan):
+   - For every existing client with a Twilio number, set the inbound SMS webhook to `https://app.talkmate.com.au/api/webhooks/twilio/sms-inbound`.
+   - Populate `businesses.twilio_phone_number` and `businesses.twilio_phone_sid` for GM Towing and Spectrum Towing (the inbound webhook uses these to identify the receiving business).
+6. **Website**: Merge `feature/sprint-features-1` → `main` on talkmate-website. Vercel auto-deploys talkmate.com.au.
+
+### Manual handoff items (Donna / Irfan)
+
+1. **Twilio webhook update**: for each existing client's Twilio number in the Twilio Console, set the inbound SMS webhook URL to `https://app.talkmate.com.au/api/webhooks/twilio/sms-inbound`.
+2. **Populate `twilio_phone_number` / `twilio_phone_sid`** in `businesses` for current live clients (GM Towing, Spectrum Towing, and any other client with a dedicated Twilio number). Without this, the inbound webhook can't identify which business an SMS is for and the message falls into the void (logged as `no business matched To number`).
+3. **Make.com scenarios** — small future updates worth noting:
+   - **Callback Reminder (5684595)** and **Dispatch Job (5684671)**: Both send outbound SMS via Make.com's Twilio module. If you want them to surface in the new Inbox, update the Make.com Twilio module to use the business's own number, and rely on the same Twilio sender + `sms_messages` logging (the Vapi webhook + `sendSMS` already log there). Alternatively, point them at a new `POST /api/sms/log-outbound` route — not built in Session 1 since Make.com still works as-is.
+   - **Auto Agent Brief (5668121)**: This scenario writes to the Vapi assistant's `systemPrompt`. The new Train TalkMate sync also writes to `systemPrompt`, but **only the `BUSINESS KNOWLEDGE:` block** (anchored by regex). They do not collide. Confirm by running the scenario once after a KB sync and verifying both the agent-brief content and the BUSINESS KNOWLEDGE block survive.
+4. **Mobile app (talkmate-mobile)**: not touched in Session 1. Brief asks for:
+   - Inbox tab: list sms_conversations, tap → thread view + send capability, pull to refresh, push notification on new inbound sms_message
+   - Dashboard home: "Unread messages: X" card linking to inbox
+   - Train TalkMate: read-only list of KB entries + Sync button
+   - Settings: win-back enable/disable toggle, review requests enable/disable + Google Review URL
+   - Scoping: add these in a follow-on `feature/sprint-features-1-mobile` branch in `talkmate-mobile` (Expo). The API contract is in place — every mobile call just needs to fetch from `/api/sms/conversations`, `/api/knowledge-base`, etc. with the user's session token.
+5. **Admin clients list columns** — brief asked for new columns (Unread SMS, KB Status, Win-back On, Reviews On) on `/admin/clients`. Not added in Session 1 to avoid destabilising the existing complex query. Tracked as a Session 2 follow-up.
+
+### Risk + rollback
+
+- **Migrations are additive only**. Rolling back the merge to `dev` does not require migration rollback — the new columns / tables stay but have no readers. To fully revert, drop the 3 tables (cascade) and drop the new columns.
+- **Twilio inbound webhook** fails open (returns empty TwiML) on any internal error, so an outage there doesn't 5xx Twilio. It DOES 403 on invalid signature — that's by design.
+- **Vapi webhook win-back** is fire-and-forget; any failure logs `console.error` and does not block the rest of `handleEndOfCall`. The existing call-logging pipeline is untouched.
+- **KB sync** preserves provider/model/temperature/tools verbatim on PATCH — it cannot accidentally retune the agent. If a PATCH fails, the business is marked `kb_sync_status='error'` and the cron retries on the next 5-min tick.
+
+---
+
 ## Session 56 — Demo system (2026-05-29)
 
 ### Branch

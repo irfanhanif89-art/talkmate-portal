@@ -10,6 +10,7 @@ import {
   Lock, LogOut, Shield, X, Users, GitBranch, Palette,
   UserCheck, Crown, BookOpen, PhoneCall,
   Truck, Car, ClipboardList, Tag, MapPin, CalendarDays, HelpCircle,
+  Inbox as InboxIcon, Sparkles,
 } from 'lucide-react'
 
 interface Props {
@@ -75,6 +76,33 @@ export default function PortalSidebar(props: Props) {
     return () => { cancelled = true }
   }, [isAdmin])
 
+  // Sprint sprint 1 — Inbox unread badge. Subscribes to realtime so the
+  // count refreshes as soon as a new SMS lands without forcing a poll.
+  const [smsUnread, setSmsUnread] = useState(0)
+  useEffect(() => {
+    const supabase = createClient()
+    let cancelled = false
+    async function refresh() {
+      try {
+        const r = await fetch('/api/sms/conversations')
+        if (!r.ok) return
+        const d = (await r.json()) as { totalUnread?: number }
+        if (!cancelled && typeof d.totalUnread === 'number') setSmsUnread(d.totalUnread)
+      } catch { /* silent */ }
+    }
+    void refresh()
+    const channel = supabase
+      .channel('sidebar-sms-unread')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sms_conversations' }, () => {
+        void refresh()
+      })
+      .subscribe()
+    return () => {
+      cancelled = true
+      void supabase.removeChannel(channel)
+    }
+  }, [])
+
   async function logout() {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -107,6 +135,16 @@ export default function PortalSidebar(props: Props) {
       label: 'Overview',
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
+        // Sprint Session 1 — Two-way SMS inbox. Growth+ feature per the
+        // pricing matrix; Starter sees the locked tag but the page itself
+        // still renders an upgrade prompt.
+        {
+          href: '/inbox', label: 'Inbox', icon: InboxIcon, show: true,
+          badge: smsUnread > 0
+            ? { text: smsUnread > 99 ? '99+' : String(smsUnread), bg: '#E8622A', color: '#FFFFFF' }
+            : undefined,
+          lockTag: !isPaidPlan(props.plan) ? 'GROWTH' : undefined,
+        },
         {
           href: '/calls', label: 'Calls', icon: Phone, show: true,
           badge: props.todayCallCount > 0 ? { text: String(props.todayCallCount), bg: 'rgba(74,159,232,0.18)', color: '#4A9FE8' } : undefined,
@@ -138,6 +176,10 @@ export default function PortalSidebar(props: Props) {
         },
         { href: '/contacts/pipeline', label: 'Pipeline', icon: GitBranch, show: !!props.hasPipeline },
         { href: '/catalog', label: 'Services & Menu', icon: FileText, show: true },
+        // Sprint Session 1 — Train TalkMate is the self-service KB editor.
+        // Available on every plan; the page itself shows a pending-sync
+        // badge when the user has unsynced changes.
+        { href: '/train', label: 'Train TalkMate', icon: Sparkles, show: isManagerOrOwner },
         // Agent Settings + Call Routing are config — staff (view-only)
         // don't get a nav entry. They can still hit /calls etc.
         { href: '/settings', label: 'Agent Settings', icon: Settings, show: isManagerOrOwner },

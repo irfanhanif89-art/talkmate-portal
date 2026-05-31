@@ -9,7 +9,7 @@ import ServicesEditor, { type Service } from '@/components/portal/services-edito
 import SyncAgentButton from '@/components/portal/sync-agent-button'
 import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-settings'
 
-type TabKey = 'business' | 'ai' | 'notifications' | 'team' | 'integrations'
+type TabKey = 'business' | 'ai' | 'automation' | 'notifications' | 'team' | 'integrations'
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -61,6 +61,17 @@ export default function SettingsPage() {
   const [industry, setIndustry] = useState<string | null>(null)
   const [loadedServices, setLoadedServices] = useState(false)
   const [savingServices, setSavingServices] = useState(false)
+
+  // Sprint Session 1 — Automation tab state (win-back + review requests).
+  const [winbackEnabled, setWinbackEnabled] = useState(true)
+  const [winbackMessage, setWinbackMessage] = useState('')
+  const [reviewsEnabled, setReviewsEnabled] = useState(false)
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('')
+  const [reviewDelayHours, setReviewDelayHours] = useState(2)
+  const [reviewMessage, setReviewMessage] = useState('')
+  const [avgJobValue, setAvgJobValue] = useState<string>('250')
+  const [savingAutomation, setSavingAutomation] = useState(false)
+  const [automationStats, setAutomationStats] = useState<{ winbacks: number; reviews: number }>({ winbacks: 0, reviews: 0 })
 
   async function changePassword() {
     if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match ❌'); return }
@@ -138,9 +149,75 @@ export default function SettingsPage() {
         urgentCall: !!(cfg.urgent_call_number as string),
         urgentNum: (cfg.urgent_call_number as string) || '',
       })
+
+      // Sprint Session 1 — Automation tab. Columns added in migration 062.
+      setWinbackEnabled((biz.winback_enabled as boolean | null) ?? true)
+      setWinbackMessage((biz.winback_custom_message as string | null) ?? '')
+      setReviewsEnabled((biz.review_requests_enabled as boolean | null) ?? false)
+      setGoogleReviewUrl((biz.google_review_url as string | null) ?? '')
+      setReviewDelayHours((biz.review_request_delay_hours as number | null) ?? 2)
+      setReviewMessage((biz.review_request_custom_message as string | null) ?? '')
+      const ajv = biz.avg_job_value as number | string | null | undefined
+      setAvgJobValue(ajv != null ? String(ajv) : '250')
+
+      // Lightweight stats — first of this month onwards.
+      void (async () => {
+        const businessId = biz.id as string
+        const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+        const [winbacksRes, reviewsRes] = await Promise.all([
+          supabase.from('calls').select('id', { count: 'exact', head: true })
+            .eq('business_id', businessId)
+            .eq('winback_sent', true)
+            .gte('winback_sent_at', startOfMonth),
+          supabase.from('review_requests').select('id', { count: 'exact', head: true })
+            .eq('business_id', businessId)
+            .gte('sent_at', startOfMonth),
+        ])
+        setAutomationStats({
+          winbacks: winbacksRes.count ?? 0,
+          reviews: reviewsRes.count ?? 0,
+        })
+      })()
     }
     const { data: members } = await supabase.from('users').select('email, role').eq('business_id', (b as Record<string, string>)?.id)
     setTeam(members || [])
+  }
+
+  // Sprint Session 1 — automation save handler. Columns are top-level
+  // on businesses (migration 062), so we patch them directly rather than
+  // going through notifications_config.
+  async function saveAutomation() {
+    if (!biz.id) return
+    setSavingAutomation(true)
+    try {
+      const url = googleReviewUrl.trim()
+      // Reject obviously malformed URLs — protects the review SMS from
+      // landing with "Leave a review: undefined" etc.
+      if (reviewsEnabled && url && !/^https?:\/\//i.test(url)) {
+        setSaved('Review URL must start with https:// ❌')
+        setTimeout(() => setSaved(''), 4000)
+        return
+      }
+      const parsedAvg = Number.parseFloat(avgJobValue)
+      const patch: Record<string, unknown> = {
+        winback_enabled: winbackEnabled,
+        winback_custom_message: winbackMessage.trim() || null,
+        review_requests_enabled: reviewsEnabled,
+        google_review_url: url || null,
+        review_request_delay_hours: reviewDelayHours,
+        review_request_custom_message: reviewMessage.trim() || null,
+        avg_job_value: Number.isFinite(parsedAvg) && parsedAvg >= 0 ? parsedAvg : 250,
+      }
+      const { error } = await supabase.from('businesses').update(patch).eq('id', biz.id)
+      if (error) {
+        setSaved('Save failed ❌')
+      } else {
+        setSaved('Saved ✅')
+      }
+    } finally {
+      setSavingAutomation(false)
+      setTimeout(() => setSaved(''), 3000)
+    }
   }
 
   // Session 27 (H7) — whitelist the columns we write so we never blow away
@@ -268,6 +345,7 @@ export default function SettingsPage() {
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'business', label: '🏢 Business Info' },
     { key: 'ai', label: '🤖 AI Voice Agent' },
+    { key: 'automation', label: '⚡ Automation' },
     { key: 'notifications', label: '🔔 Notifications' },
     { key: 'team', label: '👥 Team' },
     { key: 'integrations', label: '🔗 Integrations' },
@@ -453,6 +531,143 @@ export default function SettingsPage() {
               initialLastSyncedAt={biz.agent_last_synced_at ?? null}
             />
           </div>
+        </div>
+      )}
+
+      {/* Sprint Session 1 — Automation tab (win-back + Google reviews) */}
+      {tab === 'automation' && (
+        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Automation</h3>
+          <p style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 24 }}>
+            Win back missed callers and ask happy customers for a Google review — automatically.
+          </p>
+
+          {/* Missed Call Win-back card */}
+          <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16, border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 4 }}>Missed Call Win-back</div>
+                <div style={{ fontSize: 12, color: '#7BAED4' }}>Sent automatically when a caller hangs up within 15 seconds.</div>
+              </div>
+              <Toggle checked={winbackEnabled} onChange={setWinbackEnabled} />
+            </div>
+            {winbackEnabled && (
+              <div>
+                <label style={lbl}>Message</label>
+                <textarea
+                  value={winbackMessage}
+                  onChange={e => setWinbackMessage(e.target.value)}
+                  rows={3}
+                  placeholder="Hey, we missed your call at {business_name}. We are here to help, how can we assist?"
+                  style={ta}
+                />
+                <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 6 }}>
+                  Use <code style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3 }}>{'{business_name}'}</code> for your business name. Leave blank for the default message.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Google Review Requests card */}
+          <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16, border: '1px solid rgba(255,255,255,0.04)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 4 }}>Google Review Requests</div>
+                <div style={{ fontSize: 12, color: '#7BAED4' }}>Texts a review link to callers a few hours after their call.</div>
+              </div>
+              <Toggle checked={reviewsEnabled} onChange={setReviewsEnabled} />
+            </div>
+            {reviewsEnabled && (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <div>
+                  <label style={lbl}>Google Review URL</label>
+                  <input
+                    type="url"
+                    value={googleReviewUrl}
+                    onChange={e => setGoogleReviewUrl(e.target.value)}
+                    placeholder="https://g.page/r/your-business/review"
+                    style={inp}
+                  />
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ fontSize: 11, color: '#4A9FE8', cursor: 'pointer' }}>How to find your Google Review link</summary>
+                    <ol style={{ fontSize: 12, color: '#7BAED4', paddingLeft: 20, marginTop: 8, lineHeight: 1.6 }}>
+                      <li>Search your business on Google.</li>
+                      <li>Click <em>Get more reviews</em> in the business panel.</li>
+                      <li>Copy the link that appears and paste it above.</li>
+                    </ol>
+                  </details>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={lbl}>Send after</label>
+                    <select
+                      value={reviewDelayHours}
+                      onChange={e => setReviewDelayHours(parseInt(e.target.value, 10))}
+                      style={inp}
+                    >
+                      <option value={1}>1 hour</option>
+                      <option value={2}>2 hours</option>
+                      <option value={4}>4 hours</option>
+                      <option value={24}>24 hours</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Average job value (AUD)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={avgJobValue}
+                      onChange={e => setAvgJobValue(e.target.value)}
+                      style={inp}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={lbl}>Custom message (optional)</label>
+                  <textarea
+                    value={reviewMessage}
+                    onChange={e => setReviewMessage(e.target.value)}
+                    rows={3}
+                    placeholder="Thanks for choosing {business_name}! Leave us a review: {review_url}"
+                    style={ta}
+                  />
+                  <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 6 }}>
+                    Use <code style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3 }}>{'{business_name}'}</code> and{' '}
+                    <code style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3 }}>{'{review_url}'}</code>.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+            <div style={{ background: '#071829', borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, color: '#7BAED4', fontWeight: 600, marginBottom: 4 }}>Win-backs this month</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#E8622A' }}>{automationStats.winbacks}</div>
+            </div>
+            <div style={{ background: '#071829', borderRadius: 12, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, color: '#7BAED4', fontWeight: 600, marginBottom: 4 }}>Review requests this month</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#22C55E' }}>{automationStats.reviews}</div>
+            </div>
+          </div>
+
+          <button
+            onClick={saveAutomation}
+            disabled={savingAutomation}
+            style={{
+              background: '#E8622A', color: 'white', border: 'none',
+              padding: '12px 28px', borderRadius: 10,
+              fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15,
+              cursor: 'pointer', width: '100%',
+              opacity: savingAutomation ? 0.6 : 1,
+            }}
+          >
+            {savingAutomation ? 'Saving…' : 'Save Automation Settings'}
+          </button>
         </div>
       )}
 

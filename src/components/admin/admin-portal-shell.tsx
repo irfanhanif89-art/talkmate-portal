@@ -6,6 +6,7 @@ import {
   Lock, Users, PhoneCall, BookOpen,
   UserCheck, Crown, ClipboardList, ExternalLink, ArrowLeft,
   Tag, MapPin, CalendarDays, MessageCircle, ShieldCheck,
+  Inbox as InboxIcon, Sparkles,
 } from 'lucide-react'
 
 interface NavItem {
@@ -24,6 +25,9 @@ const SECTIONS: Section[] = [
     label: 'Overview',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      // Sprint Session 1 — two-way SMS inbox per client. Admin can view
+      // and reply on behalf via the adminClientId override on the API.
+      { href: '/inbox', label: 'Inbox', icon: InboxIcon },
       { href: '/calls', label: 'Calls', icon: Phone },
       // Session 14 — quotes log + service area config.
       { href: '/quotes', label: 'Quotes', icon: Tag },
@@ -39,6 +43,8 @@ const SECTIONS: Section[] = [
     items: [
       { href: '/contacts', label: 'Contacts', icon: Users },
       { href: '/catalog', label: 'Services & Menu', icon: FileText },
+      // Sprint Session 1 — Train TalkMate KB editor.
+      { href: '/train', label: 'Train TalkMate', icon: Sparkles },
       { href: '/settings', label: 'Agent Settings', icon: Settings },
       { href: '/settings/routing', label: 'Call Routing', icon: PhoneCall },
       { href: '/settings/service-area', label: 'Service Area', icon: MapPin },
