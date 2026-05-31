@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { computeRoiTotals, formatRoiDollars } from '@/lib/roi'
 import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = { title: 'Admin' }
@@ -134,9 +135,27 @@ export default async function AdminPage() {
   const startOfMonth = new Date(); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
   const newThisMonth = businesses?.filter(b => new Date(b.created_at) >= startOfMonth).length || 0
 
+  // Sprint Session 2 — platform-wide recovered-revenue ROI totals this month.
+  const roiTotals = await computeRoiTotals(adminClient)
+
   return (
     <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 14 }}>Admin</h1>
+
+      {/* Sprint Session 2 — platform-wide recovered-revenue ROI summary (this month). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 22 }}>
+        {[
+          { label: 'Total estimated ROI this month', value: formatRoiDollars(roiTotals.totalEstimatedRevenue), color: '#E8622A' },
+          { label: 'Chat leads captured this month', value: roiTotals.chatLeads.toLocaleString('en-AU'), color: '#22C55E' },
+          { label: 'Win-backs sent this month', value: roiTotals.winbacksSent.toLocaleString('en-AU'), color: '#4A9FE8' },
+        ].map(stat => (
+          <div key={stat.label} style={{ padding: 18, borderRadius: 14, background: 'linear-gradient(135deg, #0A1E38, #071829)', border: '1px solid rgba(232,98,42,0.22)', overflow: 'hidden' }}>
+            <div style={{ height: 2, background: stat.color, marginBottom: 14, marginLeft: -18, marginRight: -18, marginTop: -18 }} />
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{stat.label}</p>
+            <p style={{ fontSize: 28, fontWeight: 800, color: 'white', letterSpacing: '-1px' }}>{stat.value}</p>
+          </div>
+        ))}
+      </div>
 
       {/*
         Horizontal section-nav tab bar removed. Persistent navigation now

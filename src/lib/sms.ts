@@ -68,6 +68,9 @@ export type SmsType =
   // Session sprint 1 — manual reply from a human in the SMS inbox.
   // Counts against quota: it's a deliberate customer touchpoint.
   | 'inbox_reply'
+  // Sprint Session 2 — website chatbot captured a lead; the business owner
+  // gets an SMS heads-up. Operational alert, bypasses plan limit (below).
+  | 'chat_lead_notification'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -103,6 +106,8 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   // gated by quota or the value-prop breaks.
   'missed_call_winback',
   'review_request',
+  // Sprint Session 2 — chatbot lead owner alert is operational.
+  'chat_lead_notification',
 ])
 
 // Session sprint 1 — sent_by classification for the inbox view.

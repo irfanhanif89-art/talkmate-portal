@@ -15,6 +15,16 @@ interface QualitySummary {
   count: number
 }
 
+interface BusinessRoi {
+  estimatedRevenue: number
+  chatLeads: number
+  chatbotEnabled: boolean
+}
+
+function fmtRoi(n: number): string {
+  return `$${Math.round(n).toLocaleString('en-AU')}`
+}
+
 function qualityDot(q: QualitySummary | undefined): { color: string; tooltip: string } {
   if (!q || q.count === 0) {
     return { color: 'rgba(255,255,255,0.18)', tooltip: 'No scored calls yet' }
@@ -34,10 +44,12 @@ export default function AdminClientsView({
   initialBusinesses,
   partners,
   qualityByBusiness = {},
+  roiByBusiness = {},
 }: {
   initialBusinesses: AdminBusiness[]
   partners: PartnerOption[]
   qualityByBusiness?: Record<string, QualitySummary>
+  roiByBusiness?: Record<string, BusinessRoi>
 }) {
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [createOpen, setCreateOpen] = useState(false)
@@ -71,13 +83,14 @@ export default function AdminClientsView({
         (b.phone_number ?? '').toLowerCase().includes(s)
       )
     })
-    // Sort trials to the top by default so admin attention lands there first.
+    // Sprint Session 2 — default sort by estimated this-month ROI descending
+    // so the highest-value clients surface first.
     return [...list].sort((a, b) => {
-      const aTrial = a.account_status === 'trial' ? 0 : 1
-      const bTrial = b.account_status === 'trial' ? 0 : 1
-      return aTrial - bTrial
+      const aRoi = roiByBusiness[a.id]?.estimatedRevenue ?? 0
+      const bRoi = roiByBusiness[b.id]?.estimatedRevenue ?? 0
+      return bRoi - aRoi
     })
-  }, [businesses, statusFilter, search])
+  }, [businesses, statusFilter, search, roiByBusiness])
 
   function patchBusiness(id: string, patch: Partial<AdminBusiness>) {
     setBusinesses(rows => rows.map(b => b.id === id ? { ...b, ...patch } : b))
@@ -251,7 +264,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Status', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -259,7 +272,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={13} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={16} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
                   No clients match this filter.
                 </td>
               </tr>
@@ -329,6 +342,24 @@ export default function AdminClientsView({
                   })()}
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{industryLabel(b.industry)}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: 'white', fontWeight: 600 }}>
+                  {roiByBusiness[b.id]?.chatLeads ?? 0}
+                </td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: (roiByBusiness[b.id]?.estimatedRevenue ?? 0) > 0 ? '#E8622A' : '#4A7FBB' }}>
+                  {fmtRoi(roiByBusiness[b.id]?.estimatedRevenue ?? 0)}
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  {(() => {
+                    const on = roiByBusiness[b.id]?.chatbotEnabled ?? false
+                    return (
+                      <span style={{
+                        fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700,
+                        background: on ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.06)',
+                        color: on ? '#22C55E' : '#7BAED4',
+                      }}>{on ? 'Enabled' : 'Disabled'}</span>
+                    )
+                  })()}
+                </td>
                 <td style={{ padding: '12px 16px' }}>
                   <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700, background: `${statusColor(b.account_status)}22`, color: statusColor(b.account_status) }}>
                     {statusLabel(b.account_status)}

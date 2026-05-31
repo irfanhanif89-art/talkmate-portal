@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { computeRoiForBusinessList } from '@/lib/roi'
 import AdminClientsView from './admin-clients-view'
 
 export const metadata: Metadata = { title: 'Client Management' }
@@ -107,6 +108,11 @@ export default async function AdminClientsPage() {
     qualityByBusiness[r.business_id] = bucket
   }
 
+  // Sprint Session 2 — per-business this-month recovered-revenue ROI, chat-lead
+  // count and chatbot-enabled flag for the three new list columns. Batch pass,
+  // not N+1.
+  const roiByBusiness = await computeRoiForBusinessList(admin)
+
   return (
     <div style={{ padding: 28, maxWidth: 1300, margin: '0 auto', color: '#F2F6FB' }}>
       <Link href="/admin" style={{ fontSize: 13, color: '#7BAED4', textDecoration: 'none' }}>← Admin</Link>
@@ -114,6 +120,7 @@ export default async function AdminClientsPage() {
         initialBusinesses={businesses ?? []}
         partners={partners ?? []}
         qualityByBusiness={qualityByBusiness}
+        roiByBusiness={roiByBusiness}
       />
     </div>
   )

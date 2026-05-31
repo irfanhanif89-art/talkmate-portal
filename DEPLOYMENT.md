@@ -5366,3 +5366,82 @@ These cannot be done in code — Donna runs them after merge:
 - [ ] Scheduler view modal shows REF badge + confirmation-loop
       timestamps when set; status badge colours match the spec.
 - [ ] `npm run build` passes with zero errors. (Confirmed.)
+
+---
+
+# Sprint Session 2 — AI Website Chatbot + ROI Dashboard
+
+Branch: `feature/sprint-features-2` (off `origin/dev`). Website repo branch of
+the same name in `talkmate-website`.
+
+## Decisions and deviations from the brief
+- **Migration numbers**: brief specified 041/042; those are long taken on this
+  repo (contractor signature + session-27 fixes). Renumbered to **063** (chat
+  sessions) and **064** (ROI dashboard), sitting after the Session 1 migrations
+  060-062. The brief's "Session 1 = migrations 038-040" framing is also stale:
+  Session 1 actually landed as 060/061/062 on this repo.
+- **RLS predicate**: brief wrote `get_current_client_id()`; the canonical helper
+  on this codebase is `private.get_current_client_id()`. Used throughout.
+- **Plan column**: brief referenced `plan_type`; the real column is
+  `businesses.plan` ('starter'|'growth'|'pro'). Gating uses `plan`.
+- **`businesses.avg_job_value`** already exists (migration 062). 064 does NOT
+  re-add it; only the three `roi_conversion_rate_*` columns + a dismiss stamp.
+- **Grok model**: brief said `grok-3`. The live codebase default is
+  `grok-4.20-0309-non-reasoning` (src/lib/grok.ts). The chatbot calls the lib
+  default via `chatComplete` (never a hardcoded old model, never grok-2-latest).
+- **contacts table**: the live v2 table (migration 008) keys on `client_id`
+  (not `business_id`) with a unique index on `(client_id, phone) WHERE
+  is_merged = false`. `upsertContactByPhone` (src/lib/chat.ts) writes that
+  schema. (An initial draft used the legacy v1 columns; caught in review and
+  fixed before merge.)
+- **roi_events**: the ROI dashboard calculates directly from source tables
+  (calls / chat_sessions / review_requests) per the brief, so `roi_events` is a
+  supplementary audit trail. Wired at: chat session start + chat lead (chat
+  message/lead routes), `winback_sent` (vapi webhook), `review_request_sent`
+  (review-follow-up cron). Per-call `call_answered`/`call_after_hours` inserts
+  were deliberately NOT added: high-volume hot path, zero effect on the
+  displayed numbers (after-hours is computed from `calls.created_at` in
+  Australia/Brisbane time at query time).
+- **Widget size**: `public/widget/talkmate-chat.js` is ~25 KB unminified
+  (brief target was 15 KB). No build step is allowed for the widget, so this is
+  the honest readable size; Vercel gzips static assets to roughly 6 KB on the
+  wire. Can be minified later if desired.
+
+## Migrations (run order: preview first, then prod)
+- [ ] Apply `063_chat_sessions.sql` to **preview** (project rgifivtzmjvanzqwgadq)
+- [ ] Apply `064_roi_dashboard.sql` to preview
+- [ ] Verify on preview, then apply both to **prod** (project mdsfdaefsxwrakgkyflr)
+
+  NOTE: as of this build neither migration has been applied to any database.
+  Applying DDL to the shared preview project was intentionally left for explicit
+  sign-off (the auto-mode classifier blocked the agent from doing it unprompted,
+  which is correct).
+
+## Env vars
+- `GROK_API_KEY` — already set in prod (used by call scoring). Confirm it also
+  exists in the **preview** Vercel environment, or the chatbot returns its
+  canned fallback reply on preview.
+- `SUPABASE_SERVICE_ROLE_KEY` — already set; used by the public /api/chat/* routes.
+- `NEXT_PUBLIC_APP_URL` — already set (`https://app.talkmate.com.au`).
+- `NEXT_PUBLIC_WIDGET_SCRIPT_URL` — **new**, optional. Defaults in code to
+  `https://app.talkmate.com.au/widget/talkmate-chat.js`. Set it in Vercel
+  (preview + prod) if the widget URL should ever differ from that default.
+- `NEXT_PUBLIC_TALKMATE_CHATBOT_BUSINESS_ID` — **new**, in the **website** repo.
+  The TalkMate-own widget on talkmate.com.au stays dormant until this is set to
+  TalkMate's real business UUID.
+
+## Manual handoff (Donna / Irfan)
+1. Apply migrations 063 + 064 to preview, verify, then prod.
+2. Confirm `GROK_API_KEY` is present in the preview Vercel env.
+3. Add `NEXT_PUBLIC_WIDGET_SCRIPT_URL` to Vercel (optional, has fallback).
+4. Set `NEXT_PUBLIC_TALKMATE_CHATBOT_BUSINESS_ID` in the website Vercel env to
+   light up TalkMate's own website chatbot.
+5. Existing clients default to `chatbot_enabled = false` (migration default).
+
+## Verification status at handoff
+- `npx tsc --noEmit`: 0 errors. `npm run build`: success, all 11 new routes
+  registered.
+- Validator: PASS. Reviewer: one RED blocker (contacts schema) found and fixed,
+  re-verified; integration surface (Vapi webhook, cron, SMS quota, RLS scoping,
+  migration safety) clean.
+- Live browser QA: NOT yet run, blocked on migrations being applied to a DB.
