@@ -26,6 +26,8 @@
     { "path": "/api/cron/haiku-watcher",     "schedule": "37 * * * *"   },
     { "path": "/api/cron/reset-demo-business", "schedule": "17 */4 * * *" },
     { "path": "/api/cron/process-followups", "schedule": "50 * * * *"   },
-    { "path": "/api/cron/dispatch-timeout",  "schedule": "*/5 * * * *"  }
+    { "path": "/api/cron/dispatch-timeout",  "schedule": "*/5 * * * *"  },
+    { "path": "/api/cron/kb-sync",           "schedule": "*/5 * * * *"  },
+    { "path": "/api/cron/review-follow-up",  "schedule": "*/15 * * * *" }
   ]
 }
