@@ -68,11 +68,31 @@ export async function GET(request: NextRequest) {
     endedAt: s.ended_at,
   }))
 
+  // This-month stats for the analytics card, including the deflection count
+  // (assistant replies that fell back to "I will have someone follow up").
+  const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString()
+  const [convThisMonth, leadsThisMonth, answered, needsFollowUp] = await Promise.all([
+    admin.from('chat_sessions').select('id', { count: 'exact', head: true })
+      .eq('business_id', auth.businessId).gte('started_at', monthStart),
+    admin.from('chat_sessions').select('id', { count: 'exact', head: true })
+      .eq('business_id', auth.businessId).eq('lead_captured', true).gte('started_at', monthStart),
+    admin.from('chat_messages').select('id', { count: 'exact', head: true })
+      .eq('business_id', auth.businessId).eq('role', 'assistant').eq('is_fallback', false).gte('created_at', monthStart),
+    admin.from('chat_messages').select('id', { count: 'exact', head: true })
+      .eq('business_id', auth.businessId).eq('role', 'assistant').eq('is_fallback', true).gte('created_at', monthStart),
+  ])
+
   return NextResponse.json({
     ok: true,
     sessions,
     page,
     pageSize: PAGE_SIZE,
     total: count ?? 0,
+    stats: {
+      conversationsThisMonth: convThisMonth.count ?? 0,
+      leadsThisMonth: leadsThisMonth.count ?? 0,
+      questionsAnswered: answered.count ?? 0,
+      needsFollowUp: needsFollowUp.count ?? 0,
+    },
   })
 }

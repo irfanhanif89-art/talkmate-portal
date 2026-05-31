@@ -144,7 +144,7 @@ async function roiAfterHoursCount(
 ): Promise<number> {
   let q = admin
     .from('calls')
-    .select('created_at')
+    .select('created_at, winback_sent')
     .eq('business_id', businessId)
     .gte('created_at', range.start.toISOString())
     .limit(ROI_CALLS_ROW_CAP)
@@ -156,9 +156,12 @@ async function roiAfterHoursCount(
   }
   let n = 0
   for (const row of data ?? []) {
-    const ca = (row as { created_at: string | null }).created_at
-    if (!ca) continue
-    if (roiIsAfterHours(new Date(ca))) n++
+    const r = row as { created_at: string | null; winback_sent: boolean | null }
+    if (!r.created_at) continue
+    // Exclude win-back calls: they are valued in the win-back bucket, so
+    // counting them here too would double-count the same recovered job.
+    if (r.winback_sent === true) continue
+    if (roiIsAfterHours(new Date(r.created_at))) n++
   }
   return n
 }
@@ -333,6 +336,9 @@ export async function computeRoiForBusinessList(
     winback_sent: boolean | null
     winback_sent_at: string | null
   }>) {
+    // Exclude win-back calls so they are not double-counted in both the
+    // after-hours and win-back buckets, matching computeRoiForBusiness.
+    if (c.winback_sent === true) continue
     if (c.created_at && roiIsAfterHours(new Date(c.created_at))) {
       afterHoursByBiz[c.business_id] = (afterHoursByBiz[c.business_id] ?? 0) + 1
     }

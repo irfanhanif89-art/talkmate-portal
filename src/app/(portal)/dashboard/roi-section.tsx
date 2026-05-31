@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Moon, MessageSquare, Globe, Star, Phone,
-  ChevronDown, TrendingUp, TrendingDown, Info, X,
+  ChevronDown, TrendingUp, TrendingDown, Info, X, CheckCircle2,
 } from 'lucide-react'
 
 const NAVY = '#061322'
@@ -28,6 +28,7 @@ interface RoiResponse {
   reviewRequestsSent: { count: number }
   totalCallsAnswered: number
   avgJobValue: number
+  conversionRates?: { calls: number; chat: number; winback: number }
   previousPeriod: { totalEstimatedRevenue: number } | null
 }
 
@@ -111,10 +112,22 @@ export default function RoiSection() {
   const [howOpen, setHowOpen] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
+  // Adjust-assumptions editor.
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustJobValue, setAdjustJobValue] = useState('')
+  const [adjustCalls, setAdjustCalls] = useState('')
+  const [adjustChat, setAdjustChat] = useState('')
+  const [adjustWinback, setAdjustWinback] = useState('')
+  const [adjustSaving, setAdjustSaving] = useState(false)
+  const [adjustSaved, setAdjustSaved] = useState(false)
+  const [adjustError, setAdjustError] = useState<string | null>(null)
+  const [refetchKey, setRefetchKey] = useState(0)
+
   // Fetch ROI for the selected period. All setState lives inside the async
   // chain (the leading setLoading runs in the first .then, never synchronously
   // in the effect body) so we satisfy react-hooks/set-state-in-effect. Resets
   // the count-up by flipping loading true while the new period is in flight.
+  // refetchKey bumps after saving assumptions so the headline updates.
   useEffect(() => {
     let cancelled = false
     Promise.resolve()
@@ -124,11 +137,64 @@ export default function RoiSection() {
       .then((d: RoiResponse | null) => {
         if (cancelled) return
         setData(d && d.ok ? d : null)
+        // Seed the editor inputs from the live response (only when not mid-edit).
+        if (d && d.ok) {
+          setAdjustJobValue(String(d.avgJobValue ?? ''))
+          setAdjustCalls(String(d.conversionRates?.calls ?? ''))
+          setAdjustChat(String(d.conversionRates?.chat ?? ''))
+          setAdjustWinback(String(d.conversionRates?.winback ?? ''))
+        }
       })
       .catch(() => { if (!cancelled) setData(null) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [period])
+  }, [period, refetchKey])
+
+  async function saveAssumptions() {
+    if (adjustSaving) return
+    const jobValue = Number(adjustJobValue)
+    const calls = Number(adjustCalls)
+    const chat = Number(adjustChat)
+    const winback = Number(adjustWinback)
+    // Client-side validation: value >= 0 and <= 1,000,000, rates 0-100.
+    if (!Number.isFinite(jobValue) || jobValue < 0 || jobValue > 1000000) {
+      setAdjustError('Average job value must be between 0 and 1,000,000.')
+      return
+    }
+    for (const r of [calls, chat, winback]) {
+      if (!Number.isFinite(r) || r < 0 || r > 100) {
+        setAdjustError('Conversion rates must be between 0 and 100.')
+        return
+      }
+    }
+    setAdjustSaving(true)
+    setAdjustSaved(false)
+    setAdjustError(null)
+    try {
+      const res = await fetch('/api/dashboard/roi', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          avgJobValue: jobValue,
+          conversionRateCalls: calls,
+          conversionRateChat: chat,
+          conversionRateWinback: winback,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d?.ok !== false) {
+        setAdjustSaved(true)
+        setTimeout(() => setAdjustSaved(false), 2500)
+        setRefetchKey(k => k + 1) // refetch so the headline reflects the new figures
+      } else {
+        setAdjustError('We could not save those figures. Please check them and try again.')
+      }
+    } catch {
+      setAdjustError('We could not save those figures. Please check them and try again.')
+    } finally {
+      setAdjustSaving(false)
+    }
+  }
 
   const target = data?.totalEstimatedRevenue ?? 0
   const animated = useCountUp(loading ? 0 : target)
@@ -233,11 +299,13 @@ export default function RoiSection() {
             background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
             fontSize: 12.5, color: '#C8D8EA', lineHeight: 1.6,
           }}>
-            We estimate the revenue TalkMate recovered by counting the after-hours calls it
-            answered, the win-back messages it sent to callers who hung up, and the leads it
-            captured from your website chat. Each of these is multiplied by your average job
-            value and an estimated conversion rate, then added together. Update your average
-            job value in settings to make this estimate more accurate.
+            This is an estimate, not a guarantee. We take your after-hours calls answered,
+            missed-call win-backs, and website chat leads, and multiply each by your average
+            job value ({formatDollars(data?.avgJobValue ?? 0)}) and an assumed conversion rate
+            (after-hours {data?.conversionRates?.calls ?? 0}%, win-backs{' '}
+            {data?.conversionRates?.winback ?? 0}%, chat {data?.conversionRates?.chat ?? 0}%).
+            Win-back calls are counted once, not twice. Adjust these figures below to match
+            your business.
           </div>
         )}
       </div>
@@ -319,6 +387,110 @@ export default function RoiSection() {
           />
         </div>
       ) : null}
+
+      {/* Adjust assumptions */}
+      {!loading && data && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={() => setAdjustOpen(o => !o)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: '#7BAED4', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', padding: 0,
+            }}
+          >
+            Adjust assumptions
+            <ChevronDown size={13} style={{ transform: adjustOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+          </button>
+
+          {adjustOpen && (
+            <div style={{
+              marginTop: 12, padding: 18, borderRadius: 14,
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <div style={{
+                display: 'grid', gap: 14,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+              }}>
+                <AdjustField label="Average job value ($)">
+                  <input
+                    type="number" min={0} max={1000000} step={1}
+                    value={adjustJobValue}
+                    onChange={e => { setAdjustJobValue(e.target.value); setAdjustError(null); setAdjustSaved(false) }}
+                    style={adjustInputStyle}
+                  />
+                </AdjustField>
+                <AdjustField label="After-hours conversion (%)">
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={adjustCalls}
+                    onChange={e => { setAdjustCalls(e.target.value); setAdjustError(null); setAdjustSaved(false) }}
+                    style={adjustInputStyle}
+                  />
+                </AdjustField>
+                <AdjustField label="Win-back conversion (%)">
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={adjustWinback}
+                    onChange={e => { setAdjustWinback(e.target.value); setAdjustError(null); setAdjustSaved(false) }}
+                    style={adjustInputStyle}
+                  />
+                </AdjustField>
+                <AdjustField label="Chat conversion (%)">
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={adjustChat}
+                    onChange={e => { setAdjustChat(e.target.value); setAdjustError(null); setAdjustSaved(false) }}
+                    style={adjustInputStyle}
+                  />
+                </AdjustField>
+              </div>
+
+              {adjustError && (
+                <div style={{ fontSize: 12.5, color: '#EF4444', marginTop: 14, lineHeight: 1.5 }}>
+                  {adjustError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+                <button
+                  type="button"
+                  onClick={saveAssumptions}
+                  disabled={adjustSaving}
+                  style={{
+                    background: ORANGE, color: 'white', border: 'none',
+                    padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                    cursor: adjustSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: adjustSaving ? 0.6 : 1,
+                  }}
+                >
+                  {adjustSaving ? 'Saving...' : 'Save'}
+                </button>
+                {adjustSaved && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#22C55E', fontSize: 13, fontWeight: 600 }}>
+                    <CheckCircle2 size={15} /> Saved
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+function AdjustField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#C8D8EA', marginBottom: 6 }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+const adjustInputStyle: React.CSSProperties = {
+  width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 9,
+  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)',
+  color: 'white', fontSize: 13, fontFamily: 'inherit', outline: 'none',
 }

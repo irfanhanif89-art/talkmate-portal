@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { CHAT_CORS_HEADERS, getClientIp, hashIp, checkRateLimit, upsertContactByPhone } from '@/lib/chat'
+import { CHAT_CORS_HEADERS, getClientIp, hashIp, checkRateLimit, upsertContactByPhone, originAllowed } from '@/lib/chat'
 import { sendSMS } from '@/lib/sms'
 
 export const dynamic = 'force-dynamic'
@@ -45,6 +45,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'session_not_found' }, { status: 404, headers: CHAT_CORS_HEADERS })
   }
 
+  // Origin lock (same as the message route).
+  const { data: gate } = await admin
+    .from('businesses')
+    .select('chatbot_allowed_domains')
+    .eq('id', businessId)
+    .limit(1)
+    .maybeSingle()
+  if (!originAllowed(request, gate?.chatbot_allowed_domains as string[] | null)) {
+    return NextResponse.json({ error: 'origin_not_allowed' }, { status: 403, headers: CHAT_CORS_HEADERS })
+  }
+
   const contactId = await upsertContactByPhone(admin, businessId, { name, phone, email })
 
   await admin.from('chat_sessions').update({
@@ -61,17 +72,23 @@ export async function POST(request: NextRequest) {
     source_id: sessionId, source_table: 'chat_sessions',
   })
 
-  // Text the owner. Non-fatal if owner_phone is unset or the send fails.
+  // Text the owner using the existing Session 30 owner-notification config
+  // (notifications_config.owner_number + alert_owner), not the deprecated
+  // businesses.owner_phone column. Non-fatal if unset or the send fails.
   const { data: business } = await admin
     .from('businesses')
-    .select('id, owner_phone, name')
+    .select('id, name, notifications_config')
     .eq('id', businessId)
     .limit(1)
     .maybeSingle()
 
-  if (business?.owner_phone) {
+  const cfg = (business?.notifications_config ?? {}) as Record<string, unknown>
+  const ownerNumber = typeof cfg.owner_number === 'string' ? cfg.owner_number.trim() : ''
+  const alertOwner = cfg.alert_owner !== false // default to sending when a number is set
+
+  if (ownerNumber && alertOwner) {
     void sendSMS({
-      to: business.owner_phone as string,
+      to: ownerNumber,
       message: `New chat lead from your website: ${name ?? 'A visitor'} - ${phone}`,
       clientId: businessId,
       smsType: 'chat_lead_notification',

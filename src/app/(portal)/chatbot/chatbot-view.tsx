@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Globe, Lock, Copy, Check, ChevronDown, MessageSquare,
-  Sparkles, CheckCircle2, Send,
+  Sparkles, CheckCircle2, Send, X,
 } from 'lucide-react'
 
 const ORANGE = '#E8622A'
@@ -26,6 +26,7 @@ export interface ChatbotDTO {
   primaryColor: string
   collectLeadsAfter: number
   slug: string | null
+  allowedDomains?: string[]
 }
 
 interface SessionRow {
@@ -38,6 +39,13 @@ interface SessionRow {
   status: string
   startedAt: string
   endedAt: string | null
+}
+
+interface SessionStats {
+  conversationsThisMonth: number
+  leadsThisMonth: number
+  questionsAnswered: number
+  needsFollowUp: number
 }
 
 const COLLECT_OPTIONS = [1, 2, 3, 5]
@@ -219,11 +227,18 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
 
+  // domain allowlist draft
+  const [domains, setDomains] = useState<string[]>(business.allowedDomains ?? [])
+  const [domainInput, setDomainInput] = useState('')
+  const [domainSaving, setDomainSaving] = useState(false)
+  const [domainSaved, setDomainSaved] = useState(false)
+  const [domainError, setDomainError] = useState<string | null>(null)
+
   const [copied, setCopied] = useState(false)
   const [howOpen, setHowOpen] = useState(false)
 
   const [sessions, setSessions] = useState<SessionRow[]>([])
-  const [analytics, setAnalytics] = useState<{ conversations: number; leads: number; questions: number } | null>(null)
+  const [analytics, setAnalytics] = useState<{ conversations: number; leads: number; questions: number; needsFollowUp: number | null } | null>(null)
 
   const snippet = useMemo(
     () => `<script src="${widgetSrc()}" data-business-id="${business.id}"></script>`,
@@ -237,13 +252,24 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
     let cancelled = false
     fetch('/api/chatbot/sessions?page=1')
       .then(r => (r.ok ? r.json() : null))
-      .then((d: { ok: boolean; sessions: SessionRow[]; total: number } | null) => {
+      .then((d: { ok: boolean; sessions: SessionRow[]; total: number; stats?: SessionStats } | null) => {
         if (cancelled || !d?.ok) return
         const list = d.sessions ?? []
         setSessions(list.slice(0, 5))
-        const leads = list.filter(s => s.leadCaptured).length
-        const questions = Math.round(list.reduce((sum, s) => sum + (s.messageCount || 0), 0) / 2)
-        setAnalytics({ conversations: d.total ?? list.length, leads, questions })
+        if (d.stats) {
+          // Prefer the server-computed monthly stats when present.
+          setAnalytics({
+            conversations: d.stats.conversationsThisMonth,
+            leads: d.stats.leadsThisMonth,
+            questions: d.stats.questionsAnswered,
+            needsFollowUp: d.stats.needsFollowUp,
+          })
+        } else {
+          // Fall back to the previous derivation for older API responses.
+          const leads = list.filter(s => s.leadCaptured).length
+          const questions = Math.round(list.reduce((sum, s) => sum + (s.messageCount || 0), 0) / 2)
+          setAnalytics({ conversations: d.total ?? list.length, leads, questions, needsFollowUp: null })
+        }
       })
       .catch(() => { /* silent */ })
     return () => { cancelled = true }
@@ -288,6 +314,58 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  function addDomain() {
+    const raw = domainInput.trim().toLowerCase()
+    if (!raw) return
+    // Strip any scheme/path the user pasted so we keep bare domains in state.
+    const bare = raw.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+    if (!bare) return
+    if (domains.includes(bare)) {
+      setDomainInput('')
+      return
+    }
+    setDomains(d => [...d, bare])
+    setDomainInput('')
+    setDomainError(null)
+    setDomainSaved(false)
+  }
+
+  function removeDomain(d: string) {
+    setDomains(list => list.filter(x => x !== d))
+    setDomainError(null)
+    setDomainSaved(false)
+  }
+
+  async function saveDomains() {
+    if (domainSaving) return
+    setDomainSaving(true)
+    setDomainSaved(false)
+    setDomainError(null)
+    try {
+      const r = await fetch('/api/chatbot/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowedDomains: domains }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (r.ok && d?.ok !== false) {
+        setDomainSaved(true)
+        setTimeout(() => setDomainSaved(false), 2500)
+      } else {
+        const map: Record<string, string> = {
+          invalid_domain: 'That does not look like a valid domain. Use a bare domain like acme.com.au',
+          too_many_domains: 'You have added too many domains. Please remove a few and try again.',
+        }
+        const base = map[d?.error as string] ?? 'We could not save those domains. Please check them and try again.'
+        setDomainError(d?.detail ? `${base} (${d.detail})` : base)
+      }
+    } catch {
+      setDomainError('We could not save those domains. Please check them and try again.')
+    } finally {
+      setDomainSaving(false)
     }
   }
 
@@ -474,6 +552,93 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
         </Card>
       </div>
 
+      {/* Security: allowed domains */}
+      <div style={{ marginTop: 16 }}>
+        <Card title="Security">
+          {fieldLabel('Allowed website domains')}
+          <p style={{ fontSize: 12.5, color: '#7BAED4', marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
+            Lock your chatbot to the websites you own. Leave empty to allow it anywhere. Add the
+            domains where you have installed the widget, for example acme.com.au
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={domainInput}
+              onChange={e => setDomainInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDomain() } }}
+              placeholder="acme.com.au"
+              style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+            />
+            <button
+              type="button"
+              onClick={addDomain}
+              style={{
+                background: 'rgba(232,98,42,0.16)', color: ORANGE, border: '1px solid ' + ORANGE,
+                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+              }}
+            >
+              Add
+            </button>
+          </div>
+
+          {domains.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {domains.map(d => (
+                <span
+                  key={d}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '5px 8px 5px 12px', borderRadius: 99, fontSize: 12.5, fontWeight: 600,
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'white',
+                  }}
+                >
+                  {d}
+                  <button
+                    type="button"
+                    onClick={() => removeDomain(d)}
+                    aria-label={`Remove ${d}`}
+                    style={{
+                      background: 'transparent', border: 'none', color: '#7BAED4', cursor: 'pointer',
+                      padding: 0, display: 'flex', alignItems: 'center',
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {domainError && (
+            <div style={{ fontSize: 12.5, color: '#EF4444', marginTop: 12, lineHeight: 1.5 }}>
+              {domainError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+            <button
+              type="button"
+              onClick={saveDomains}
+              disabled={domainSaving}
+              style={{
+                background: ORANGE, color: 'white', border: 'none',
+                padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                cursor: domainSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: domainSaving ? 0.6 : 1,
+              }}
+            >
+              {domainSaving ? 'Saving...' : 'Save'}
+            </button>
+            {domainSaved && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#22C55E', fontSize: 13, fontWeight: 600 }}>
+                <CheckCircle2 size={15} /> Saved
+              </span>
+            )}
+          </div>
+        </Card>
+      </div>
+
       {/* Analytics */}
       <div style={{ marginTop: 16 }}>
         <Card title="This month">
@@ -488,6 +653,18 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
                 <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 2 }}>{stat.label}</div>
               </div>
             ))}
+            {analytics?.needsFollowUp != null && (
+              <div style={{ maxWidth: 220 }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color: 'white' }}>{analytics.needsFollowUp}</div>
+                <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 2 }}>Needed follow-up</div>
+                <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 4, lineHeight: 1.4 }}>
+                  Questions the bot could not answer. Add these to{' '}
+                  <Link href="/train" style={{ color: ORANGE, fontWeight: 700, textDecoration: 'none' }}>
+                    Train TalkMate
+                  </Link>.
+                </div>
+              </div>
+            )}
           </div>
           <Link
             href="/chatbot/sessions"

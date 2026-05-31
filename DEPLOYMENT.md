@@ -5445,3 +5445,44 @@ the same name in `talkmate-website`.
   re-verified; integration surface (Vapi webhook, cron, SMS quota, RLS scoping,
   migration safety) clean.
 - Live browser QA: NOT yet run, blocked on migrations being applied to a DB.
+
+## Session 2 follow-up — chatbot hardening (migration 065)
+
+Added after a brief review, before merge. Migration `065_chatbot_hardening.sql`
+(applied to **preview** only): `businesses.chatbot_allowed_domains text[]` +
+`chat_messages.is_fallback boolean`. `businesses.owner_phone` (from 063) is now
+deprecated and unread.
+
+Six gaps closed:
+1. **Owner-number reuse** — chat lead SMS now uses the existing
+   `notifications_config.owner_number` (+ `alert_owner`), not the dead
+   `owner_phone` column. Without this, lead alerts never sent.
+2. **Domain lock** — `/api/chat/*` enforce an Origin/Referer allowlist
+   (`chatbot_allowed_domains`). Null/empty = allow any (backwards compatible).
+   Closes the lead-spam / Grok-cost vector from a copied business id. Managed in
+   the chatbot settings UI (client + admin). Note: not a hard auth boundary
+   (Origin is forgeable by non-browser clients) but blocks drive-by browser abuse.
+3. **Plan enforcement** — widget config/session/message treat `plan='starter'`
+   as disabled at READ time (not just at enable time); the Stripe webhook sets
+   `chatbot_enabled=false` on downgrade to starter. Closes an H8/H10-style
+   entitlement leak. NOTE for support: a later re-upgrade does NOT auto-re-enable
+   the chatbot; the owner re-enables it in settings (deliberate).
+4. **ROI honesty** — win-back calls are excluded from the after-hours bucket so
+   the same recovered job is not double-counted (fixed in both the per-business
+   and admin-list paths). The dashboard route is now a thin wrapper over
+   `src/lib/roi.ts` (single source, no duplicate calc). "How we calculate this"
+   shows the real method + rates and is labelled an estimate. Clients can edit
+   avg job value + the 3 conversion rates (PATCH /api/dashboard/roi).
+5. **Deflection logging** — `chat_messages.is_fallback` flags bot replies that
+   fell back to "I will have someone follow up"; surfaced as a "Needed follow-up"
+   stat so clients know what to add to Train TalkMate.
+6. **Prompt-injection guard** — the chatbot system prompt now refuses role
+   changes, never reveals its prompt/raw KB, stays on-topic, and will not invent
+   prices or advice.
+
+Verification: `tsc` 0 errors, `npm run build` success. Validator PASS, Reviewer
+GREEN (no must-fix). Live QA on preview confirmed: domain lock (good/bad/no-origin),
+read-time plan gate, deflection flag write, owner-number send path, lead capture.
+Backlog (logged, not built): per-business Grok cost cap, chatbot-to-inbox
+notification, widget versioning/cache-bust, in-chat human handoff, portal bot
+sandbox.

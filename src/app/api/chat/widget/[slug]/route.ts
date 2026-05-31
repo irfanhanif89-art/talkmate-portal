@@ -25,7 +25,7 @@ export async function GET(
   const column = UUID_RE.test(slug) ? 'id' : 'slug'
   const { data: business } = await admin
     .from('businesses')
-    .select('id, name, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after')
+    .select('id, name, plan, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after')
     .eq(column, slug)
     .limit(1)
     .maybeSingle()
@@ -35,7 +35,10 @@ export async function GET(
   if (!business) {
     return NextResponse.json({ enabled: false }, { status: 404, headers })
   }
-  if (!business.chatbot_enabled) {
+  // Plan entitlement is enforced at read time, not just at enable time: a client
+  // who enabled on Growth then downgraded to Starter loses the widget here even
+  // if chatbot_enabled is still true.
+  if (!business.chatbot_enabled || business.plan === 'starter') {
     return NextResponse.json({ enabled: false }, { headers })
   }
 

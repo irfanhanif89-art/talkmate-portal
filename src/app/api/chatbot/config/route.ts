@@ -21,6 +21,7 @@ interface ConfigShape {
   collectLeadsAfter: number | null
   slug: string | null
   plan: string | null
+  allowedDomains: string[]
 }
 
 function toConfig(row: {
@@ -31,6 +32,7 @@ function toConfig(row: {
   chatbot_collect_leads_after: number | null
   slug: string | null
   plan: string | null
+  chatbot_allowed_domains: string[] | null
 }): ConfigShape {
   return {
     enabled: row.chatbot_enabled ?? false,
@@ -40,11 +42,23 @@ function toConfig(row: {
     collectLeadsAfter: row.chatbot_collect_leads_after,
     slug: row.slug,
     plan: row.plan,
+    allowedDomains: row.chatbot_allowed_domains ?? [],
   }
 }
 
+// Normalise a user-entered domain: strip protocol, path, leading www, lowercase.
+function normaliseDomain(input: string): string {
+  return input.trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^www\./, '')
+}
+
+const MAX_DOMAINS = 20
+const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/
+
 const SELECT_COLS =
-  'chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan'
+  'chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan, chatbot_allowed_domains'
 
 export async function GET(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
@@ -77,6 +91,7 @@ export async function PATCH(request: NextRequest) {
     agentName?: string
     primaryColor?: string
     collectLeadsAfter?: number
+    allowedDomains?: string[]
   }
   try { body = await request.json() as typeof body }
   catch { return NextResponse.json({ ok: false, error: 'invalid_json' }, { status: 400 }) }
@@ -132,6 +147,21 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'invalid_collect_leads_after' }, { status: 400 })
     }
     patch.chatbot_collect_leads_after = body.collectLeadsAfter
+  }
+
+  if (Array.isArray(body.allowedDomains)) {
+    const cleaned = Array.from(new Set(
+      body.allowedDomains.map(normaliseDomain).filter(Boolean),
+    ))
+    if (cleaned.length > MAX_DOMAINS) {
+      return NextResponse.json({ ok: false, error: 'too_many_domains' }, { status: 400 })
+    }
+    const bad = cleaned.find(d => !DOMAIN_RE.test(d))
+    if (bad) {
+      return NextResponse.json({ ok: false, error: 'invalid_domain', detail: bad }, { status: 400 })
+    }
+    // Empty array clears the allowlist (back to allow-any).
+    patch.chatbot_allowed_domains = cleaned.length ? cleaned : null
   }
 
   if (Object.keys(patch).length === 0) {

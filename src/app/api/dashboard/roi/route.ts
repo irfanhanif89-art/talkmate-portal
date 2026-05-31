@@ -1,158 +1,17 @@
 // ROI dashboard summary for the signed-in business (or admin-as-client via
-// ?adminClientId=<uuid>). Aggregates after-hours calls, win-backs, chat leads
-// and review requests into an estimated-revenue figure for the chosen period.
-//
-// After-hours is computed in JS against Australia/Brisbane local time because
-// hour-of-day cannot be expressed in a Supabase count filter. We select the
-// call timestamps for the period (capped) and bucket them client-side.
+// ?adminClientId=<uuid>). Thin wrapper over src/lib/roi.ts so the calculation
+// (after-hours bucketing in Australia/Brisbane time, win-back de-duplication,
+// conversion-rate maths) lives in exactly one place and the admin pages and
+// this route can never drift apart.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { resolveBusinessId } from '@/lib/resolve-business'
+import { computeRoiForBusiness, type RoiPeriod } from '@/lib/roi'
 
 export const dynamic = 'force-dynamic'
 
 const VALID_PERIODS = new Set(['this_month', 'last_month', 'all_time'])
-const CALLS_ROW_CAP = 5000
-const BUSINESS_HOUR_START = 9
-const BUSINESS_HOUR_END = 17 // calls at/after 17:00 count as after-hours
-const TZ = 'Australia/Brisbane'
-
-type Period = 'this_month' | 'last_month' | 'all_time'
-
-interface Range {
-  start: Date
-  end: Date | null // null = open ended (all_time)
-}
-
-// First day of a given month (UTC date object representing that calendar month
-// boundary). monthOffset 0 = current month, -1 = last month, etc.
-function monthStart(now: Date, monthOffset: number): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, 1, 0, 0, 0, 0))
-}
-
-function rangeFor(period: Period, now: Date): Range {
-  if (period === 'all_time') {
-    return { start: new Date(0), end: null }
-  }
-  if (period === 'last_month') {
-    return { start: monthStart(now, -1), end: monthStart(now, 0) }
-  }
-  // this_month
-  return { start: monthStart(now, 0), end: monthStart(now, 1) }
-}
-
-function previousRangeFor(period: Period, now: Date): Range | null {
-  if (period === 'this_month') {
-    return { start: monthStart(now, -1), end: monthStart(now, 0) }
-  }
-  if (period === 'last_month') {
-    return { start: monthStart(now, -2), end: monthStart(now, -1) }
-  }
-  return null
-}
-
-// Brisbane has no DST, so local time is a fixed offset, but we resolve it via
-// Intl to stay correct regardless. Returns { hour, weekday } in local time.
-function brisbaneParts(d: Date): { hour: number; isWeekend: boolean } {
-  const fmt = new Intl.DateTimeFormat('en-AU', {
-    timeZone: TZ,
-    hour: 'numeric',
-    hour12: false,
-    weekday: 'short',
-  })
-  const parts = fmt.formatToParts(d)
-  const hourStr = parts.find((p) => p.type === 'hour')?.value ?? '0'
-  const weekday = parts.find((p) => p.type === 'weekday')?.value ?? ''
-  let hour = parseInt(hourStr, 10)
-  if (hour === 24) hour = 0 // some engines emit 24 for midnight
-  const isWeekend = weekday === 'Sat' || weekday === 'Sun'
-  return { hour, isWeekend }
-}
-
-function isAfterHours(d: Date): boolean {
-  const { hour, isWeekend } = brisbaneParts(d)
-  if (isWeekend) return true
-  return hour < BUSINESS_HOUR_START || hour >= BUSINESS_HOUR_END
-}
-
-type Admin = ReturnType<typeof createAdminClient>
-
-// Count helper applying a [start, end) window on the given column.
-async function countInRange(
-  admin: Admin,
-  table: string,
-  businessId: string,
-  column: string,
-  range: Range,
-  extraEq?: { column: string; value: unknown },
-): Promise<number> {
-  let q = admin
-    .from(table)
-    .select('id', { count: 'exact', head: true })
-    .eq('business_id', businessId)
-    .gte(column, range.start.toISOString())
-  if (range.end) q = q.lt(column, range.end.toISOString())
-  if (extraEq) q = q.eq(extraEq.column, extraEq.value)
-  const { count, error } = await q
-  if (error) {
-    console.error(`[dashboard/roi] count ${table}.${column} failed`, error.message)
-    return 0
-  }
-  return count ?? 0
-}
-
-async function afterHoursCount(
-  admin: Admin,
-  businessId: string,
-  range: Range,
-): Promise<number> {
-  let q = admin
-    .from('calls')
-    .select('created_at')
-    .eq('business_id', businessId)
-    .gte('created_at', range.start.toISOString())
-    .limit(CALLS_ROW_CAP)
-  if (range.end) q = q.lt('created_at', range.end.toISOString())
-  const { data, error } = await q
-  if (error) {
-    console.error('[dashboard/roi] after-hours select failed', error.message)
-    return 0
-  }
-  let n = 0
-  for (const row of data ?? []) {
-    if (!row.created_at) continue
-    if (isAfterHours(new Date(row.created_at as string))) n++
-  }
-  return n
-}
-
-async function totalRevenueFor(
-  admin: Admin,
-  businessId: string,
-  range: Range,
-  avgJobValue: number,
-  rateCalls: number,
-  rateWinback: number,
-  rateChat: number,
-): Promise<number> {
-  const [ah, winbacks, chatLeads] = await Promise.all([
-    afterHoursCount(admin, businessId, range),
-    countInRange(admin, 'calls', businessId, 'winback_sent_at', range, {
-      column: 'winback_sent',
-      value: true,
-    }),
-    countInRange(admin, 'chat_sessions', businessId, 'started_at', range, {
-      column: 'lead_captured',
-      value: true,
-    }),
-  ])
-  const v =
-    ah * avgJobValue * (rateCalls / 100) +
-    winbacks * avgJobValue * (rateWinback / 100) +
-    chatLeads * avgJobValue * (rateChat / 100)
-  return Math.round(v)
-}
 
 export async function GET(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
@@ -160,79 +19,86 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const periodParam = request.nextUrl.searchParams.get('period') || 'this_month'
-  const period: Period = (VALID_PERIODS.has(periodParam) ? periodParam : 'this_month') as Period
+  const period: RoiPeriod = (VALID_PERIODS.has(periodParam) ? periodParam : 'this_month') as RoiPeriod
 
   const admin = createAdminClient()
+  const now = new Date()
 
-  const { data: business, error: bizErr } = await admin
+  const summary = await computeRoiForBusiness(admin, auth.businessId, period, now)
+
+  // Previous comparable period, for the % change indicator. Shift `now` back a
+  // month and ask lib for "last_month" to get the period before last.
+  let previousPeriod: { totalEstimatedRevenue: number } | null = null
+  if (period === 'this_month') {
+    const prev = await computeRoiForBusiness(admin, auth.businessId, 'last_month', now)
+    previousPeriod = { totalEstimatedRevenue: prev.totalEstimatedRevenue }
+  } else if (period === 'last_month') {
+    const prevNow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 0, 0, 0, 0))
+    const prev = await computeRoiForBusiness(admin, auth.businessId, 'last_month', prevNow)
+    previousPeriod = { totalEstimatedRevenue: prev.totalEstimatedRevenue }
+  }
+
+  // Surface the current conversion-rate assumptions so the dashboard can show
+  // and edit them (transparency for the estimated figure).
+  const { data: rates } = await admin
     .from('businesses')
-    .select('avg_job_value, roi_conversion_rate_calls, roi_conversion_rate_chat, roi_conversion_rate_winback')
+    .select('roi_conversion_rate_calls, roi_conversion_rate_chat, roi_conversion_rate_winback')
     .eq('id', auth.businessId)
     .maybeSingle()
-
-  if (bizErr || !business) {
-    console.error('[dashboard/roi] business load failed', bizErr?.message)
-    return NextResponse.json({ ok: false, error: 'business_not_found' }, { status: 404 })
+  const conversionRates = {
+    calls: rates?.roi_conversion_rate_calls != null ? Number(rates.roi_conversion_rate_calls) : 40,
+    chat: rates?.roi_conversion_rate_chat != null ? Number(rates.roi_conversion_rate_chat) : 20,
+    winback: rates?.roi_conversion_rate_winback != null ? Number(rates.roi_conversion_rate_winback) : 30,
   }
 
-  const avgJobValue = business.avg_job_value != null ? Number(business.avg_job_value) : 250
-  const rateCalls = business.roi_conversion_rate_calls != null ? Number(business.roi_conversion_rate_calls) : 40
-  const rateChat = business.roi_conversion_rate_chat != null ? Number(business.roi_conversion_rate_chat) : 20
-  const rateWinback = business.roi_conversion_rate_winback != null ? Number(business.roi_conversion_rate_winback) : 30
+  return NextResponse.json({ ok: true, period, ...summary, previousPeriod, conversionRates })
+}
 
-  const now = new Date()
-  const range = rangeFor(period, now)
+// Edit the ROI assumptions: average job value and the three conversion rates.
+// Making these visible and editable is what keeps the headline figure an honest
+// estimate rather than a black box.
+export async function PATCH(request: NextRequest) {
+  const adminClientId = request.nextUrl.searchParams.get('adminClientId')
+  const auth = await resolveBusinessId(adminClientId)
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
-  const [
-    callsAfterHoursCount,
-    winbacksSentCount,
-    chatLeadsCount,
-    reviewRequestsSentCount,
-    totalCallsAnswered,
-  ] = await Promise.all([
-    afterHoursCount(admin, auth.businessId, range),
-    countInRange(admin, 'calls', auth.businessId, 'winback_sent_at', range, {
-      column: 'winback_sent',
-      value: true,
-    }),
-    countInRange(admin, 'chat_sessions', auth.businessId, 'started_at', range, {
-      column: 'lead_captured',
-      value: true,
-    }),
-    countInRange(admin, 'review_requests', auth.businessId, 'sent_at', range),
-    countInRange(admin, 'calls', auth.businessId, 'created_at', range),
-  ])
+  let body: {
+    avgJobValue?: number
+    conversionRateCalls?: number
+    conversionRateChat?: number
+    conversionRateWinback?: number
+  }
+  try { body = await request.json() as typeof body }
+  catch { return NextResponse.json({ ok: false, error: 'invalid_json' }, { status: 400 }) }
 
-  const callsValue = Math.round(callsAfterHoursCount * avgJobValue * (rateCalls / 100))
-  const winbacksValue = Math.round(winbacksSentCount * avgJobValue * (rateWinback / 100))
-  const chatValue = Math.round(chatLeadsCount * avgJobValue * (rateChat / 100))
-  const totalEstimatedRevenue = callsValue + winbacksValue + chatValue
+  const patch: Record<string, number> = {}
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
-  let previousPeriod: { totalEstimatedRevenue: number } | null = null
-  const prevRange = previousRangeFor(period, now)
-  if (prevRange) {
-    const prevTotal = await totalRevenueFor(
-      admin,
-      auth.businessId,
-      prevRange,
-      avgJobValue,
-      rateCalls,
-      rateWinback,
-      rateChat,
-    )
-    previousPeriod = { totalEstimatedRevenue: prevTotal }
+  const ajv = num(body.avgJobValue)
+  if (ajv != null) {
+    if (ajv < 0 || ajv > 1_000_000) return NextResponse.json({ ok: false, error: 'avg_job_value_out_of_range' }, { status: 400 })
+    patch.avg_job_value = ajv
+  }
+  const rate = (key: string, v: unknown) => {
+    const n = num(v)
+    if (n == null) return true
+    if (n < 0 || n > 100) return false
+    patch[key] = n
+    return true
+  }
+  if (!rate('roi_conversion_rate_calls', body.conversionRateCalls)) return NextResponse.json({ ok: false, error: 'rate_out_of_range' }, { status: 400 })
+  if (!rate('roi_conversion_rate_chat', body.conversionRateChat)) return NextResponse.json({ ok: false, error: 'rate_out_of_range' }, { status: 400 })
+  if (!rate('roi_conversion_rate_winback', body.conversionRateWinback)) return NextResponse.json({ ok: false, error: 'rate_out_of_range' }, { status: 400 })
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ ok: false, error: 'nothing_to_update' }, { status: 400 })
   }
 
-  return NextResponse.json({
-    ok: true,
-    period,
-    totalEstimatedRevenue,
-    callsAfterHours: { count: callsAfterHoursCount, estimatedValue: callsValue },
-    winbacksSent: { count: winbacksSentCount, estimatedValue: winbacksValue },
-    chatLeads: { count: chatLeadsCount, estimatedValue: chatValue },
-    reviewRequestsSent: { count: reviewRequestsSentCount },
-    totalCallsAnswered,
-    avgJobValue: Math.round(avgJobValue),
-    previousPeriod,
-  })
+  const admin = createAdminClient()
+  const { error } = await admin.from('businesses').update(patch).eq('id', auth.businessId)
+  if (error) {
+    console.error('[dashboard/roi] settings update failed', error.message)
+    return NextResponse.json({ ok: false, error: 'update_failed' }, { status: 500 })
+  }
+  return NextResponse.json({ ok: true })
 }

@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { CHAT_CORS_HEADERS, getClientIp, hashIp, checkRateLimit } from '@/lib/chat'
+import { CHAT_CORS_HEADERS, getClientIp, hashIp, checkRateLimit, originAllowed } from '@/lib/chat'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,15 +30,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'rate_limited' }, { status: 429, headers: CHAT_CORS_HEADERS })
   }
 
-  // Business must exist and have the chatbot switched on.
+  // Business must exist, be on a paid plan, and have the chatbot switched on.
   const { data: business } = await admin
     .from('businesses')
-    .select('id, chatbot_enabled')
+    .select('id, plan, chatbot_enabled, chatbot_allowed_domains')
     .eq('id', businessId)
     .limit(1)
     .maybeSingle()
-  if (!business || !business.chatbot_enabled) {
+  if (!business || !business.chatbot_enabled || business.plan === 'starter') {
     return NextResponse.json({ error: 'chatbot_unavailable' }, { status: 404, headers: CHAT_CORS_HEADERS })
+  }
+
+  // Origin lock: if the business has configured allowed domains, the request
+  // must come from one of them.
+  if (!originAllowed(request, business.chatbot_allowed_domains as string[] | null)) {
+    return NextResponse.json({ error: 'origin_not_allowed' }, { status: 403, headers: CHAT_CORS_HEADERS })
   }
 
   const { data: session, error } = await admin

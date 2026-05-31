@@ -11,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import {
   CHAT_CORS_HEADERS, MAX_MESSAGE_LENGTH, getClientIp, hashIp,
   checkRateLimit, looksLikeSpam, buildSystemPrompt, chatComplete, extractLead,
-  upsertContactByPhone, type KbEntry,
+  upsertContactByPhone, originAllowed, type KbEntry,
 } from '@/lib/chat'
 import type { GrokMessage } from '@/lib/grok'
 
@@ -70,12 +70,15 @@ export async function POST(request: NextRequest) {
   // Pull business config for the prompt.
   const { data: business } = await admin
     .from('businesses')
-    .select('id, name, chatbot_enabled, chatbot_agent_name, chatbot_collect_leads_after')
+    .select('id, name, plan, chatbot_enabled, chatbot_agent_name, chatbot_collect_leads_after, chatbot_allowed_domains')
     .eq('id', businessId)
     .limit(1)
     .maybeSingle()
-  if (!business || !business.chatbot_enabled) {
+  if (!business || !business.chatbot_enabled || business.plan === 'starter') {
     return NextResponse.json({ error: 'chatbot_unavailable' }, { status: 404, headers: CHAT_CORS_HEADERS })
+  }
+  if (!originAllowed(request, business.chatbot_allowed_domains as string[] | null)) {
+    return NextResponse.json({ error: 'origin_not_allowed' }, { status: 403, headers: CHAT_CORS_HEADERS })
   }
 
   // Store the visitor turn.
@@ -91,10 +94,14 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // Spam → cheap neutral reply, no Grok call.
+  // Spam → cheap neutral reply, no Grok call. We track whether the bot fell
+  // back to the canned reply (spam or Grok failure) so the portal can show a
+  // deflection rate.
   let reply: string
+  let usedFallback = false
   if (looksLikeSpam(message)) {
     reply = FALLBACK_REPLY
+    usedFallback = true
   } else {
     const { data: kb } = await admin
       .from('knowledge_base_entries')
@@ -130,15 +137,17 @@ export async function POST(request: NextRequest) {
     ]
 
     try {
-      reply = (await chatComplete(messages)).trim() || FALLBACK_REPLY
+      const out = (await chatComplete(messages)).trim()
+      if (out) { reply = out } else { reply = FALLBACK_REPLY; usedFallback = true }
     } catch {
       reply = FALLBACK_REPLY
+      usedFallback = true
     }
   }
 
   // Store the assistant turn.
   await admin.from('chat_messages').insert({
-    session_id: sessionId, business_id: businessId, role: 'assistant', content: reply,
+    session_id: sessionId, business_id: businessId, role: 'assistant', content: reply, is_fallback: usedFallback,
   })
 
   // Did the visitor volunteer contact details mid-chat?

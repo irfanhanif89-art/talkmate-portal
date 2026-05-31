@@ -14,6 +14,7 @@ export interface ChatbotConfig {
   collectLeadsAfter: number | null
   slug: string | null
   plan: string | null
+  allowedDomains?: string[]
 }
 
 export interface ChatSessionRow {
@@ -48,6 +49,7 @@ export default function ChatbotAdminView({
   const [draft, setDraft] = useState<ChatbotConfig>(initialConfig)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  const [domainInput, setDomainInput] = useState('')
 
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
@@ -60,11 +62,29 @@ export default function ChatbotAdminView({
     (draft.greeting ?? '') !== (config.greeting ?? '') ||
     (draft.agentName ?? '') !== (config.agentName ?? '') ||
     (draft.primaryColor ?? '') !== (config.primaryColor ?? '') ||
-    (draft.collectLeadsAfter ?? null) !== (config.collectLeadsAfter ?? null)
+    (draft.collectLeadsAfter ?? null) !== (config.collectLeadsAfter ?? null) ||
+    (draft.allowedDomains ?? []).join(',') !== (config.allowedDomains ?? []).join(',')
 
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3500)
+  }
+
+  function addDomain() {
+    const raw = domainInput.trim().toLowerCase()
+    if (!raw) return
+    const bare = raw.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
+    if (!bare) return
+    setDraft(d => {
+      const list = d.allowedDomains ?? []
+      if (list.includes(bare)) return d
+      return { ...d, allowedDomains: [...list, bare] }
+    })
+    setDomainInput('')
+  }
+
+  function removeDomain(domain: string) {
+    setDraft(d => ({ ...d, allowedDomains: (d.allowedDomains ?? []).filter(x => x !== domain) }))
   }
 
   async function save() {
@@ -79,6 +99,7 @@ export default function ChatbotAdminView({
           agentName: draft.agentName ?? '',
           primaryColor: draft.primaryColor ?? '#E8622A',
           collectLeadsAfter: draft.collectLeadsAfter ?? 2,
+          allowedDomains: draft.allowedDomains ?? [],
         }),
       })
       const data = await res.json()
@@ -89,6 +110,8 @@ export default function ChatbotAdminView({
           invalid_agent_name: 'Agent name is too long (max 40 characters).',
           invalid_primary_color: 'Colour must be a hex value like #E8622A.',
           invalid_collect_leads_after: 'Invalid value for collect leads after.',
+          invalid_domain: 'One of the domains is not valid. Use bare domains like acme.com.au.',
+          too_many_domains: 'Too many domains. Please remove some and try again.',
           no_changes: 'No changes to save.',
         }
         throw new Error(map[data.error as string] ?? data.error ?? 'Save failed')
@@ -238,6 +261,55 @@ export default function ChatbotAdminView({
             })}
             <span style={{ fontSize: 12, color: '#7BAED4', alignSelf: 'center', marginLeft: 4 }}>messages</span>
           </div>
+        </Field>
+
+        {/* Allowed domains */}
+        <Field label="Allowed website domains">
+          <p style={{ fontSize: 12, color: '#7BAED4', margin: '0 0 10px 0', lineHeight: 1.5 }}>
+            Lock the chatbot to the websites this client owns. Leave empty to allow it anywhere.
+            Add the domains where the widget is installed, for example acme.com.au
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              value={domainInput}
+              onChange={e => setDomainInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addDomain() } }}
+              placeholder="acme.com.au"
+              style={{ ...inputStyle, flex: 1, minWidth: 160 }}
+            />
+            <button
+              onClick={addDomain}
+              style={{
+                padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'Outfit, sans-serif', flexShrink: 0,
+                background: 'rgba(232,98,42,0.16)', border: '1px solid #E8622A', color: '#E8622A',
+              }}
+            >Add</button>
+          </div>
+          {(draft.allowedDomains ?? []).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              {(draft.allowedDomains ?? []).map(domain => (
+                <span
+                  key={domain}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '5px 8px 5px 12px', borderRadius: 99, fontSize: 12.5, fontWeight: 600,
+                    background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'white',
+                  }}
+                >
+                  {domain}
+                  <button
+                    onClick={() => removeDomain(domain)}
+                    aria-label={`Remove ${domain}`}
+                    style={{
+                      background: 'transparent', border: 'none', color: '#7BAED4', cursor: 'pointer',
+                      fontSize: 15, lineHeight: 1, padding: 0,
+                    }}
+                  >×</button>
+                </span>
+              ))}
+            </div>
+          )}
         </Field>
 
         {/* Slug (read only) */}
