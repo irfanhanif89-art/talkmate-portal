@@ -343,6 +343,87 @@ Commission amounts are hardcoded server-side in `src/lib/commission.ts` and `src
 
 ---
 
+## TalkMate Demo Chatbot — Product Knowledge Maintenance (READ THIS to update what the bot knows)
+
+The orange chat bubble on **talkmate.com.au** is TalkMate's own AI chatbot (Session 59). It answers prospect questions 24/7 from a knowledge base and captures leads. When the product, pricing, or features change, **its answers must be updated by hand** — it does not auto-sync from the website. This is the runbook.
+
+### What it is
+- It is a normal `businesses` row used purely as a chatbot fixture (not a paying client). Its chatbot reads from the same `knowledge_base_entries` table every client chatbot uses.
+- **Prod identifiers** (Supabase project `mdsfdaefsxwrakgkyflr`):
+  - business `id`: **`8fa16842-3ea7-4ea7-ad31-8ec39a630b4b`**, `slug = 'talkmate'`
+  - `plan = 'pro'`, `chatbot_enabled = true`, `is_demo = true`, `account_status = 'cancelled'`, `owner_user_id = NULL`
+  - `chatbot_allowed_domains = {talkmate.com.au}` (the widget only works when loaded on that domain)
+- Wired to the site via the website env var `NEXT_PUBLIC_TALKMATE_CHATBOT_BUSINESS_ID = 8fa16842-…` on the **talkmate-website** Vercel project (production).
+
+### Why there is no portal login for it
+A client edits their chatbot's knowledge from `/chatbot` and `/train` in their portal. **This row has no `owner_user_id`** (it is a fixture, and the `owner_user_id_required_when_active` CHECK only allows a null owner when status is `cancelled`/`expired`). So **the only way to edit its knowledge is direct SQL** against prod via the Supabase MCP (`mcp__…__execute_sql` / `apply_migration`), or the Supabase SQL editor. Do NOT try to log in as it.
+
+### Source of truth for the facts
+Keep the bot's answers matching the live site. Pull real copy from:
+- `talkmate-website/src/components/PricingCards.tsx` — plan prices, setup fees, call limits, per-plan feature bullets
+- `talkmate-website/src/app/faq/page.tsx` — the canonical FAQ answers (accuracy, data residency, setup time, number forwarding, guarantee)
+- `talkmate-website/src/app/features/page.tsx` — feature descriptions
+- `src/lib/pricing.ts` (portal) — authoritative prices
+Never invent prices or features. If the site changes, update the KB the same day.
+
+### How to UPDATE the knowledge (copy-paste SQL, run against prod project `mdsfdaefsxwrakgkyflr`)
+Categories allowed: `'faq' | 'service' | 'hours' | 'pricing' | 'team' | 'custom'`. Use `$q$…$q$` / `$a$…$a$` dollar-quoting so apostrophes and `$` signs do not need escaping.
+
+```sql
+-- See everything the bot currently knows
+SELECT category, sort_order, question, answer
+FROM knowledge_base_entries
+WHERE business_id = '8fa16842-3ea7-4ea7-ad31-8ec39a630b4b' AND is_active = true
+ORDER BY sort_order;
+
+-- EDIT one answer (e.g. a price change)
+UPDATE knowledge_base_entries
+SET answer = $a$Growth is now $549/month …$a$
+WHERE business_id = '8fa16842-3ea7-4ea7-ad31-8ec39a630b4b'
+  AND question = $q$What is included in the Growth plan?$q$;
+
+-- ADD a new entry (pick the next sort_order)
+INSERT INTO knowledge_base_entries (business_id, category, question, answer, is_active, sort_order)
+VALUES ('8fa16842-3ea7-4ea7-ad31-8ec39a630b4b', 'service',
+        $q$Do you integrate with my CRM?$q$, $a$Yes, …$a$, true, 32);
+
+-- RETIRE an entry without deleting it
+UPDATE knowledge_base_entries SET is_active = false
+WHERE business_id = '8fa16842-3ea7-4ea7-ad31-8ec39a630b4b' AND question = $q$…$q$;
+```
+KB edits take effect **immediately** — the chatbot reads `knowledge_base_entries` live on every message. **No redeploy needed** for knowledge changes.
+
+### How to change the bot's CONFIG (greeting / name / colour / lead timing / domain)
+```sql
+UPDATE businesses SET
+  chatbot_greeting = $g$Hi! Ask me anything about TalkMate.$g$,
+  chatbot_agent_name = 'TalkMate',
+  chatbot_primary_color = '#E8622A',
+  chatbot_collect_leads_after = 3,           -- asks for name+phone after N visitor messages
+  chatbot_allowed_domains = '{talkmate.com.au}'  -- add domains to allow more sites
+WHERE id = '8fa16842-3ea7-4ea7-ad31-8ec39a630b4b';
+```
+
+### A redeploy is ONLY needed if the env var / widget id changes
+`NEXT_PUBLIC_*` is baked in at build time. So you only redeploy the **website** when changing `NEXT_PUBLIC_TALKMATE_CHATBOT_BUSINESS_ID` itself (or the widget JS). Knowledge and config edits above are live without any deploy. To redeploy: `cd talkmate-website && vercel redeploy <latest-prod-url>`.
+
+### How to test after a change
+The widget API is origin-locked to talkmate.com.au, so send an `Origin: https://talkmate.com.au` header:
+```bash
+# config should say enabled:true
+curl -s -H 'origin: https://talkmate.com.au' https://app.talkmate.com.au/api/chat/widget/talkmate
+# create a session, then send a message and read the reply
+```
+Or just open talkmate.com.au and ask the bubble a question. After testing, delete the test rows:
+`DELETE FROM chat_sessions WHERE business_id = '8fa16842-…';` (cascades chat_messages) and the matching `roi_events`.
+
+### Do NOT
+- Do not delete the `businesses` row or flip `is_demo`/`account_status` — that would drop it from the right filters or break the null-owner CHECK.
+- Do not enable it on a `starter`-plan-style config — the public widget refuses `plan='starter'` at read time.
+- Do not paste invented prices/features — mirror the live site.
+
+---
+
 ## Known Gaps / Deferred Work
 
 ### High Priority (from Session 27 audit — not yet addressed)
