@@ -187,7 +187,10 @@ export default function InboxView(props: Props) {
       .channel('inbox-live')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sms_messages' },
+        // Tenant filter: only this business's rows. Without it every
+        // client's browser receives every other client's message events
+        // (matches the dashboard realtime pattern in dashboard-client.tsx).
+        { event: 'INSERT', schema: 'public', table: 'sms_messages', filter: `business_id=eq.${props.businessId}` },
         (payload) => {
           const row = payload.new as Partial<ThreadMessage> & { conversation_id?: string }
           // Refresh the list summary regardless of which thread is open.
@@ -211,12 +214,12 @@ export default function InboxView(props: Props) {
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'sms_conversations' },
+        { event: 'UPDATE', schema: 'public', table: 'sms_conversations', filter: `business_id=eq.${props.businessId}` },
         () => { void refreshList() },
       )
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
-  }, [refreshList])
+  }, [refreshList, props.businessId])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

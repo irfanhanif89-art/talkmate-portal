@@ -390,7 +390,7 @@ async function handleEndOfCall(
   // short customer-hangup / did-not-answer / voicemail and the business
   // opted in. Doesn't await: the SMS send is fire-and-forget so the
   // webhook doesn't pay the latency.
-  void maybeSendWinback(supabase, business.id, callRowId, vapiCallId, phone, durationSeconds, endedReason)
+  void maybeSendWinback(supabase, business.id, callRowId, vapiCallId, phone, durationSeconds, endedReason, transcript)
     .catch(err => console.error('[vapi-webhook] winback failed', (err as Error).message))
 
   // Session 18 — fire-and-forget Call Intelligence scoring. Must not
@@ -599,6 +599,11 @@ const WINBACK_ABANDON_REASONS = new Set([
   'silence-timed-out',
 ])
 const WINBACK_DURATION_THRESHOLD_SECONDS = 15
+// Sprint 1 hardening — a <15s call that nonetheless produced a real
+// transcript means the AI engaged (e.g. "what time do you close?" "5pm"
+// "thanks"), so it is NOT a missed call. Only treat it as abandoned when
+// the transcript is shorter than this (caller hung up before pickup).
+const WINBACK_MAX_TRANSCRIPT_CHARS = 25
 
 async function maybeSendWinback(
   supabase: ReturnType<typeof createAdminClient>,
@@ -608,10 +613,13 @@ async function maybeSendWinback(
   callerPhone: string | null,
   durationSeconds: number,
   endedReason: string | null,
+  transcript: string,
 ): Promise<void> {
   if (!callerPhone) return
   if (durationSeconds >= WINBACK_DURATION_THRESHOLD_SECONDS) return
   if (!endedReason || !WINBACK_ABANDON_REASONS.has(endedReason)) return
+  // False-positive guard: skip quick *successful* calls (the AI engaged).
+  if (transcript && transcript.trim().length >= WINBACK_MAX_TRANSCRIPT_CHARS) return
 
   // Stamp the abandoned flag regardless of whether we end up sending —
   // the cron review-follow-up route uses it to skip these calls.
@@ -655,9 +663,13 @@ async function maybeSendWinback(
 
   const bizName = (businessRow.name as string | null) ?? 'us'
   const custom = (businessRow.winback_custom_message as string | null)?.trim() ?? ''
-  const message = custom
+  let message = custom
     ? custom.replace(/\{business_name\}/gi, bizName)
     : `Hey, we missed your call at ${bizName}. We are here to help, how can we assist?`
+  // Compliance (Australian Spam Act): commercial SMS needs a functional
+  // unsubscribe. STOP is handled at the Twilio inbound webhook; append the
+  // instruction unless the operator's custom copy already includes it.
+  if (!/\bstop\b/i.test(message)) message += ' Reply STOP to opt out.'
 
   const fromNumber = (businessRow.twilio_phone_number as string | null)
     ?? (businessRow.talkmate_number as string | null)
