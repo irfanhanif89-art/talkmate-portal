@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
   LogOut, Shield, Upload, Menu, X, ClipboardList, BarChart3, FlaskConical,
+  GraduationCap,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/demo-accounts',      label: 'Demo Accounts',     icon: FlaskConical },
   { href: '/admin/leads-import',       label: 'Import Leads',      icon: Upload },
   { href: '/admin/sales-scripts',      label: 'Sales Resources',   icon: BookOpen },
+  { href: '/admin/training',           label: 'Product Training',  icon: GraduationCap },
   { href: '/admin/sms-failures',       label: 'SMS Failures',      icon: MessageSquareX },
   { href: '/admin/agent-health',       label: 'Agent Health',      icon: Activity },
   { href: '/admin/settings',           label: 'Settings',          icon: Settings, comingSoon: true },
