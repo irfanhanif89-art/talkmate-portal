@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, Copy, Check, MailCheck, AlertTriangle, Send } from 'lucide-react'
 import ModalShell from './modal-shell'
 import { COMMISSION_MAP, type BillingCycle, type CommissionPlan } from '@/lib/commission'
+import { getPlanPrice, getSetupFee, PRICING } from '@/lib/pricing'
 import { useSalesRep } from '@/context/sales-rep-context'
 import type { LeadRow } from './leads-board'
 
@@ -18,6 +19,11 @@ const PLANS: CommissionPlan[] = ['starter', 'growth', 'pro']
 
 function fmt(n: number): string {
   return n % 1 === 0 ? `$${n}` : `$${n.toFixed(2)}`
+}
+
+// Money with thousands separators (annual prices run into the thousands).
+function fmtMoney(n: number): string {
+  return `$${n.toLocaleString('en-AU')}`
 }
 
 function planLabel(p: CommissionPlan): string {
@@ -292,11 +298,12 @@ export default function CloseAndOnboardModal({ lead, onClose, onSuccess }: Props
         </Field>
       </div>
 
-      {/* Plan */}
-      <SectionLabel>Plan</SectionLabel>
+      {/* Plan — customer-facing price so the rep knows what to quote */}
+      <SectionLabel>Plan — what to quote the customer</SectionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
         {PLANS.map(p => {
-          const planAmount = COMMISSION_MAP[p].base + (isAnnual ? COMMISSION_MAP[p].annual_bonus : 0)
+          const planPrice = getPlanPrice(p, billingCycle)
+          const setupFee = getSetupFee(p)
           return (
             <button
               key={p}
@@ -314,10 +321,15 @@ export default function CloseAndOnboardModal({ lead, onClose, onSuccess }: Props
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{planLabel(p)}</div>
                 <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 2 }}>
-                  Base ${COMMISSION_MAP[p].base}{isAnnual ? ` + bonus $${COMMISSION_MAP[p].annual_bonus}` : ''}
+                  + {fmtMoney(setupFee)} one-off onboarding fee
                 </div>
               </div>
-              <div style={{ fontSize: 19, fontWeight: 800, color: '#22c55e' }}>{fmt(planAmount)}</div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 19, fontWeight: 800, color: 'white' }}>{fmtMoney(planPrice)}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#7BAED4', marginTop: 1 }}>
+                  {isAnnual ? 'per year' : 'per month'}
+                </div>
+              </div>
             </button>
           )
         })}
@@ -334,7 +346,7 @@ export default function CloseAndOnboardModal({ lead, onClose, onSuccess }: Props
         />
         <CycleBtn
           label="Annual"
-          subtext={plan ? `+${fmt(COMMISSION_MAP[plan].annual_bonus)} bonus` : '+2.5% bonus'}
+          subtext={plan ? `Save ${fmtMoney(PRICING[plan].annual_savings)}/yr · 2 months free` : '2 months free'}
           active={billingCycle === 'annual'}
           accent="#22c55e"
           onClick={() => setBillingCycle('annual')}

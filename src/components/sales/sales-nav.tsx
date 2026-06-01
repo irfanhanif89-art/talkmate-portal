@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, GitBranch, Users, Target, PlayCircle,
-  DollarSign, FileText, User as UserIcon, LogOut, X, BookOpen,
+  DollarSign, FileText, User as UserIcon, LogOut, X, BookOpen, Send, Receipt,
 } from 'lucide-react'
 
 interface Props {
@@ -19,9 +19,11 @@ const NAV_ITEMS = [
   { href: '/sales/dashboard',   label: 'Dashboard',      icon: LayoutDashboard },
   { href: '/sales/hitlist',     label: 'Hit List',       icon: Target },
   { href: '/sales/leads',       label: 'My Pipeline',    icon: GitBranch },
+  { href: '/sales/proposals/new', label: 'Send Proposal', icon: Send },
   { href: '/sales/demo',        label: 'Demo',           icon: PlayCircle },
   { href: '/sales/clients',     label: 'My Clients',     icon: Users },
   { href: '/sales/commissions', label: 'Commissions',    icon: DollarSign },
+  { href: '/sales/invoices',    label: 'Invoices',       icon: Receipt },
   { href: '/sales/contract',    label: 'My Contract',    icon: FileText },
   { href: '/sales/profile',     label: 'Profile',        icon: UserIcon },
 ] as const

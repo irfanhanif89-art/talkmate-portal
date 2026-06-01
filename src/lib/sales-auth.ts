@@ -1,4 +1,32 @@
+import { cache } from 'react'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+
+const SALES_REP_COLUMNS =
+  'id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id, notification_email, demo_industry, demo_calendly_url'
+
+// Per-request memoised auth lookups. Every /sales navigation renders the
+// sales layout AND the page in the SAME server request — both used to call
+// supabase.auth.getUser() + select sales_reps independently, so a single tab
+// click did the (network-bound) auth round-trip three times (plus once more
+// in middleware). Wrapping these in React cache() collapses the layout's and
+// the page's calls into ONE getUser + ONE sales_reps lookup per request,
+// cutting the per-navigation latency the reps were feeling.
+
+export const getSalesSessionUser = cache(async () => {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return user
+})
+
+export const getSalesRepByUserId = cache(async (userId: string): Promise<SalesRepRow | null> => {
+  const admin = createAdminClient()
+  const { data: rep } = await admin
+    .from('sales_reps')
+    .select(SALES_REP_COLUMNS)
+    .eq('user_id', userId)
+    .maybeSingle()
+  return (rep as SalesRepRow | null) ?? null
+})
 
 export interface SalesRepRow {
   id: string
@@ -53,21 +81,16 @@ export async function requireSalesRep(req?: Request): Promise<RequireSalesRepRes
     }
   }
 
-  // Path B — SSR cookie (web)
+  // Path B — SSR cookie (web). Uses the per-request cached lookup so the
+  // sales layout and the page share a single getUser() round-trip.
   if (!userId) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getSalesSessionUser()
     if (!user) return { ok: false, status: 401, error: 'Unauthorized' }
     userId = user.id
     userEmail = user.email ?? null
   }
 
-  const admin = createAdminClient()
-  const { data: rep } = await admin
-    .from('sales_reps')
-    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id, notification_email, demo_industry, demo_calendly_url')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const rep = await getSalesRepByUserId(userId)
 
   if (!rep) {
     return { ok: false, status: 403, error: 'Sales rep account required' }

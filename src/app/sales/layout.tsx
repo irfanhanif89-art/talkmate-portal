@@ -1,14 +1,14 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import SalesShell from '@/components/sales/sales-shell'
-import type { SalesRepRow } from '@/lib/sales-auth'
+import { getSalesSessionUser, getSalesRepByUserId, type SalesRepRow } from '@/lib/sales-auth'
 
 // Set ADMIN_EMAIL in Vercel environment variables
 const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
 
 export default async function SalesLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Per-request cached lookups — shared with the page's requireSalesRep()
+  // so a single navigation does ONE getUser() + ONE sales_reps query.
+  const user = await getSalesSessionUser()
   if (!user) redirect('/login?next=/sales/dashboard')
 
   // Admins land on /admin — they shouldn't be browsing the sales rep
@@ -17,11 +17,7 @@ export default async function SalesLayout({ children }: { children: React.ReactN
     redirect('/admin')
   }
 
-  const { data: rep } = await supabase
-    .from('sales_reps')
-    .select('id, user_id, full_name, email, phone, team_id, status, commission_policy_version, policy_acknowledged_at, contract_signed_at, onboarded_via, contractor_id')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  const rep = await getSalesRepByUserId(user.id)
 
   if (!rep) {
     // Authenticated user but no sales_reps record — bounce to the
