@@ -12,6 +12,29 @@
 
 ---
 
+## Local Development Workspace (consolidated 2026-06-01)
+
+All TalkMate code and docs live under ONE root on Irfan's PC:
+`C:\Users\info\.claude\WEBSITE BUILD\`
+
+There are **no other working copies anywhere on the machine**. Do NOT look in
+`C:\Users\info\talkmate-portal`, `C:\Users\info\talkmate-mobile`, or
+`C:\Users\info\.openclaw\workspace\` — those were archived and removed on
+2026-06-01. The canonical locations are:
+
+| Path | What it is |
+|------|------------|
+| `…\WEBSITE BUILD\talkmate-portal`  | This repo — the web app (Vercel-linked, prj_loxPaAwjRW2VV4qxQP7qpu7iq68k). Self-contained `.env.local` + `.vercel`. |
+| `…\WEBSITE BUILD\talkmate-website` | Marketing site (`irfanhanif89-art/talkmate-website`) |
+| `…\WEBSITE BUILD\talkmate-mobile`  | Expo mobile app (`irfanhanif89-art/talkmate-mobile`) |
+| `…\WEBSITE BUILD\donna-twilio`     | Twilio SMS helper (no git — only copy, handle with care) |
+| `…\WEBSITE BUILD\_docs\`           | All loose briefs, PDFs, leads, screenshots, media |
+| `…\WEBSITE BUILD\_ARCHIVE_2026-06-01.zip` | Safety-net zip of every removed duplicate (delete once confident) |
+
+A root pointer at `…\WEBSITE BUILD\CLAUDE.md` carries this same map and is
+auto-loaded by every new session. Always start with
+`cd "C:\Users\info\.claude\WEBSITE BUILD\talkmate-portal"`.
+
 ## Session Log
 
 | Session | Date | Branch | SHA | Migration(s) | Summary |
