@@ -292,6 +292,8 @@
     input.type = 'text';
     input.placeholder = 'Type your message';
     input.maxLength = 500;
+    input.setAttribute('inputmode', 'text');
+    input.autocomplete = 'off';
     setStyle(input, {
       flex: '1 1 auto',
       border: '1px solid #d9d9d9',
@@ -299,7 +301,17 @@
       padding: '10px 14px',
       fontSize: '14px',
       outline: 'none',
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      // Cross-browser typing hardening. Firefox will not show a caret /
+      // accept typing in an input that inherits user-select:none or a
+      // transparent text colour from the host page, so set them explicitly.
+      color: '#061322',
+      background: '#ffffff',
+      caretColor: '#061322',
+      userSelect: 'text',
+      WebkitUserSelect: 'text',
+      MozUserSelect: 'text',
+      pointerEvents: 'auto'
     });
 
     var sendBtn = document.createElement('button');
@@ -347,9 +359,20 @@
       self.handleSend();
     });
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
+      // Don't hijack Enter while an IME composition is in progress (Firefox
+      // reports keyCode 229 mid-composition); only send on a real Enter.
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         self.handleSend();
+      }
+    });
+    // Belt-and-braces focus: clicking anywhere in the footer (including the
+    // input's rounded padding) puts the caret in the field. Some browsers
+    // otherwise leave the input unfocused if the click lands a pixel off.
+    footer.addEventListener('mousedown', function (e) {
+      if (e.target !== self.els.sendBtn && !self.els.sendBtn.contains(e.target)) {
+        // Defer so the browser's own focus handling runs first.
+        setTimeout(function () { try { self.els.input.focus(); } catch (err) {} }, 0);
       }
     });
 
