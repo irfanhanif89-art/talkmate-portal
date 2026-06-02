@@ -10,6 +10,7 @@ export interface SendEmailOptions {
   html: string
   from?: string
   replyTo?: string
+  attachments?: { filename: string; content: string }[]
 }
 
 export async function sendEmail(
@@ -32,6 +33,7 @@ export async function sendEmail(
         subject: opts.subject,
         html: opts.html,
         ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+        ...(opts.attachments && opts.attachments.length ? { attachments: opts.attachments } : {}),
       }),
     })
     if (!res.ok) {
