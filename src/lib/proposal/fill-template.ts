@@ -1,5 +1,6 @@
-// Server-side template filling. Replaces the inner content of <span data-tm="key">…</span>
-// nodes with escaped values, and moves the featured ".pf" plan styling to the chosen plan.
+// Server-side template filling. Replaces the inner content of ANY <tag data-tm="key">…</tag>
+// node (span/div/a/…) with escaped values, keeps tel:/mailto: hrefs pointing at the real
+// value, and moves the featured ".pf" plan styling to the chosen plan.
 // Template plan cards MUST carry data-plan="starter|growth|pro" (added in Task 6).
 
 function escapeHtml(s: string): string {
@@ -9,10 +10,18 @@ function escapeHtml(s: string): string {
 
 export function fillTemplate(html: string, values: Record<string, string | null | undefined>): string {
   return html.replace(
-    /(<span[^>]*\bdata-tm="([^"]+)"[^>]*>)([\s\S]*?)(<\/span>)/g,
-    (full, open: string, key: string, _inner: string, close: string) => {
+    /<(\w+)([^>]*\bdata-tm="([^"]+)"[^>]*)>([\s\S]*?)<\/\1>/g,
+    (full, tag: string, attrs: string, key: string, _inner: string) => {
       if (!(key in values) || values[key] == null) return full
-      return open + escapeHtml(String(values[key])) + close
+      const val = String(values[key])
+      let openAttrs = attrs
+      // Keep contact links (confirmation page) pointing at the real value.
+      if (/href="tel:[^"]*"/.test(openAttrs)) {
+        openAttrs = openAttrs.replace(/href="tel:[^"]*"/, `href="tel:${val.replace(/\s+/g, '')}"`)
+      } else if (/href="mailto:[^"]*"/.test(openAttrs)) {
+        openAttrs = openAttrs.replace(/href="mailto:[^"]*"/, `href="mailto:${val}"`)
+      }
+      return `<${tag}${openAttrs}>${escapeHtml(val)}</${tag}>`
     },
   )
 }
