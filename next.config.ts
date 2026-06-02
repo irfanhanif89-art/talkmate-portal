@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // puppeteer-core + @sparticuz/chromium must NOT be webpack-bundled. Marking them
+  // external keeps them in node_modules at runtime so @sparticuz/chromium's brotli
+  // Chromium binary is traced into the serverless function (otherwise executablePath()
+  // throws "The input directory ... does not exist").
+  serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
   // Ship the proposal templates + self-hosted fonts into the serverless
   // bundles that read them at runtime (PDF render + confirmation page).
   outputFileTracingIncludes: {
