@@ -18,6 +18,7 @@ export type AlertType =
   | 'stripe_sync_mismatch'
   | 'db_backup_failed'
   | 'db_backup_ok'
+  | 'client_health_risk'
   | 'other'
 
 export interface AlertOptions {
