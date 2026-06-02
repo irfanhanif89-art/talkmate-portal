@@ -33,6 +33,9 @@ export default function ProposalForm({
   const [plan, setPlan] = useState<Plan>('growth')
   const [note, setNote] = useState('')
   const [template, setTemplate] = useState<Template>('full')
+  const [missedCalls, setMissedCalls] = useState(10)
+  const [avgJob, setAvgJob] = useState(240)
+  const [hoursWeek, setHoursWeek] = useState(9)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
@@ -52,6 +55,9 @@ export default function ProposalForm({
         plan,
         personalised_note: note,
         template_type: template,
+        missed_calls_per_week: missedCalls,
+        avg_job_value: avgJob,
+        hours_per_week: hoursWeek,
       }),
     })
     const body = await res.json().catch(() => ({}))
@@ -172,6 +178,36 @@ export default function ProposalForm({
           style={{ ...inputStyle, resize: 'vertical', fontFamily: 'Outfit, sans-serif' }}
         />
       </Field>
+
+      <div style={{ marginBottom: 14 }}>
+        <span style={{ display: 'block', fontSize: 12, color: '#7BAED4', fontWeight: 600, marginBottom: 6 }}>
+          ROI estimates
+        </span>
+        <span style={{ display: 'block', fontSize: 11, color: '#4A7FBB', marginBottom: 10 }}>
+          Shown on the proposal. Adjust to the client&apos;s real numbers.
+        </span>
+        <Field label="Missed callouts per week">
+          <input
+            type="number" min={0} value={missedCalls}
+            onChange={e => setMissedCalls(Number(e.target.value))}
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="Average job value ($)">
+          <input
+            type="number" min={0} value={avgJob}
+            onChange={e => setAvgJob(Number(e.target.value))}
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="Hours/week on the phone">
+          <input
+            type="number" min={0} value={hoursWeek}
+            onChange={e => setHoursWeek(Number(e.target.value))}
+            style={inputStyle}
+          />
+        </Field>
+      </div>
 
       <Field label="Template">
         <div style={{ display: 'flex', gap: 8 }}>
