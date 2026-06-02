@@ -27,7 +27,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 
