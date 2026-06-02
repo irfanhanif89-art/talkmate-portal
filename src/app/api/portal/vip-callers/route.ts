@@ -6,7 +6,7 @@ const VALID_ACTIONS = new Set([
 ])
 
 export async function GET(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 
