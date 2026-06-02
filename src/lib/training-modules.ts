@@ -8,6 +8,7 @@ export interface ContentBlock {
 export interface PlanCard {
   name: string;
   price: string;
+  setup?: string;
   tagline: string;
   features: string[];
   highlight: boolean;
@@ -203,7 +204,7 @@ export const trainingModules: TrainingModule[] = [
     blocks: [
       {
         type: "paragraph",
-        content: "TalkMate has three plans. No setup fees on any plan. No lock-in contracts. 14-day money-back guarantee."
+        content: "TalkMate has three plans, each with a one-off setup fee. No lock-in contracts. 14-day money-back guarantee."
       },
       {
         type: "plan-card",
@@ -211,6 +212,7 @@ export const trainingModules: TrainingModule[] = [
           {
             name: "Starter",
             price: "$299/mo",
+            setup: "+ $299 one-off setup fee",
             tagline: "For solo operators and small businesses",
             highlight: false,
             features: [
@@ -227,6 +229,7 @@ export const trainingModules: TrainingModule[] = [
           {
             name: "Growth",
             price: "$499/mo",
+            setup: "+ $349 one-off setup fee",
             tagline: "Most popular. For growing businesses.",
             highlight: true,
             features: [
@@ -241,6 +244,7 @@ export const trainingModules: TrainingModule[] = [
           {
             name: "Pro",
             price: "$799/mo",
+            setup: "+ $399 one-off setup fee",
             tagline: "For multi-location and high-volume operators",
             highlight: false,
             features: [
@@ -272,7 +276,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "callout",
-        content: "There is no setup fee. Ever. And there is no free trial. The offer is a 14-day money-back guarantee. If a client is not satisfied within the first 14 days, they receive a full refund. Always frame it that way."
+        content: "Every plan has a one-off setup fee: Starter $299, Growth $349, Pro $399. There is no free trial. The offer is a 14-day money-back guarantee. If a client is not satisfied within the first 14 days, they receive a full refund. Always frame it that way."
       }
     ]
   },
@@ -368,7 +372,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "callout",
-        content: "Pricing is fixed. Starter $299 per month, Growth $499 per month, Pro $799 per month. No negotiation on price. No custom deals."
+        content: "Pricing is fixed. Starter $299/mo (+$299 setup), Growth $499/mo (+$349 setup), Pro $799/mo (+$399 setup). No negotiation on price. No custom deals."
       },
       {
         type: "tip",

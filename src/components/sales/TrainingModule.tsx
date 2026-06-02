@@ -370,6 +370,11 @@ function PlanGrid({ plans }: { plans: PlanCard[] }) {
           <div style={{ fontSize: 24, fontWeight: 800, color: '#E8622A', margin: '6px 0 2px' }}>
             {plan.price}
           </div>
+          {plan.setup && (
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#9AA7B8', marginBottom: 2 }}>
+              {plan.setup}
+            </div>
+          )}
           <div style={{ fontSize: 12.5, color: '#6B7280', minHeight: 34, lineHeight: 1.4 }}>
             {plan.tagline}
           </div>
