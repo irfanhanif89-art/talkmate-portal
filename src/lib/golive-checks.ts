@@ -46,6 +46,9 @@ export const AUTO_CHECK_KEYS = [
   // false when vapi_agent_id is missing.
   'check_agent_config_valid',
   'check_no_placeholder_in_prompt',
+  // 2026-06-02 (GM Towing post-mortem) — onboarding-quality gates.
+  'check_vip_fastpath_configured',
+  'check_template_matches_business',
 ] as const
 
 export type AutoCheckKey = (typeof AUTO_CHECK_KEYS)[number]
@@ -82,6 +85,8 @@ export const AUTO_CHECK_LABELS: Record<AutoCheckKey, string> = {
   check_intelligence_scored:       'First call intelligence score generated',
   check_agent_config_valid:        'Agent config matches TalkMate standard (voice, tools, timing)',
   check_no_placeholder_in_prompt:  'System prompt has no placeholder text or speech-distorting characters',
+  check_vip_fastpath_configured:   'Regulars/VIP list has a working fast-path (recognised + routable)',
+  check_template_matches_business: 'FAQs & escalation match the actual business (template was converted)',
 }
 
 export const MANUAL_CHECK_LABELS: Record<ManualCheckKey, string> = {
@@ -115,6 +120,8 @@ export const AUTO_CHECK_REMEDIES: Record<AutoCheckKey, string> = {
   check_intelligence_scored:       'No call has been scored by Call Intelligence yet. Confirm ANTHROPIC_API_KEY is set and make a >30s test call.',
   check_agent_config_valid:        'Vapi assistant config deviates from AGENT_CONFIG_STANDARD. Check /admin/agent-health for the field-level issue list.',
   check_no_placeholder_in_prompt:  'System prompt contains placeholder text, dollar signs, or ordinal suffixes. Fix the prompt in Vapi and resync.',
+  check_vip_fastpath_configured:   'Regulars are loaded as VIP/account callers but none are routable (no account type, no VIP bypass with a live transfer number, no transfer member). They will get the cold script. Fix in Admin > Client > Accounts/VIP — this is the GM Towing failure mode.',
+  check_template_matches_business: 'The agent still carries roadside/car-towing FAQs or escalation rules while the catalogue is container/freight — the onboarding template was not converted. Rewrite FAQs & escalation for the real business, or override if intentional.',
 }
 
 // E.164 AU mobile: +61 then 9 digits (mobile) or +61 then 9 digits
@@ -189,6 +196,27 @@ export async function computeAutoChecks(
   const scoredCount = scoredRes.count ?? 0
 
   const notifsCfg = (business.notifications_config ?? {}) as Record<string, unknown>
+
+  // 2026-06-02 (GM Towing post-mortem) — onboarding-quality gates.
+  // Both read extra rows; fetched here in parallel.
+  const [vipRes, onboardRes] = await Promise.all([
+    supabase
+      .from('vip_callers')
+      .select('account_type, vip_bypass, transfer_to_member_id, action')
+      .eq('client_id', businessId)
+      .eq('active', true),
+    supabase
+      .from('onboarding_responses')
+      .select('responses')
+      .eq('business_id', businessId)
+      .maybeSingle(),
+  ])
+  const liveTransferNumber =
+    typeof notifsCfg.live_transfer_number === 'string' && notifsCfg.live_transfer_number.trim().length > 0
+  const vipFastPathOk = computeVipFastPath(vipRes.data ?? [], liveTransferNumber)
+  const templateOk = computeTemplateMatch(
+    (onboardRes.data as { responses?: Record<string, unknown> } | null)?.responses ?? null,
+  )
   const alertCfg = (business.intelligence_alert_config ?? {}) as Record<string, unknown>
 
   // Brief: Starter plan auto-passes the intelligence_scored check.
@@ -252,9 +280,68 @@ export async function computeAutoChecks(
 
     check_no_placeholder_in_prompt:
       promptClean,
+
+    check_vip_fastpath_configured:
+      vipFastPathOk,
+
+    check_template_matches_business:
+      templateOk,
   }
 
   return { business, result }
+}
+
+// VIP fast-path gate (GM Towing failure mode). Passes when there is no
+// regulars list at all, OR at least one loaded caller gets usable
+// recognised handling: a recognised `account`, OR an action that only
+// takes a message (no transfer needed), OR a transfer WITH a destination
+// (explicit transfer member, or `vip_bypass` + a live transfer number).
+// The exact GM bug — every regular a `vip` whose action is `transfer_*`
+// with NO destination and no bypass number — fails this check.
+export type VipRow = {
+  account_type: string | null
+  vip_bypass: boolean | null
+  transfer_to_member_id: string | null
+  action: string | null
+}
+export function computeVipFastPath(rows: VipRow[], liveTransferNumber: boolean): boolean {
+  if (rows.length === 0) return true // nothing loaded — nothing to enforce
+  return rows.some(r => {
+    if (r.account_type === 'account') return true // recognised trade account
+    if (r.action === 'take_message') return true // recognised, message taken — no transfer required
+    if (r.transfer_to_member_id) return true // explicit transfer destination
+    if (r.vip_bypass === true && liveTransferNumber) return true // bypass to live number
+    return false // needs a transfer but has nowhere to send them
+  })
+}
+
+// Template-match gate. Fails only on the clear contradiction: the
+// catalogue is container/freight/haulage while the FAQs or escalation
+// rules still carry roadside car-towing language (the un-converted
+// template). Conservative by design — passes when there's no onboarding
+// data, no freight catalogue, or no roadside phrases — so it blocks the
+// GM case without false-flagging genuine roadside towers.
+const ROADSIDE_PHRASES = ['racv', 'nrma', 'accident scene', 'freeway', 'flat battery', 'roadside assist']
+const FREIGHT_HINTS = ['container', 'freight', 'haulage', 'tilt tray', 'sideloader']
+export function computeTemplateMatch(responses: Record<string, unknown> | null): boolean {
+  if (!responses) return true
+
+  const catalog = Array.isArray(responses.catalog) ? (responses.catalog as Array<Record<string, unknown>>) : []
+  const catalogBlob = catalog
+    .map(c => `${String(c.category ?? '')} ${String(c.name ?? '')}`)
+    .join(' ')
+    .toLowerCase()
+  const industry = String(responses.industry ?? '').toLowerCase()
+  const isFreight = FREIGHT_HINTS.some(h => catalogBlob.includes(h) || industry.includes(h))
+  if (!isFreight) return true
+
+  const faqs = Array.isArray(responses.faqs) ? (responses.faqs as Array<Record<string, unknown>>) : []
+  const faqBlob = faqs.map(f => `${String(f.question ?? '')} ${String(f.answer ?? '')}`).join(' ')
+  const escalationBlob = String(responses.escalationRules ?? '')
+  const textBlob = `${faqBlob} ${escalationBlob}`.toLowerCase()
+
+  const hasRoadside = ROADSIDE_PHRASES.some(p => textBlob.includes(p))
+  return !hasRoadside // freight catalogue + roadside language = un-converted template
 }
 
 // Fetch the assistant from Vapi and run the validator. Returns two
