@@ -13,9 +13,6 @@ interface Props {
 export default async function ProposalPage({ params }: Props) {
   const auth = await requireSalesRep()
   if (!auth.ok) redirect('/')
-  if (!auth.rep.notification_email) {
-    redirect('/sales/profile?warn=proposal')
-  }
 
   const { id } = await params
   const admin = createAdminClient()
@@ -34,7 +31,7 @@ export default async function ProposalPage({ params }: Props) {
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>Send Proposal</h1>
         <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginTop: 4 }}>
-          A branded proposal email goes from sales@talkmate.com.au. Replies come straight to {auth.rep.notification_email}.
+          A branded PDF proposal is emailed from hello@talkmate.com.au, with replies routed to the TalkMate inbox.
         </p>
       </div>
 
