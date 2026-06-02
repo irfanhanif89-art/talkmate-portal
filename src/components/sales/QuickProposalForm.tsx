@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Send } from 'lucide-react'
 import { SALES_INDUSTRY_SLUGS, SALES_INDUSTRY_LABELS, type SalesIndustrySlug } from '@/lib/industry-slugs'
+import { isSaleActive, regularPrice } from '@/lib/eofy-sale'
 
 type Plan = 'starter' | 'growth' | 'pro'
 type Template = 'full' | 'post_demo'
@@ -28,6 +29,8 @@ export default function QuickProposalForm() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sentTo, setSentTo] = useState<string | null>(null)
+
+  const saleOn = isSaleActive()
 
   const emailValid = /\S+@\S+\.\S+/.test(email.trim())
   const canSend = businessName.trim().length > 0 && emailValid && !sending
@@ -165,7 +168,13 @@ export default function QuickProposalForm() {
                 style={{ accentColor: '#E8622A' }}
               />
               <span style={{ fontSize: 13, color: 'white', fontWeight: 700 }}>
-                {opt.label} ${opt.price}/mo
+                {opt.label}{' '}
+                {saleOn && (
+                  <span style={{ textDecoration: 'line-through', opacity: 0.5, marginRight: 4 }}>
+                    ${regularPrice(opt.price).toLocaleString('en-AU')}
+                  </span>
+                )}
+                ${opt.price}/mo
                 {opt.recommended && (
                   <span style={{ marginLeft: 8, fontSize: 11, color: '#E8622A', fontWeight: 700 }}>
                     Recommended

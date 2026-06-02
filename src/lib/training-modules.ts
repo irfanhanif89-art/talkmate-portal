@@ -204,7 +204,7 @@ export const trainingModules: TrainingModule[] = [
     blocks: [
       {
         type: "paragraph",
-        content: "TalkMate has three plans, each with a one-off setup fee. No lock-in contracts. 14-day money-back guarantee."
+        content: "EOFY SALE (ends 30 June): every plan is 50% off the regular price. Reps pitch the regular price, then the EOFY price. Regular Starter $598/mo → EOFY $299/mo. Regular Growth $998/mo → EOFY $499/mo. Regular Pro $1,598/mo → EOFY $799/mo. Each plan still has a one-off setup fee. No lock-in contracts. 14-day money-back guarantee."
       },
       {
         type: "plan-card",
@@ -277,7 +277,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "callout",
-        content: "Every plan has a one-off setup fee: Starter $299, Growth $349, Pro $399. There is no free trial. The offer is a 14-day money-back guarantee. If a client is not satisfied within the first 14 days, they receive a full refund. Always frame it that way."
+        content: "Every plan has a one-off setup fee: Starter $299, Growth $349, Pro $399 (setup fee is NOT discounted). There is no free trial. The offer is a 14-day money-back guarantee. EOFY SALE ends 30 June: the EOFY price is 50% off the regular price — Starter $299/mo (reg $598), Growth $499/mo (reg $998), Pro $799/mo (reg $1,598). Always frame the EOFY price as the deal that ends 30 June."
       }
     ]
   },
@@ -373,7 +373,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "callout",
-        content: "Pricing is fixed. Starter $299/mo (+$299 setup), Growth $499/mo (+$349 setup), Pro $799/mo (+$399 setup). No negotiation on price. No custom deals."
+        content: "Pricing is fixed at the EOFY rate until 30 June: Starter $299/mo (reg $598, +$299 setup), Growth $499/mo (reg $998, +$349 setup), Pro $799/mo (reg $1,598, +$399 setup). The 50% EOFY discount IS the deal — no further negotiation, no custom deals below the EOFY price."
       },
       {
         type: "tip",

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import PasswordStrength from '@/components/portal/password-strength'
 import { validatePassword as validatePasswordRules } from '@/lib/password'
+import { isSaleActive, regularPrice, EOFY_SALE } from '@/lib/eofy-sale'
 
 type Plan = 'starter' | 'growth' | 'pro'
 type SignupType = 'trial' | 'pay_now'
@@ -74,6 +75,7 @@ const INDUSTRIES: Array<{ value: string; label: string }> = [
 ]
 
 export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
+  const saleOn = isSaleActive()
   const [plan, setPlan] = useState<Plan>(initialPlan)
   const [signupType, setSignupType] = useState<SignupType>('trial')
 
@@ -220,6 +222,14 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
           <section style={{ minWidth: 0 }}>
             <p style={eyebrowStyle}>Step 1</p>
             <h1 style={h1Style}>Pick your plan</h1>
+            {saleOn && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', marginTop: 8,
+                padding: '4px 11px', borderRadius: 99,
+                background: 'rgba(232,98,42,0.12)', border: '1px solid rgba(232,98,42,0.45)',
+                color: '#E8622A', fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', whiteSpace: 'nowrap',
+              }}>{EOFY_SALE.badge}</span>
+            )}
             <p style={subStyle}>Start a 7-day free trial or pay now. Cancel anytime.</p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 18 }}>
@@ -252,6 +262,11 @@ export default function SignupClient({ initialPlan }: { initialPlan: Plan }) {
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
                       <span style={{ fontSize: 16, fontWeight: 800, color: 'white' }}>{p.name}</span>
                       <span style={{ fontSize: 20, fontWeight: 800, color: selected ? '#E8622A' : '#4A9FE8', letterSpacing: '-0.5px' }}>
+                        {saleOn && (
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#7BAED4', textDecoration: 'line-through', marginRight: 6 }}>
+                            ${regularPrice(p.price).toLocaleString('en-AU')}
+                          </span>
+                        )}
                         ${p.price}<span style={{ fontSize: 11, fontWeight: 500, color: '#7BAED4' }}>/mo</span>
                       </span>
                     </div>
