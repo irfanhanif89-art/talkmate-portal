@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { CheckCircle2, Send } from 'lucide-react'
 import { SALES_INDUSTRY_SLUGS, SALES_INDUSTRY_LABELS, toSalesIndustrySlug, type SalesIndustrySlug } from '@/lib/industry-slugs'
 import FollowUpSequenceModal from './FollowUpSequenceModal'
+import { isSaleActive, regularPrice } from '@/lib/eofy-sale'
 
 interface Props {
   leadId: string
@@ -40,6 +41,8 @@ export default function ProposalForm({
   const [error, setError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [showFollowupModal, setShowFollowupModal] = useState(false)
+
+  const saleOn = isSaleActive()
 
   async function submit() {
     if (!leadEmail) {
@@ -159,7 +162,13 @@ export default function ProposalForm({
                 style={{ accentColor: '#E8622A' }}
               />
               <span style={{ fontSize: 13, color: 'white', fontWeight: 700 }}>
-                {opt.label} ${opt.price}/mo
+                {opt.label}{' '}
+                {saleOn && (
+                  <span style={{ textDecoration: 'line-through', opacity: 0.5, marginRight: 4 }}>
+                    ${regularPrice(opt.price).toLocaleString('en-AU')}
+                  </span>
+                )}
+                ${opt.price}/mo
                 {opt.recommended && (
                   <span style={{ marginLeft: 8, fontSize: 11, color: '#E8622A', fontWeight: 700 }}>
                     Recommended
