@@ -4,6 +4,13 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Ship the proposal templates + self-hosted fonts into the serverless
+  // bundles that read them at runtime (PDF render + confirmation page).
+  outputFileTracingIncludes: {
+    '/api/sales/send-proposal': ['./src/lib/proposal/templates/**', './public/fonts/**'],
+    '/api/sales/proposals/quick-send': ['./src/lib/proposal/templates/**', './public/fonts/**'],
+    '/p/accept/[token]': ['./src/lib/proposal/templates/**', './public/fonts/**'],
+  },
   async redirects() {
     return [
       {
