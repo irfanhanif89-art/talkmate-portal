@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireSalesRep } from '@/lib/sales-auth'
 import { isCommissionPlan } from '@/lib/commission'
 import { sendProposalForLead, type TemplateType } from '@/lib/proposal-send'
+import { ROI_DEFAULTS } from '@/lib/proposal/roi'
 
 export async function POST(req: Request) {
   const auth = await requireSalesRep(req)
@@ -20,6 +21,9 @@ export async function POST(req: Request) {
     plan?: string
     personalised_note?: string
     template_type?: string
+    missed_calls_per_week?: number
+    avg_job_value?: number
+    hours_per_week?: number
   }
 
   if (!body.lead_id) return NextResponse.json({ ok: false, error: 'lead_id required' }, { status: 400 })
@@ -28,6 +32,11 @@ export async function POST(req: Request) {
   }
   const templateType: TemplateType = body.template_type === 'post_demo' ? 'post_demo' : 'full'
   const personalisedNote = (body.personalised_note ?? '').trim().slice(0, 200) || null
+  const roi = {
+    missedCallsPerWeek: Number(body.missed_calls_per_week) || ROI_DEFAULTS.missedCallsPerWeek,
+    avgJobValue: Number(body.avg_job_value) || ROI_DEFAULTS.avgJobValue,
+    hoursPerWeek: Number(body.hours_per_week) || ROI_DEFAULTS.hoursPerWeek,
+  }
 
   const admin = createAdminClient()
   const { data: lead } = await admin
@@ -61,6 +70,7 @@ export async function POST(req: Request) {
     plan: body.plan,
     templateType,
     personalisedNote,
+    roi,
   })
 
   if (!result.ok) {
