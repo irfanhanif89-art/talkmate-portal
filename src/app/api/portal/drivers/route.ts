@@ -4,8 +4,8 @@ import { requireClient } from '@/lib/portal-auth'
 // GET — list drivers with the latest availability override per driver.
 // POST — create a new driver.
 
-export async function GET() {
-  const auth = await requireClient()
+export async function GET(request: Request) {
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
