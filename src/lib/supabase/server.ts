@@ -33,3 +33,19 @@ export function createAdminClient() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }
+
+// JWT-bound client for the mobile app (Authorization: Bearer <access-jwt>).
+// Uses the ANON key plus the user's access token in the Authorization header,
+// so RLS evaluates auth.uid() from the JWT exactly like the cookie session —
+// SAME tenant isolation, NO service-role bypass. The caller MUST first verify
+// the JWT signature via createAdminClient().auth.getUser(jwt) before trusting it.
+export function createBearerClient(jwt: string) {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${jwt}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    }
+  )
+}

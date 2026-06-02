@@ -8,7 +8,7 @@ const VALID_TRUCKS = new Set(['loaded_tilt_tray', 'empty_tilt_tray', 'sideloader
 const VALID_RATES = new Set(['account', 'retail'])
 
 export async function GET(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 // Manual booking creation from the scheduler UI. Agent-created bookings
 // continue to go through /api/vapi/functions create_booking.
 export async function POST(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase, clientId } = auth
 

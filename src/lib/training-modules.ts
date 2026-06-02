@@ -219,8 +219,6 @@ export const trainingModules: TrainingModule[] = [
               "AI receptionist answers every call, 24/7",
               "Books jobs, takes orders, answers FAQs",
               "SMS confirmation sent to every caller",
-              "Missed-call win-back SMS (automatic)",
-              "Google review follow-up SMS",
               "Train TalkMate knowledge base",
               "Full call log, recordings, and transcripts",
               "Up to 300 calls per month"
@@ -234,6 +232,8 @@ export const trainingModules: TrainingModule[] = [
             highlight: true,
             features: [
               "Everything in Starter",
+              "Missed-call win-back SMS (automatic)",
+              "Google review follow-up SMS",
               "Two-way SMS Inbox (send and receive SMS with customers)",
               "AI Website Chatbot (embeddable on their website)",
               "TalkMate Command (control agent via Telegram or WhatsApp)",
@@ -249,6 +249,7 @@ export const trainingModules: TrainingModule[] = [
             highlight: false,
             features: [
               "Everything in Growth",
+              "Job scheduler with driver dispatch",
               "Up to 3 business locations",
               "Unlimited commands",
               "Dedicated support",
@@ -336,7 +337,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "paragraph",
-        content: "The Settings page has an Automation tab where the owner can configure the missed-call win-back SMS and the Google review follow-up. Both are on by default for new clients. Win-back fires automatically when a short call ends without being answered. The review follow-up sends a Google review link to callers after a completed call."
+        content: "The Settings page has an Automation tab where the owner can configure the missed-call win-back SMS and the Google review follow-up (Growth and Pro plans). Both are on by default for eligible new clients. Win-back fires automatically when a short call ends without being answered. The review follow-up sends a Google review link to callers after a completed call."
       },
       {
         type: "tip",
@@ -368,7 +369,7 @@ export const trainingModules: TrainingModule[] = [
       },
       {
         type: "callout",
-        content: "Never promise a feature that is not on the plan a client is signing up for. SMS Inbox and AI Website Chatbot are Growth and Pro only. Win-back and reviews are all plans. If you are unsure, check before committing."
+        content: "Never promise a feature that is not on the plan a client is signing up for. Two-way SMS Inbox, AI Website Chatbot, Missed-Call Win-back, and Google Reviews are Growth and Pro only — NOT on Starter. Driver Dispatch (job scheduler) is Pro only. If you are unsure, check before committing."
       },
       {
         type: "callout",

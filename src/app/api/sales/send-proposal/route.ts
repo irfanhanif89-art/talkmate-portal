@@ -9,13 +9,6 @@ export async function POST(req: Request) {
   const auth = await requireSalesRep(req)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
-  if (!auth.rep.notification_email) {
-    return NextResponse.json(
-      { ok: false, error: 'Set your reply-to email in Profile first.' },
-      { status: 400 },
-    )
-  }
-
   const body = await req.json().catch(() => ({})) as {
     lead_id?: string
     plan?: string
@@ -65,7 +58,7 @@ export async function POST(req: Request) {
       id: auth.rep.id,
       full_name: auth.rep.full_name,
       phone: auth.rep.phone,
-      notification_email: auth.rep.notification_email,
+      notification_email: auth.rep.notification_email ?? auth.rep.email,
     },
     plan: body.plan,
     templateType,

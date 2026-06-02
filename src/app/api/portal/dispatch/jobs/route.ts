@@ -4,7 +4,7 @@ import { requireClient } from '@/lib/portal-auth'
 const VALID_STATUS = new Set(['pending', 'assigned', 'in_progress', 'complete', 'cancelled', 'declined'])
 
 export async function GET(request: Request) {
-  const auth = await requireClient()
+  const auth = await requireClient(request)
   if ('error' in auth) return auth.error
   const { supabase } = auth
 
