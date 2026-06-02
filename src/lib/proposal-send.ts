@@ -11,6 +11,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/resend'
 import { renderHtmlToPdf } from '@/lib/proposal/render-pdf'
 import { fillTemplate, featurePlan } from '@/lib/proposal/fill-template'
+import { applyEofySaleToProposalHtml } from '@/lib/eofy-sale'
 import { computeRoi, ROI_DEFAULTS, type RoiInput } from '@/lib/proposal/roi'
 import { generateAcceptToken } from '@/lib/proposal/token'
 import { inlineFonts } from '@/lib/proposal/inline-fonts'
@@ -116,6 +117,8 @@ export async function sendProposalForLead(args: SendProposalArgs): Promise<SendP
     date: todayAu,
     ...roi,
   })
+  // EOFY sale: inject struck-through regular pricing at send time (date-gated).
+  proposalHtml = applyEofySaleToProposalHtml(proposalHtml)
   // REQUIRED: headless Chromium setContent() has no origin, so /fonts URLs
   // cannot resolve — inline them before rendering or the PDF falls back to Arial.
   proposalHtml = inlineFonts(proposalHtml)
