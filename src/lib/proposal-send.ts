@@ -1,13 +1,19 @@
 // Shared proposal-email core. Used by both the lead-scoped send route
 // (/api/sales/send-proposal) and the standalone "quick send" route
-// (/api/sales/proposals/quick-send). Builds the branded HTML, sends via
-// Resend, records proposal_tracking + lead_activities, and advances the
-// lead status — so both entry points behave identically.
+// (/api/sales/proposals/quick-send). Renders a branded A4 PDF proposal,
+// emails it from hello@talkmate.com.au as an attachment with a tokenised
+// "Ready to go ahead" accept link, records proposal_tracking + lead_activities,
+// and advances the lead status — so both entry points behave identically.
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createAdminClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/resend'
-import { toSalesIndustrySlug } from '@/lib/industry-slugs'
-import { INDUSTRY_BULLETS, DEFAULT_BULLETS, PLAN_FEATURES } from '@/lib/proposal-content'
+import { renderHtmlToPdf } from '@/lib/proposal/render-pdf'
+import { fillTemplate, featurePlan } from '@/lib/proposal/fill-template'
+import { computeRoi, ROI_DEFAULTS, type RoiInput } from '@/lib/proposal/roi'
+import { generateAcceptToken } from '@/lib/proposal/token'
+import { inlineFonts } from '@/lib/proposal/inline-fonts'
 import type { CommissionPlan } from '@/lib/commission'
 
 export type TemplateType = 'full' | 'post_demo'
@@ -34,112 +40,45 @@ export interface SendProposalArgs {
   plan: CommissionPlan
   templateType: TemplateType
   personalisedNote: string | null
+  /** ROI figures shown on the proposal PDF. Defaults to ROI_DEFAULTS when omitted. */
+  roi?: RoiInput
+  /** Override the base URL used for the accept link (defaults to NEXT_PUBLIC_APP_URL). */
+  appUrl?: string
 }
 
 export type SendProposalResult =
   | { ok: true; proposalId: string | null }
   | { ok: false; error: string; status: number }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, ch => (
+// Cover note that carries the attached PDF proposal. Holds the tokenised
+// "Ready to go ahead" button (the PDF itself has no per-lead accept hook) and
+// surfaces the rep's personalised note if one was supplied.
+function proposalCoverHtml(o: {
+  contactName: string | null
+  businessName: string
+  acceptUrl: string
+  repFullName: string
+  personalisedNote: string | null
+}) {
+  const esc = (s: string) => s.replace(/[&<>"']/g, ch => (
     ch === '&' ? '&amp;' :
     ch === '<' ? '&lt;'  :
     ch === '>' ? '&gt;'  :
     ch === '"' ? '&quot;': '&#39;'
   ))
-}
-
-function fullProposalHtml(opts: {
-  contactName: string | null
-  businessName: string
-  bullets: string[]
-  plan: CommissionPlan
-  personalisedNote: string | null
-  repFullName: string
-  repPhone: string | null
-  repNotificationEmail: string
-}) {
-  const planLabel = opts.plan.charAt(0).toUpperCase() + opts.plan.slice(1)
-  const planMeta = PLAN_FEATURES[opts.plan]
-
   return `
-  <div style="font-family: 'Outfit', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; color: #061322;">
-    <div style="background: #061322; padding: 26px 32px;">
-      <div style="font-size: 24px; font-weight: 800; color: white;">
-        Talk<span style="color: #E8622A;">Mate</span>
-      </div>
+  <div style="font-family:'Outfit',Arial,sans-serif;max-width:600px;margin:0 auto;color:#061322;">
+    <div style="background:#061322;padding:22px 28px;"><div style="font-size:22px;font-weight:800;color:#fff;">Talk<span style="color:#E8622A;">Mate</span></div></div>
+    <div style="height:3px;background:#E8622A;"></div>
+    <div style="padding:28px;">
+      <p style="font-size:15px;line-height:1.6;margin:0 0 14px;">Hi ${esc(o.contactName ?? 'there')},</p>
+      ${o.personalisedNote ? `<p style="font-size:15px;line-height:1.6;margin:0 0 14px;color:#34495e;">${esc(o.personalisedNote)}</p>` : ''}
+      <p style="font-size:15px;line-height:1.6;margin:0 0 14px;">Your TalkMate proposal for <strong>${esc(o.businessName)}</strong> is attached as a PDF. It covers how TalkMate answers every call, what it is worth to your business, and the plan options.</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 22px;">When you are ready, just tap the button below.</p>
+      <p style="margin:0 0 24px;"><a href="${o.acceptUrl}" style="display:inline-block;padding:14px 26px;background:#E8622A;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;font-size:15px;">Ready to go ahead</a></p>
+      <p style="font-size:14px;color:#34495e;margin:0;">${esc(o.repFullName)}<br/>TalkMate</p>
     </div>
-    <div style="height: 3px; background: #E8622A;"></div>
-    <div style="padding: 32px;">
-      <p style="font-size: 16px; margin: 0 0 14px;">Hi ${escapeHtml(opts.contactName ?? 'there')},</p>
-      ${opts.personalisedNote ? `<p style="font-size: 15px; line-height: 1.65; margin: 0 0 18px; color: #34495e;">${escapeHtml(opts.personalisedNote)}</p>` : ''}
-      <p style="font-size: 15px; line-height: 1.65; margin: 0 0 12px;">Here is what TalkMate will do for <strong>${escapeHtml(opts.businessName)}</strong>:</p>
-      <ul style="font-size: 15px; line-height: 1.7; margin: 0 0 22px; padding-left: 22px; color: #34495e;">
-        ${opts.bullets.map(b => `<li style="margin-bottom: 6px;">${escapeHtml(b)}</li>`).join('')}
-      </ul>
-
-      <div style="background: #f4f5f7; border-radius: 12px; padding: 22px; margin: 0 0 22px;">
-        <div style="font-size: 12px; color: #7BAED4; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">${escapeHtml(planLabel)} plan</div>
-        <div style="font-size: 32px; font-weight: 800; color: #061322; margin: 4px 0 14px;">$${planMeta.price}<span style="font-size: 14px; font-weight: 600; color: #7BAED4;">/month</span></div>
-        <ul style="font-size: 14px; line-height: 1.7; margin: 0; padding-left: 20px; color: #34495e;">
-          ${planMeta.features.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
-        </ul>
-      </div>
-
-      <p style="font-size: 13px; color: #7BAED4; margin: 0 0 22px;">
-        No lock-in contracts. Cancel anytime. Setup included in your fee. 14-day money-back guarantee.
-      </p>
-
-      <p style="margin: 0 0 26px;">
-        <a href="https://talkmate.com.au/pricing" style="display: inline-block; padding: 14px 26px; background: #E8622A; color: white; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px;">Get Started</a>
-      </p>
-
-      <p style="font-size: 14px; line-height: 1.6; margin: 0; color: #34495e;">
-        ${escapeHtml(opts.repFullName)}<br/>
-        ${opts.repPhone ? escapeHtml(opts.repPhone) + '<br/>' : ''}
-        <a href="mailto:${escapeHtml(opts.repNotificationEmail)}" style="color: #E8622A; text-decoration: none;">${escapeHtml(opts.repNotificationEmail)}</a>
-      </p>
-    </div>
-    <div style="padding: 18px 32px; background: #f9fafb; border-top: 1px solid #eef0f3; font-size: 11px; color: #7BAED4;">
-      TalkMate. AI Receptionist for Australian Small Business. <a href="https://talkmate.com.au" style="color: #7BAED4;">talkmate.com.au</a>
-    </div>
-  </div>`
-}
-
-function postDemoHtml(opts: {
-  contactName: string | null
-  businessName: string
-  plan: CommissionPlan
-  personalisedNote: string | null
-  repFullName: string
-  repPhone: string | null
-}) {
-  const planLabel = opts.plan.charAt(0).toUpperCase() + opts.plan.slice(1)
-  const planPrice = PLAN_FEATURES[opts.plan].price
-
-  return `
-  <div style="font-family: 'Outfit', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; color: #061322;">
-    <div style="background: #061322; padding: 26px 32px;">
-      <div style="font-size: 24px; font-weight: 800; color: white;">
-        Talk<span style="color: #E8622A;">Mate</span>
-      </div>
-    </div>
-    <div style="height: 3px; background: #E8622A;"></div>
-    <div style="padding: 32px;">
-      <p style="font-size: 16px; margin: 0 0 14px;">Hi ${escapeHtml(opts.contactName ?? 'there')},</p>
-      <p style="font-size: 15px; line-height: 1.65; margin: 0 0 14px;">Wanted to make sure everything from our call landed okay.</p>
-      ${opts.personalisedNote ? `<p style="font-size: 15px; line-height: 1.65; margin: 0 0 18px; color: #34495e;">${escapeHtml(opts.personalisedNote)}</p>` : ''}
-      <p style="font-size: 15px; line-height: 1.65; margin: 0 0 22px;">The plan I recommended for <strong>${escapeHtml(opts.businessName)}</strong> was <strong>${escapeHtml(planLabel)}</strong> at <strong>$${planPrice}/month</strong>.</p>
-      <p style="font-size: 15px; line-height: 1.65; margin: 0 0 22px;">Happy to answer any questions, just reply to this email or call me directly.</p>
-
-      <p style="margin: 0 0 26px;">
-        <a href="https://talkmate.com.au/pricing" style="display: inline-block; padding: 14px 26px; background: #E8622A; color: white; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px;">Review your proposal</a>
-      </p>
-
-      <p style="font-size: 14px; line-height: 1.6; margin: 0; color: #34495e;">
-        ${escapeHtml(opts.repFullName)}${opts.repPhone ? ' | ' + escapeHtml(opts.repPhone) : ''}
-      </p>
-    </div>
+    <div style="padding:16px 28px;background:#f9fafb;border-top:1px solid #eef0f3;font-size:11px;color:#7BAED4;">TalkMate. AI Receptionist for Australian Small Business. talkmate.com.au</div>
   </div>`
 }
 
@@ -151,39 +90,55 @@ export async function sendProposalForLead(args: SendProposalArgs): Promise<SendP
   const { lead, rep, plan, templateType, personalisedNote } = args
   const admin = createAdminClient()
 
-  const slug = toSalesIndustrySlug(lead.industry)
-  const bullets = slug && INDUSTRY_BULLETS[slug] ? INDUSTRY_BULLETS[slug] : DEFAULT_BULLETS
-
   const subject = templateType === 'full'
     ? `Your TalkMate Proposal for ${lead.business_name}`
     : `Great chatting, ${lead.contact_name ?? 'there'}. Here is what we covered.`
 
-  const html = templateType === 'full'
-    ? fullProposalHtml({
-        contactName: lead.contact_name,
-        businessName: lead.business_name,
-        bullets,
-        plan,
-        personalisedNote,
-        repFullName: rep.full_name,
-        repPhone: rep.phone,
-        repNotificationEmail: rep.notification_email,
-      })
-    : postDemoHtml({
-        contactName: lead.contact_name,
-        businessName: lead.business_name,
-        plan,
-        personalisedNote,
-        repFullName: rep.full_name,
-        repPhone: rep.phone,
-      })
+  // Accept link token (persisted on the tracking row below).
+  const token = generateAcceptToken()
+  const appUrl = args.appUrl ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.talkmate.com.au'
+  const acceptUrl = `${appUrl}/p/accept/${token}`
+
+  // Build the branded proposal PDF from the vendored template.
+  const roi = computeRoi(args.roi ?? ROI_DEFAULTS)
+  const todayAu = new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  let proposalHtml = readFileSync(
+    join(process.cwd(), 'src/lib/proposal/templates/towing-proposal.html'), 'utf8',
+  )
+  proposalHtml = featurePlan(proposalHtml, plan)
+  proposalHtml = fillTemplate(proposalHtml, {
+    business: lead.business_name,
+    contact: lead.contact_name,
+    rep: rep.full_name,
+    phone: rep.phone,
+    email: rep.notification_email,
+    date: todayAu,
+    ...roi,
+  })
+  // REQUIRED: headless Chromium setContent() has no origin, so /fonts URLs
+  // cannot resolve — inline them before rendering or the PDF falls back to Arial.
+  proposalHtml = inlineFonts(proposalHtml)
+
+  const pdfBytes = await renderHtmlToPdf(proposalHtml)
+  const pdfBase64 = Buffer.from(pdfBytes).toString('base64')
+
+  const fromAddr = process.env.PROPOSAL_EMAIL_FROM ?? 'hello@talkmate.com.au'
+  const coverHtml = proposalCoverHtml({
+    contactName: lead.contact_name,
+    businessName: lead.business_name,
+    acceptUrl,
+    repFullName: rep.full_name,
+    personalisedNote,
+  })
 
   const result = await sendEmail({
-    from: `TalkMate Sales <${process.env.SALES_EMAIL_FROM ?? 'sales@talkmate.com.au'}>`,
-    replyTo: rep.notification_email,
+    from: `TalkMate <${fromAddr}>`,
+    replyTo: fromAddr,
     to: lead.email,
     subject,
-    html,
+    html: coverHtml,
+    attachments: [{ filename: `TalkMate Proposal - ${lead.business_name}.pdf`, content: pdfBase64 }],
   })
 
   if (!result.ok) {
@@ -197,12 +152,15 @@ export async function sendProposalForLead(args: SendProposalArgs): Promise<SendP
       rep_id: rep.id,
       resend_email_id: result.id ?? null,
       plan,
+      accept_token: token,
+      template_type: templateType,
+      selected_plan: plan,
     })
     .select('id')
     .maybeSingle()
 
   // Move status forward unless terminal.
-  if (!['proposal_sent', 'won', 'lost', 'bad_lead'].includes(lead.status)) {
+  if (!['proposal_sent', 'proposal_accepted', 'won', 'lost', 'bad_lead'].includes(lead.status)) {
     await admin.from('leads').update({
       status: 'proposal_sent',
       updated_at: new Date().toISOString(),

@@ -4,6 +4,7 @@ import { requireSalesRep } from '@/lib/sales-auth'
 import { isCommissionPlan } from '@/lib/commission'
 import { toSalesIndustrySlug } from '@/lib/industry-slugs'
 import { sendProposalForLead, type TemplateType } from '@/lib/proposal-send'
+import { ROI_DEFAULTS } from '@/lib/proposal/roi'
 
 // Standalone proposal send. The rep enters a fresh client email (plus
 // business name + industry) and we auto-generate and send the branded
@@ -31,6 +32,9 @@ export async function POST(req: Request) {
     plan?: string
     template_type?: string
     personalised_note?: string
+    missed_calls_per_week?: number
+    avg_job_value?: number
+    hours_per_week?: number
   }
 
   const businessName = (body.business_name ?? '').trim()
@@ -49,6 +53,11 @@ export async function POST(req: Request) {
   }
   const templateType: TemplateType = body.template_type === 'post_demo' ? 'post_demo' : 'full'
   const personalisedNote = (body.personalised_note ?? '').trim().slice(0, 200) || null
+  const roi = {
+    missedCallsPerWeek: Number(body.missed_calls_per_week) || ROI_DEFAULTS.missedCallsPerWeek,
+    avgJobValue: Number(body.avg_job_value) || ROI_DEFAULTS.avgJobValue,
+    hoursPerWeek: Number(body.hours_per_week) || ROI_DEFAULTS.hoursPerWeek,
+  }
 
   const admin = createAdminClient()
 
@@ -122,6 +131,7 @@ export async function POST(req: Request) {
     plan: body.plan,
     templateType,
     personalisedNote,
+    roi,
   })
 
   if (!result.ok) {
