@@ -3,8 +3,13 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getPlan } from '@/lib/plan'
+import { isSaleActive } from '@/lib/eofy-sale'
 import PlanComparison from '@/components/portal/plan-comparison'
 import { INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
+import { EofyBanner } from '@/components/portal/ui-v2/eofy-banner'
+import { Meter } from '@/components/portal/ui-v2/meter'
+import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
 
 interface StripeInvoice {
   id: string
@@ -25,13 +30,27 @@ interface StripeSummary {
   subscription: { id: string | null; status: string; current_period_end: string | null; cancel_at_period_end: boolean } | null
 }
 
-function CheckIcon() {
+// ─────────────────────────────────────────────────────────────────────────────
+// Small helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CheckSvg() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-[1px] flex-shrink-0 text-green">
       <polyline points="20,6 9,17 4,12" />
     </svg>
   )
 }
+
+function openStripePortal() {
+  return fetch('/api/stripe/portal', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => { if (d.url) window.location.href = d.url; else alert(d.error ?? 'Could not open Stripe portal. Please try again.') })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Add-on card
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface AddOnCardProps {
   iconBg: string
@@ -47,69 +66,71 @@ interface AddOnCardProps {
 
 function AddOnCard({ iconBg, iconStroke, iconPath, title, dataProof, features, price, cta, primary }: AddOnCardProps) {
   return (
-    <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 20, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-      {/* Top row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 8, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div className="relative flex flex-col rounded-[var(--r)] border border-line bg-card-2 p-5 shadow-[0_1px_4px_rgba(0,0,0,.28)]">
+      {/* Top row: icon + locked badge */}
+      <div className="mb-[10px] flex items-start justify-between">
+        <div
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[9px]"
+          style={{ background: iconBg }}
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             {iconPath}
           </svg>
         </div>
-        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, background: 'rgba(232,98,42,0.15)', color: '#E8622A', borderRadius: 4, padding: '3px 7px' }}>
-          LOCKED
+        <span className="rounded-[5px] bg-[rgba(238,106,44,.15)] px-[7px] py-[3px] text-[8px] font-[700] uppercase tracking-[.10em] text-orange">
+          Locked
         </span>
       </div>
 
       {/* Name */}
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 10 }}>{title}</div>
+      <div className="mb-[9px] text-[13.5px] font-[800] text-text">{title}</div>
 
-      {/* Data proof */}
-      <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 7, padding: '8px 10px', fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 12, lineHeight: 1.55 }}>
+      {/* Proof stat */}
+      <div className="mb-3 rounded-[8px] bg-[rgba(255,255,255,.04)] p-[9px_11px] text-[12px] leading-[1.55] text-[rgba(255,255,255,.5)] [&_strong]:font-[700] [&_strong]:text-[rgba(255,255,255,.8)]">
         {dataProof}
       </div>
 
       {/* Features */}
-      <div style={{ marginBottom: 14, flex: 1 }}>
+      <div className="mb-4 flex flex-1 flex-col gap-[7px]">
         {features.map(f => (
-          <div key={f} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>
-            <CheckIcon />
-            {f}
+          <div key={f} className="flex items-start gap-[7px] text-[12px] text-[rgba(255,255,255,.6)]">
+            <CheckSvg />
+            <span>{f}</span>
           </div>
         ))}
       </div>
 
       {/* Bottom bar */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span style={{ fontSize: 18, fontWeight: 800, color: '#E8622A' }}>${price}</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginLeft: 3 }}>/mo</span>
+      <div className="mt-auto flex items-center justify-between border-t border-[rgba(255,255,255,.06)] pt-[14px]">
+        <div className="flex items-baseline gap-[2px]">
+          <span className="tnum text-[20px] font-[800] tracking-[-0.5px] text-orange">${price}</span>
+          <span className="text-[11px] text-faint">/mo</span>
         </div>
-        <button style={{
-          background: primary ? '#E8622A' : 'rgba(21,101,192,0.2)',
-          color: primary ? 'white' : '#4A9FE8',
-          border: primary ? 'none' : '1px solid rgba(74,159,232,0.3)',
-          padding: '10px 18px',
-          borderRadius: 8,
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-          fontFamily: 'Outfit,sans-serif',
-        }}>
-          {cta}
-        </button>
+        {primary ? (
+          <ButtonV2 variant="primary" className="px-[18px] py-[10px] text-[12px]">{cta}</ButtonV2>
+        ) : (
+          <ButtonV2 variant="secondary" className="px-[18px] py-[10px] text-[12px] text-blue">{cta}</ButtonV2>
+        )}
       </div>
     </div>
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main page
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function BillingPage() {
   const supabase = createClient()
-  const [cancelStep, setCancelStep] = useState<0|1|2|3>(0) // 0=hidden 1=reasons 2=counter-offer 3=final-confirm
+
+  // Cancel flow state
+  const [cancelStep, setCancelStep] = useState<0|1|2|3>(0)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelReasonOther, setCancelReasonOther] = useState('')
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelMessage, setCancelMessage] = useState<string | null>(null)
-  const cancelling = cancelStep > 0
+
+  // Data state
   const [missedCallCount, setMissedCallCount] = useState(0)
   const [callsThisMonth, setCallsThisMonth] = useState(0)
   const [plan, setPlan] = useState<string>('starter')
@@ -121,6 +142,7 @@ export default function BillingPage() {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
   const [setupFeeAmount, setSetupFeeAmount] = useState<number | null>(null)
   const [setupFeeWaived, setSetupFeeWaived] = useState<boolean>(false)
+
   const weeklyPositiveCalls = Math.round(7 * 0.72 * 5) // ~25
 
   useEffect(() => {
@@ -144,20 +166,14 @@ export default function BillingPage() {
       }
 
       const { data: allCalls } = await supabase.from('calls').select('id').eq('business_id', biz.id)
-      // Estimate lifetime revenue at industry-avg call value as a fallback when no jobs table values exist.
       const totalCalls = allCalls?.length ?? 0
       setLifetimeRevenue(totalCalls * INDUSTRY_AVG_CALL_VALUE)
 
-      // Months active × monthly price (annual subscribers pay upfront — count complete years)
       if (biz.signup_at) {
         const months = Math.max(1, Math.floor((Date.now() - new Date(biz.signup_at).getTime()) / (30 * 24 * 60 * 60 * 1000)))
         const billingCycleForCalc = (biz.billing_cycle as string) ?? 'monthly'
-        const monthlyPrice = biz.plan === 'pro'
-          ? 799
-          : biz.plan === 'growth'
-          ? 499
-          : 299
-        const annualPrice = monthlyPrice * 10  // $2990/$4990/$7990
+        const monthlyPrice = biz.plan === 'pro' ? 799 : biz.plan === 'growth' ? 499 : 299
+        const annualPrice = monthlyPrice * 10
 
         let totalPaidAmount: number
         if (billingCycleForCalc === 'annual') {
@@ -185,6 +201,12 @@ export default function BillingPage() {
   const usagePct = planConfig.callLimit ? Math.min(100, Math.round((callsThisMonth / planConfig.callLimit) * 100)) : 0
   const willEndAt = stripeSummary?.subscription?.current_period_end ?? null
   const alreadyCancelled = stripeSummary?.subscription?.cancel_at_period_end ?? false
+  const saleActive = isSaleActive()
+
+  // Next invoice estimate (plan price + 10% GST)
+  const nextInvoiceBase = planConfig.monthlyPrice
+  const nextInvoiceGst = Math.round(nextInvoiceBase * 0.1 * 100) / 100
+  const nextInvoiceTotal = nextInvoiceBase + nextInvoiceGst
 
   const CANCEL_REASONS = [
     { id: 'price',    label: 'Too expensive',                        offer: 'pause' },
@@ -248,286 +270,411 @@ export default function BillingPage() {
   const offer = selectedReason ? OFFERS[selectedReason.offer] : null
 
   return (
-    <div style={{ padding: 32, maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>Billing</h1>
-      </div>
+    <div className="mx-auto max-w-[900px] px-5 py-6 md:px-7 md:py-7">
 
-      {/* Plan + Usage */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 }}>
-        <div style={{ background: 'linear-gradient(135deg,rgba(232,98,42,0.1),rgba(10,30,56,1))', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div>
-              <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 4 }}>Current Plan</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'white' }}>{planConfig.label}</div>
+      {/* ── Page heading ──────────────────────────────── */}
+      <h1 className="mb-5 text-[20px] font-[800] tracking-[-0.4px] text-text">Billing</h1>
+
+      {/* ── 1. EOFY Hero (conditional) ────────────────── */}
+      {saleActive && (
+        <EofyBanner
+          mode="hero"
+          message={<>Save <em className="not-italic font-[800] text-gold">50% off setup fees</em> this financial year</>}
+          heroAmount="$150–$400"
+          heroAmountSub="setup fee savings"
+          ctaLabel="Claim offer →"
+          className="mb-5"
+        />
+      )}
+
+      {/* ── 2. Plan hero ──────────────────────────────── */}
+      <div className="relative mb-5 overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.10)] p-[26px_32px] shadow-[0_1px_4px_rgba(0,0,0,.28)]"
+        style={{ background: 'linear-gradient(120deg,#1c2e44 0%,#122236 70%)' }}>
+        {/* Glow */}
+        <div className="pointer-events-none absolute right-[-80px] top-[-60px] h-[280px] w-[280px] rounded-full"
+          style={{ background: 'radial-gradient(circle,rgba(238,106,44,.25),transparent 70%)', filter: 'blur(15px)' }}
+          aria-hidden="true" />
+
+        <div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-center md:gap-7">
+          {/* Left: plan details */}
+          <div className="flex-1">
+            {/* Plan badge */}
+            <span className="inline-flex items-center gap-[7px] rounded-full bg-[linear-gradient(135deg,#f58a42,#e86526)] px-4 py-[7px] text-[13px] font-[800] text-white shadow-[0_6px_18px_rgba(238,106,44,.45)]">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+              {planConfig.label} Plan
+            </span>
+
+            {/* Business name */}
+            <div className="mt-3 text-[26px] font-[800] leading-tight tracking-[-0.6px] text-text">
+              {businessName || ' '}
             </div>
-            {alreadyCancelled
-              ? <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: 'rgba(245,158,11,0.12)', color: '#F59E0B' }}>Ending</span>
-              : <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: 'rgba(34,197,94,0.12)', color: '#22C55E' }}>Active</span>}
-          </div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>${planConfig.monthlyPrice}<span style={{ fontSize: 14, fontWeight: 400, color: '#4A7FBB' }}>/month</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
-              background: billingCycle === 'annual' ? 'rgba(34,197,94,0.12)' : 'rgba(123,174,212,0.12)',
-              color: billingCycle === 'annual' ? '#22C55E' : '#7BAED4',
-              border: `1px solid ${billingCycle === 'annual' ? 'rgba(34,197,94,0.35)' : 'rgba(123,174,212,0.3)'}`,
-              letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-            }}>{billingCycle === 'annual' ? 'Annual billing' : 'Monthly billing'}</span>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99,
-              background: setupFeeWaived ? 'rgba(148,163,184,0.18)' : 'rgba(74,159,232,0.12)',
-              color: setupFeeWaived ? '#94A3B8' : '#4A9FE8',
-              border: `1px solid ${setupFeeWaived ? 'rgba(148,163,184,0.35)' : 'rgba(74,159,232,0.3)'}`,
-              letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-            }}>{setupFeeWaived
-              ? 'Setup fee: waived'
-              : setupFeeAmount != null
-                ? `Setup fee: paid $${setupFeeAmount}`
-                : 'Setup fee: included'}</span>
-          </div>
-          <div style={{ fontSize: 13, color: '#4A7FBB', marginBottom: 20 }}>
-            {willEndAt
-              ? alreadyCancelled
-                ? `Access ends: ${new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                : `Next billing: ${new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
-              : 'Subscription details syncing…'}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
-              style={{ flex: 1, padding: '11px', background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-              Manage in Stripe
-            </button>
-            {planConfig.key !== 'pro' && (
-              <button
-                onClick={async () => {
-                  const r = await fetch('/api/stripe/portal', { method: 'POST' })
-                  const d = await r.json()
-                  if (d.url) window.location.href = d.url
-                  else alert(d.error ?? 'Could not open Stripe portal. Please try again.')
-                }}
-                style={{ flex: 1, padding: '11px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-              >
-                Upgrade →
-              </button>
+
+            {/* Price line */}
+            <div className="mt-[5px] text-[14px] text-dim">
+              <b className="text-[16px] font-[800] text-text">${planConfig.monthlyPrice}</b>
+              {' / month'}
+              {billingCycle === 'annual' && <span className="ml-2 text-[11px] font-[700] text-green">· Annual billing</span>}
+            </div>
+
+            {/* Renew / access ends */}
+            <div className="mt-1 text-[12.5px] text-faint">
+              {willEndAt
+                ? alreadyCancelled
+                  ? `Access ends: ${new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : `Renews ${new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })} · ${billingCycle === 'annual' ? 'paid annually' : 'paid monthly'}`
+                : 'Subscription details syncing…'}
+            </div>
+
+            {/* Setup fee tag */}
+            {(setupFeeWaived || setupFeeAmount != null) && (
+              <div className="mt-2 inline-block rounded-full border px-[9px] py-[3px] text-[11px] font-[700] uppercase tracking-[.06em]"
+                style={{
+                  background: setupFeeWaived ? 'rgba(148,163,184,0.18)' : 'rgba(74,159,232,0.12)',
+                  color: setupFeeWaived ? '#94A3B8' : '#4A9FE8',
+                  borderColor: setupFeeWaived ? 'rgba(148,163,184,0.35)' : 'rgba(74,159,232,0.3)',
+                }}>
+                {setupFeeWaived ? 'Setup fee: waived' : `Setup fee: paid $${setupFeeAmount}`}
+              </div>
             )}
+
+            {/* Feature checks */}
+            <div className="mt-[14px] flex flex-wrap gap-x-[18px] gap-y-[8px]">
+              {planConfig.features.slice(0, 4).map(f => (
+                <span key={f} className="flex items-center gap-[6px] text-[13px] font-[600] text-text">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green flex-shrink-0">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/>
+                  </svg>
+                  {f}
+                </span>
+              ))}
+              {/* Active / Ending badge */}
+              {alreadyCancelled ? (
+                <span className="flex items-center rounded-full bg-[rgba(245,158,11,0.12)] px-3 py-1 text-[12px] font-[600] text-[#F59E0B]">Ending</span>
+              ) : (
+                <span className="flex items-center rounded-full bg-green-soft px-3 py-1 text-[12px] font-[600] text-green">Active</span>
+              )}
+            </div>
+          </div>
+
+          {/* Right: action buttons */}
+          <div className="flex flex-shrink-0 flex-col gap-2 md:items-end">
+            {planConfig.key !== 'pro' && (
+              <ButtonV2 variant="primary" className="w-full px-[22px] py-[11px] text-[13.5px] font-[800] md:w-auto"
+                onClick={openStripePortal}>
+                Upgrade →
+              </ButtonV2>
+            )}
+            <ButtonV2 variant="secondary" className="w-full px-[22px] py-[9px] text-[13px] font-[700] md:w-auto"
+              onClick={openStripePortal}>
+              Manage subscription
+            </ButtonV2>
           </div>
         </div>
+      </div>
 
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24 }}>
-          <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 16 }}>Usage This Month</div>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-              <span style={{ color: 'white' }}>AI Calls Used</span>
-              <span style={{ fontWeight: 700, color: 'white' }}>{callsThisMonth} <span style={{ color: '#4A7FBB' }}>/ {planConfig.callLimit ?? 'unlimited'}</span></span>
-            </div>
-            <div style={{ height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{
-                width: `${planConfig.callLimit ? usagePct : 0}%`,
-                height: '100%',
-                background: usagePct >= 95 ? '#EF4444' : usagePct >= 80 ? '#F59E0B' : '#22C55E',
-                borderRadius: 4,
-              }} />
-            </div>
-          </div>
+      {/* ── 3. Three-column info cards ────────────────── */}
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
 
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 8 }}>Payment Method</div>
-            {stripeSummary?.paymentMethod ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'white', textTransform: 'capitalize' as const }}>
-                    {stripeSummary.paymentMethod.brand} •••• {stripeSummary.paymentMethod.last4}
+        {/* Card A: Usage meter */}
+        <Panel>
+          <h3 className="mb-[14px] text-[12px] font-[700] uppercase tracking-[.06em] text-faint">Usage this month</h3>
+          <Meter
+            label="Calls handled"
+            value={callsThisMonth}
+            cap={planConfig.callLimit ?? 0}
+            pills={
+              planConfig.callLimit ? (
+                <span className="text-[12px] text-dim">
+                  {usagePct}% used
+                  {planConfig.callLimit && callsThisMonth >= planConfig.callLimit && (
+                    <span className="ml-2 font-[700] text-[#F59E0B]">· Cap reached</span>
+                  )}
+                </span>
+              ) : (
+                <span className="text-[12px] text-dim">Unlimited</span>
+              )
+            }
+          />
+        </Panel>
+
+        {/* Card B: Payment method */}
+        <Panel>
+          <h3 className="mb-[14px] text-[12px] font-[700] uppercase tracking-[.06em] text-faint">Payment method</h3>
+          {stripeSummary?.paymentMethod ? (
+            <>
+              <div className="mb-3 flex items-center gap-3 rounded-[11px] border border-[rgba(255,255,255,.10)] bg-card-2 p-[12px_14px]">
+                <div className="flex h-7 w-[42px] flex-shrink-0 items-center justify-center rounded-[6px] bg-[linear-gradient(135deg,#1a4a8a,#0d2e5c)] text-[11px] font-[800] uppercase text-white">
+                  {stripeSummary.paymentMethod.brand.slice(0, 4)}
+                </div>
+                <div className="flex-1">
+                  <div className="text-[14px] font-[700] text-text">
+                    •••• •••• •••• {stripeSummary.paymentMethod.last4}
                   </div>
-                  <div style={{ fontSize: 11, color: '#4A7FBB' }}>
+                  <div className="text-[12px] text-dim">
                     Expires {String(stripeSummary.paymentMethod.exp_month).padStart(2, '0')}/{String(stripeSummary.paymentMethod.exp_year).slice(-2)}
                   </div>
                 </div>
-                <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
-                  style={{ background: 'transparent', border: '1px solid rgba(74,159,232,0.3)', color: '#4A9FE8', padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
-                  Update
-                </button>
               </div>
-            ) : (
-              <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
-                style={{ width: '100%', padding: 10, background: 'rgba(232,98,42,0.12)', border: '1px solid rgba(232,98,42,0.3)', color: '#E8622A', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
-                + Add payment method
+              <button
+                onClick={openStripePortal}
+                className="block w-full text-right text-[12.5px] font-[700] text-orange hover:opacity-80 transition-opacity">
+                Update payment method →
               </button>
-            )}
+            </>
+          ) : (
+            <button
+              onClick={openStripePortal}
+              className="w-full rounded-[8px] border border-[rgba(232,98,42,0.3)] bg-[rgba(232,98,42,0.12)] p-[10px] text-[13px] font-[600] text-orange cursor-pointer transition-opacity hover:opacity-80 font-[Outfit,sans-serif]">
+              + Add payment method
+            </button>
+          )}
+          {/* Auto-pay & email rows */}
+          <div className="mt-4 border-t border-line pt-3 flex flex-col gap-[9px]">
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-dim">Auto-pay</span>
+              <span className="font-[700] text-green">Enabled</span>
+            </div>
           </div>
-        </div>
+        </Panel>
+
+        {/* Card C: Next invoice */}
+        <Panel>
+          <h3 className="mb-[14px] text-[12px] font-[700] uppercase tracking-[.06em] text-faint">Next invoice</h3>
+          <div className="tnum text-[32px] font-[800] leading-none tracking-[-1px] text-text">
+            ${nextInvoiceTotal.toFixed(2)}
+          </div>
+          <div className="mt-[3px] text-[12.5px] text-dim">
+            {willEndAt && !alreadyCancelled
+              ? `Due ${new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}`
+              : 'No upcoming invoice'}
+          </div>
+          {!alreadyCancelled && (
+            <div className="mt-3 border-t border-line pt-3 flex flex-col gap-[7px]">
+              <div className="flex justify-between text-[13px]">
+                <span className="text-dim">{planConfig.label} Plan</span>
+                <span className="font-[700]">${nextInvoiceBase.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-dim">GST (10%)</span>
+                <span className="font-[700]">${nextInvoiceGst.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between border-t border-line pt-2 text-[14px]">
+                <span className="font-[700]">Total</span>
+                <span className="font-[800] text-orange">${nextInvoiceTotal.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+        </Panel>
       </div>
 
-      {/* Plan comparison */}
+      {/* ── Plan comparison (PlanComparison handles isSaleActive + pricing) ── */}
       <PlanComparison currentPlan={plan} />
 
-      {/* ROI summary */}
+      {/* ── ROI summary (conditional) ─────────────────── */}
       {lifetimeRevenue > 0 && (
-        <div style={{ background: 'linear-gradient(135deg, rgba(232,98,42,0.08), rgba(74,159,232,0.04))', border: '1px solid rgba(232,98,42,0.25)', borderRadius: 14, padding: 20, marginBottom: 28 }}>
-          <div style={{ fontSize: 11, color: '#E8622A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Your TalkMate ROI</div>
-          <div style={{ fontSize: 14, color: 'white', lineHeight: 1.6 }}>
-            TalkMate has captured an estimated <strong style={{ color: '#E8622A' }}>${lifetimeRevenue.toLocaleString()}</strong> in revenue for <strong>{businessName || 'your business'}</strong>{signupAt ? ` since ${new Date(signupAt).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}.
+        <div className="mb-5 rounded-[14px] border border-[rgba(232,98,42,0.25)] p-5"
+          style={{ background: 'linear-gradient(135deg, rgba(232,98,42,0.08), rgba(74,159,232,0.04))' }}>
+          <div className="mb-2 text-[11px] font-[700] uppercase tracking-[.08em] text-orange">Your TalkMate ROI</div>
+          <div className="text-[14px] leading-[1.6] text-text">
+            TalkMate has captured an estimated <strong className="text-orange">${lifetimeRevenue.toLocaleString()}</strong> in revenue for <strong>{businessName || 'your business'}</strong>{signupAt ? ` since ${new Date(signupAt).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}.
           </div>
-          <div style={{ fontSize: 14, color: '#7BAED4', marginTop: 6 }}>
-            Total investment: <strong style={{ color: 'white' }}>${totalPaid.toLocaleString()}</strong>. That&apos;s a <strong style={{ color: '#22C55E' }}>{roiMultiple.toFixed(1)}× return</strong>.
+          <div className="mt-[6px] text-[14px] text-dim">
+            Total investment: <strong className="text-text">${totalPaid.toLocaleString()}</strong>. That&apos;s a <strong className="text-green">{roiMultiple.toFixed(1)}× return</strong>.
           </div>
         </div>
       )}
 
-      {/* Add-ons section header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'white', margin: '0 0 4px' }}>Grow your revenue with add-ons</h3>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Each add-on pays for itself — most clients recover the cost within the first week.</p>
+      {/* ── 4. Add-ons section ────────────────────────── */}
+      <div className="mb-[18px] flex items-center gap-[14px]">
+        <div className="flex-1">
+          <h3 className="text-[16px] font-[800] tracking-[-0.2px] text-text">Grow your revenue with add-ons</h3>
+          <p className="mt-1 text-[12.5px] text-dim">Each add-on pays for itself — most clients recover the cost within the first week.</p>
         </div>
-        <div style={{ textAlign: 'right' as const }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#E8622A' }}>14x</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>average add-on ROI</div>
+        <div className="flex-shrink-0 text-right">
+          <div className="tnum text-[28px] font-[800] tracking-[-1px] text-orange">14x</div>
+          <div className="text-[10.5px] text-faint">average add-on ROI</div>
         </div>
       </div>
 
-      {/* Add-on cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 28 }}>
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <AddOnCard
-          iconBg="rgba(245,158,11,0.12)"
-          iconStroke="#F59E0B"
-          iconPath={<><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></>}
-          title="Google Review Requests"
-          dataProof={<>An estimated 72% of your calls end positively. That&apos;s roughly <strong style={{ color: 'white' }}>{weeklyPositiveCalls} review requests</strong> you could have sent this week — automatically.</>}
+          iconBg="rgba(242,181,60,.12)"
+          iconStroke="#f2b53c"
+          iconPath={<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>}
+          title="Google Reviews Automation"
+          dataProof={<>An estimated 72% of your calls end positively. That&apos;s roughly <strong>{weeklyPositiveCalls} review requests</strong> you could have sent this week — automatically.</>}
           features={['Automatic review requests after every positive call', 'Smart timing — sent when satisfaction is highest', 'Google & Facebook review collection', 'Review performance dashboard']}
           price="49"
-          cta="Unlock now →"
+          cta="Unlock →"
           primary={true}
         />
         <AddOnCard
-          iconBg="rgba(74,159,232,0.12)"
-          iconStroke="#4A9FE8"
-          iconPath={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>}
-          title="SMS Follow-Ups"
-          dataProof={<>You had <strong style={{ color: 'white' }}>{missedCallCount} missed call{missedCallCount !== 1 ? 's' : ''}</strong> this month. Without follow-up, that caller likely went to a competitor within 5 minutes.</>}
+          iconBg="rgba(91,155,217,.12)"
+          iconStroke="#5b9bd9"
+          iconPath={<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>}
+          title="Missed Call SMS Follow-ups"
+          dataProof={<>You had <strong>{missedCallCount} missed call{missedCallCount !== 1 ? 's' : ''}</strong> this month. Without follow-up, a missed caller goes to a competitor within 5 minutes.</>}
           features={['Auto-SMS within 5 min of every missed call', 'Customisable message templates', 'Two-way SMS conversation support', 'Missed call recovery tracking']}
           price="39"
-          cta="Unlock now →"
+          cta="Unlock →"
           primary={true}
         />
         <AddOnCard
-          iconBg="rgba(232,98,42,0.12)"
-          iconStroke="#E8622A"
-          iconPath={<><polyline points="23,7 23,1 17,1"/><line x1="16" y1="8" x2="23" y2="1"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>}
+          iconBg="rgba(238,106,44,.12)"
+          iconStroke="#ee6a2c"
+          iconPath={<><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/><polyline points="22 4 12 14.01 9 11.01"/></>}
           title="Outbound AI Calls"
-          dataProof="Outbound AI can confirm every job, chase quotes, and follow up no-shows — while you sleep."
+          dataProof="Outbound AI can confirm every job, chase quotes, and follow up no-shows — while you sleep. Zero staff time required."
           features={['Automated job confirmation calls', 'Quote follow-up sequences', 'No-show re-engagement', 'Full call transcripts logged']}
           price="79"
-          cta="Learn more"
+          cta="Learn more →"
           primary={false}
         />
       </div>
 
-      {/* Invoices */}
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24, marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'white' }}>🧾 Invoices</div>
-          <button onClick={async () => { const r = await fetch('/api/stripe/portal', { method: 'POST' }); const d = await r.json(); if (d.url) window.location.href = d.url }}
-            style={{ background: 'transparent', border: 'none', color: '#4A9FE8', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
+      {/* ── 5. Invoice history table ──────────────────── */}
+      <div className="mb-5 overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[0_1px_4px_rgba(0,0,0,.28)]">
+        <div className="flex items-center justify-between border-b border-line px-5 py-[18px]">
+          <h3 className="text-[12px] font-[700] uppercase tracking-[.06em] text-faint">Invoice history</h3>
+          <button
+            onClick={openStripePortal}
+            className="cursor-pointer bg-transparent border-none text-[12px] font-[600] text-blue hover:opacity-80 transition-opacity font-[Outfit,sans-serif]">
             View all in Stripe →
           </button>
         </div>
+
         {(stripeSummary?.invoices.length ?? 0) === 0 ? (
-          <div style={{ padding: 16, fontSize: 13, color: '#7BAED4', textAlign: 'center' as const }}>
+          <div className="px-5 py-4 text-center text-[13px] text-dim">
             {stripeSummary?.hasStripe === false
               ? 'No Stripe customer linked yet. Invoices will appear here after your first payment.'
               : 'No invoices yet.'}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' as const }}>
-            <thead>
-              <tr style={{ fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: '#4A7FBB' }}>
-                {['Date', 'Description', 'Amount', 'Status', ''].map(h => (
-                  <th key={h} style={{ textAlign: 'left' as const, padding: '8px 0', fontWeight: 600 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(stripeSummary?.invoices ?? []).map(inv => (
-                <tr key={inv.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 14, color: 'white' }}>
-                  <td style={{ padding: '14px 0', color: '#4A7FBB' }}>{new Date(inv.created * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td style={{ padding: '14px 0' }}>{inv.description ?? `${planConfig.label} subscription`}</td>
-                  <td style={{ padding: '14px 0', fontWeight: 600 }}>${inv.amount.toFixed(2)} {inv.currency.toUpperCase()}</td>
-                  <td style={{ padding: '14px 0' }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
-                      background: inv.status === 'paid' ? 'rgba(34,197,94,0.12)' : inv.status === 'open' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
-                      color: inv.status === 'paid' ? '#22C55E' : inv.status === 'open' ? '#F59E0B' : '#EF4444',
-                      textTransform: 'capitalize' as const,
-                    }}>{inv.status}</span>
-                  </td>
-                  <td style={{ padding: '14px 0', textAlign: 'right' as const }}>
-                    {inv.invoice_pdf
-                      ? <a href={inv.invoice_pdf} target="_blank" rel="noreferrer" style={{ color: '#4A9FE8', fontSize: 13, textDecoration: 'none' }}>Download PDF</a>
-                      : <span style={{ color: '#4A7FBB', fontSize: 12 }}>—</span>}
-                  </td>
-                </tr>
+          <>
+            {/* Table head */}
+            <div className="grid grid-cols-[1fr_120px_110px_90px_100px] gap-[14px] border-b border-line px-5 py-[9px]">
+              {['Period', 'Invoice #', 'Date', 'Amount', 'Status'].map(h => (
+                <div key={h} className="text-[11px] font-[700] uppercase tracking-[.06em] text-faint">{h}</div>
               ))}
-            </tbody>
-          </table>
+            </div>
+            {/* Rows */}
+            {(stripeSummary?.invoices ?? []).map(inv => (
+              <div key={inv.id}
+                className="grid grid-cols-[1fr_120px_110px_90px_100px] gap-[14px] items-center border-b border-line px-5 py-3 last:border-b-0 hover:bg-[rgba(255,255,255,.02)] transition-colors">
+                <div className="text-[13.5px] font-[700] text-text">
+                  {new Date(inv.created * 1000).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}
+                </div>
+                <div className="font-mono text-[12.5px] text-dim">—</div>
+                <div className="text-[12.5px] text-dim">
+                  {new Date(inv.created * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </div>
+                <div className="tnum text-[13.5px] font-[800] text-text">
+                  ${inv.amount.toFixed(2)}
+                </div>
+                <div>
+                  <span className={`inline-block rounded-[7px] px-[9px] py-[3px] text-[11.5px] font-[700] capitalize whitespace-nowrap ${
+                    inv.status === 'paid'
+                      ? 'bg-green-soft text-green'
+                      : inv.status === 'open'
+                      ? 'bg-[rgba(245,158,11,.12)] text-[#F59E0B]'
+                      : 'bg-[rgba(240,98,90,.16)] text-[#F0625A]'
+                  }`}>
+                    {inv.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </>
         )}
       </div>
 
-      {/* Cancel */}
-      <div style={{ textAlign: 'center' as const }}>
+      {/* Download PDF links (separate row, shown if any invoice has pdf) */}
+      {(stripeSummary?.invoices ?? []).some(inv => inv.invoice_pdf) && (
+        <div className="mb-5 flex flex-wrap gap-3">
+          {(stripeSummary?.invoices ?? []).filter(inv => inv.invoice_pdf).map(inv => (
+            <a key={inv.id} href={inv.invoice_pdf!} target="_blank" rel="noreferrer"
+              className="text-[12.5px] font-[700] text-orange no-underline hover:opacity-80 transition-opacity">
+              Download {new Date(inv.created * 1000).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })} PDF
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* ── Cancel subscription flow ──────────────────── */}
+      <div className="text-center">
         {cancelMessage && (
-          <div style={{ margin: '0 auto 12px', padding: '10px 14px', borderRadius: 8, fontSize: 13, background: 'rgba(34,197,94,0.12)', color: '#22C55E', maxWidth: 520 }}>{cancelMessage}</div>
+          <div className="mx-auto mb-3 max-w-[520px] rounded-[8px] bg-green-soft p-[10px_14px] text-[13px] text-green">
+            {cancelMessage}
+          </div>
         )}
 
         {alreadyCancelled && willEndAt && (
-          <div style={{ fontSize: 13, color: '#F59E0B', padding: '12px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, maxWidth: 520, margin: '0 auto' }}>
+          <div className="mx-auto max-w-[520px] rounded-[10px] border border-[rgba(245,158,11,.2)] bg-[rgba(245,158,11,.08)] p-[12px_16px] text-[13px] text-[#F59E0B]">
             Your subscription is set to cancel on {new Date(willEndAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}.
           </div>
         )}
 
         {!alreadyCancelled && cancelStep === 0 && (
-          <button onClick={() => setCancelStep(1)} style={{ background: 'transparent', border: 'none', color: '#4A7FBB', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>
+          <button onClick={() => setCancelStep(1)}
+            className="cursor-pointer border-none bg-transparent font-[Outfit,sans-serif] text-[13px] text-faint hover:text-dim transition-colors">
             Cancel subscription
           </button>
         )}
 
-        {/* Step 1 — Reason selection */}
+        {/* Step 1 — Reason */}
         {cancelStep === 1 && (
-          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 10 }}>Cancel subscription</div>
-            <div style={{ fontWeight: 800, fontSize: 18, color: 'white', marginBottom: 6 }}>Before you go — what happened?</div>
-            <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 20, lineHeight: 1.6 }}>Your feedback helps us improve. Please pick the main reason.</p>
-            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: 20 }}>
+          <div className="mx-auto max-w-[520px] rounded-[16px] border border-[rgba(239,68,68,.2)] bg-card p-7 text-left">
+            <div className="mb-[10px] text-[11px] font-[700] uppercase tracking-[.10em] text-[#EF4444]">Cancel subscription</div>
+            <div className="mb-[6px] text-[18px] font-[800] text-text">Before you go — what happened?</div>
+            <p className="mb-5 text-[13px] leading-[1.6] text-dim">Your feedback helps us improve. Please pick the main reason.</p>
+            <div className="mb-5 flex flex-col gap-2">
               {CANCEL_REASONS.map(r => (
-                <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: cancelReason === r.id ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.03)', border: `1.5px solid ${cancelReason === r.id ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.07)'}`, borderRadius: 10, cursor: 'pointer' }}>
-                  <input type="radio" name="cancelReason" value={r.id} checked={cancelReason === r.id} onChange={() => setCancelReason(r.id)}
-                    style={{ accentColor: '#EF4444', width: 16, height: 16, flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, color: 'white' }}>{r.label}</span>
+                <label key={r.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-[10px] border p-[12px_16px] transition-colors"
+                  style={{
+                    background: cancelReason === r.id ? 'rgba(239,68,68,0.1)' : 'rgba(255,255,255,0.03)',
+                    borderColor: cancelReason === r.id ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.07)',
+                  }}>
+                  <input type="radio" name="cancelReason" value={r.id} checked={cancelReason === r.id}
+                    onChange={() => setCancelReason(r.id)}
+                    className="h-4 w-4 flex-shrink-0 accent-[#EF4444]" />
+                  <span className="text-[14px] text-text">{r.label}</span>
                 </label>
               ))}
             </div>
             {cancelReason === 'other' && (
               <textarea value={cancelReasonOther} onChange={e => setCancelReasonOther(e.target.value)} rows={2}
                 placeholder="Tell us more..."
-                style={{ width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white', fontSize: 13, fontFamily: 'Outfit,sans-serif', marginBottom: 14, resize: 'vertical' as const }}
-              />
+                className="mb-[14px] w-full resize-y rounded-[8px] border border-[rgba(255,255,255,.1)] bg-[rgba(255,255,255,.04)] p-[10px_12px] font-[Outfit,sans-serif] text-[13px] text-text placeholder:text-faint" />
             )}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setCancelStep(0); setCancelReason('') }} style={{ flex: 1, padding: 12, background: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>Keep my subscription</button>
-              <button onClick={() => setCancelStep(2)} disabled={!cancelReason} style={{ flex: 1, padding: 12, background: cancelReason ? '#EF4444' : 'rgba(239,68,68,0.3)', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: cancelReason ? 'pointer' : 'not-allowed', fontSize: 14 }}>Continue →</button>
+            <div className="flex gap-[10px]">
+              <button onClick={() => { setCancelStep(0); setCancelReason('') }}
+                className="flex-1 cursor-pointer rounded-[10px] border border-[rgba(255,255,255,.15)] bg-transparent p-3 font-[Outfit,sans-serif] text-[14px] font-[600] text-text">
+                Keep my subscription
+              </button>
+              <button onClick={() => setCancelStep(2)} disabled={!cancelReason}
+                className="flex-1 cursor-pointer rounded-[10px] border-none p-3 font-[Outfit,sans-serif] text-[14px] font-[700] text-white"
+                style={{ background: cancelReason ? '#EF4444' : 'rgba(239,68,68,0.3)', cursor: cancelReason ? 'pointer' : 'not-allowed' }}>
+                Continue →
+              </button>
             </div>
           </div>
         )}
 
         {/* Step 2 — Retention offer */}
         {cancelStep === 2 && offer && (
-          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(74,159,232,0.25)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#4A9FE8', textTransform: 'uppercase' as const, letterSpacing: '0.1em', marginBottom: 10 }}>Wait — one moment</div>
-            <div style={{ fontWeight: 800, fontSize: 18, color: 'white', marginBottom: 10 }}>{offer.heading}</div>
-            <p style={{ fontSize: 14, color: '#7BAED4', marginBottom: 22, lineHeight: 1.65 }}>{offer.body}</p>
-            <a href={offer.href} style={{ display: 'block', width: '100%', padding: '14px', background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: 'pointer', fontSize: 15, textAlign: 'center' as const, textDecoration: 'none', marginBottom: 10, boxSizing: 'border-box' as const }}>
+          <div className="mx-auto max-w-[520px] rounded-[16px] border border-[rgba(74,159,232,.25)] bg-card p-7 text-left">
+            <div className="mb-[10px] text-[11px] font-[700] uppercase tracking-[.10em] text-blue">Wait — one moment</div>
+            <div className="mb-[10px] text-[18px] font-[800] text-text">{offer.heading}</div>
+            <p className="mb-[22px] text-[14px] leading-[1.65] text-dim">{offer.body}</p>
+            <a href={offer.href}
+              className="mb-[10px] block w-full rounded-[10px] bg-[linear-gradient(135deg,#f58a42,#e86526)] p-[14px] text-center text-[15px] font-[700] text-white no-underline shadow-[0_4px_14px_rgba(238,106,44,.35)] hover:opacity-90 transition-opacity">
               {offer.cta} →
             </a>
-            <button onClick={() => setCancelStep(3)} style={{ width: '100%', padding: '11px', background: 'transparent', color: '#4A7FBB', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 500, cursor: 'pointer', fontSize: 13 }}>
+            <button onClick={() => setCancelStep(3)}
+              className="w-full cursor-pointer rounded-[10px] border border-[rgba(255,255,255,.08)] bg-transparent p-[11px] font-[Outfit,sans-serif] text-[13px] font-[500] text-faint">
               No thanks, I still want to cancel
             </button>
           </div>
@@ -535,17 +682,21 @@ export default function BillingPage() {
 
         {/* Step 3 — Final confirm */}
         {cancelStep === 3 && (
-          <div style={{ padding: 28, background: '#0A1E38', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 16, maxWidth: 520, margin: '0 auto', textAlign: 'left' as const }}>
-            <div style={{ fontWeight: 800, fontSize: 17, color: 'white', marginBottom: 12 }}>Are you sure?</div>
-            <ul style={{ fontSize: 13, color: '#7BAED4', marginBottom: 20, lineHeight: 1.8, paddingLeft: 18 }}>
+          <div className="mx-auto max-w-[520px] rounded-[16px] border border-[rgba(239,68,68,.35)] bg-card p-7 text-left">
+            <div className="mb-3 text-[17px] font-[800] text-text">Are you sure?</div>
+            <ul className="mb-5 list-disc pl-[18px] text-[13px] leading-[1.8] text-dim">
               <li>Your AI agent will stop answering calls at the end of the billing period.</li>
               <li>Your contacts, call history, and smart lists are kept for 90 days.</li>
               <li>Your dedicated phone number will be released back to TalkMate.</li>
               <li>You can re-subscribe at any time — setup fee waived for returning clients.</li>
             </ul>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setCancelStep(0)} style={{ flex: 1, padding: 12, background: 'rgba(34,197,94,0.12)', color: '#22C55E', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>Keep my subscription ✓</button>
-              <button onClick={confirmCancel} disabled={cancelBusy} style={{ flex: 1, padding: 12, background: '#EF4444', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Outfit,sans-serif', fontWeight: 700, cursor: cancelBusy ? 'wait' : 'pointer', fontSize: 14, opacity: cancelBusy ? 0.7 : 1 }}>
+            <div className="flex gap-[10px]">
+              <button onClick={() => setCancelStep(0)}
+                className="flex-1 cursor-pointer rounded-[10px] border border-[rgba(34,197,94,.25)] bg-green-soft p-3 font-[Outfit,sans-serif] text-[14px] font-[700] text-green">
+                Keep my subscription ✓
+              </button>
+              <button onClick={confirmCancel} disabled={cancelBusy}
+                className="flex-1 cursor-pointer rounded-[10px] border-none bg-[#EF4444] p-3 font-[Outfit,sans-serif] text-[14px] font-[700] text-white disabled:opacity-70 disabled:cursor-wait">
                 {cancelBusy ? 'Cancelling…' : 'Yes, cancel my subscription'}
               </button>
             </div>
