@@ -29,12 +29,12 @@ redesign work now happens in an **isolated git worktree**:
 | 10 | Restyle PortalTopbar + Shell + ThemeToggle | ✅ | e2e87a0 — toggle live, logic preserved |
 | 11 | Dashboard | ✅ | 35ab37f — EOFY banner wired; data gaps → backlog |
 | 12 | Calls | ✅ | 4fcfb09 — real intelligence_* wired; AiScoreBadge now hides when no score |
-| 13 | Bookings | ⏳ | |
-| 14 | Analytics | ⏳ | re-point Recharts COLORS |
-| 15 | SMS Activity | ⏳ | keep Starter upsell gate |
-| 16 | Services/Catalog | ⏳ | keep SyncAgentButton/MenuImportBanner |
-| 17 | AI Receptionist | ⏳ | /train + settings AI tab |
-| 18 | Customers | ⏳ | keep /api/contacts/list paging |
+| 13 | Bookings | ✅ | 7972089 — week calendar wired to real bookings; Month view = placeholder |
+| 14 | Analytics | ✅ | a82f0d7 — heatmap derived from real created_at; Recharts→tokens |
+| 15 | SMS Activity | ✅ | c852fce — plan-gate preserved; outbound-log (no fake inbound) |
+| 16 | Services/Catalog | ✅ | ad866d3 — CRUD/sync/admin-override preserved |
+| 17 | AI Receptionist | ✅ | 547281e — KB categories→tabs; voice/greeting live in Settings (omitted here) |
+| 18 | Customers | ✅ | ab8a6c9 — added read-only /api/contacts/[id]/calls (auth-scoped to owner business) |
 | 19 | Billing | ⏳ | keep Stripe summary + isSaleActive in plan-comparison |
 | 20 | Settings | ⏳ | keep editors + save logic |
 | 21 | Restyle SalesShell | ⏳ | preserve sales auth/gating |
@@ -59,6 +59,8 @@ screens (11–20), Phase 4 sales (21–23), Phase 5 cleanup+PR (24).
 - **Dashboard "Today's bookings":** replaced with an activity panel because the jobs query lacks per-job `scheduled_at`/`customer`. To get full mockup parity, extend the server query in `dashboard/page.tsx` to fetch today's jobs (time/customer/value) and use `BookingRow`.
 - **Dashboard chart:** uses 14-day daily series (no hourly "Today"); escalated breakdown is 0 (not in data). Fine, but note.
 - **Calls est. job value:** shows `—` (calls↔jobs FK not linked). Date filter is a visual pill only.
+- **Customers:** new route `/api/contacts/[id]/calls` resolves business by `owner_user_id` only (invited staff would 404) and reads `contact_calls` table — verify table exists + consider staff access. Bookings/Value/Years stats omitted (no backing fields).
+- **Catalog:** add/edit Sheet form still uses ShadCN ui/* styling (dark) — fine, could polish later.
 
 ## Decisions
 - Per-task verify = `npm run build` + `npx tsc --noEmit` + controller review. Full dual-theme Playwright QA
