@@ -8,6 +8,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import InboxView, { type ConversationListItem } from './inbox-view'
+import InboxTabs from './inbox-tabs'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Inbox · TalkMate' }
@@ -102,11 +103,13 @@ export default async function InboxPage() {
   const hasTwilioNumber = Boolean(business.twilio_phone_number ?? business.talkmate_number)
 
   return (
-    <InboxView
-      businessId={business.id as string}
-      businessName={(business.name as string | null) ?? 'Your business'}
-      hasTwilioNumber={hasTwilioNumber}
-      initialConversations={conversations}
-    />
+    <InboxTabs businessId={business.id as string}>
+      <InboxView
+        businessId={business.id as string}
+        businessName={(business.name as string | null) ?? 'Your business'}
+        hasTwilioNumber={hasTwilioNumber}
+        initialConversations={conversations}
+      />
+    </InboxTabs>
   )
 }
