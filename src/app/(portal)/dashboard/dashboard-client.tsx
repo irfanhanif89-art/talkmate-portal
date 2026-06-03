@@ -5,16 +5,29 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import OnboardingChecklist from '@/components/portal/onboarding-checklist'
 import RetroactiveTCBanner from '@/components/portal/retroactive-tc-banner'
-import ContextualUpsellBanner from '@/components/portal/contextual-upsell'
 import NpsModal from '@/components/portal/nps-modal'
 import SocialProofToaster from '@/components/portal/social-proof-toaster'
 import ShareYourWin from '@/components/portal/share-win'
 import TrialProgressCard from '@/components/portal/trial-progress-card'
-import ReceptionistStats from '@/components/portal/receptionist-stats'
 import RoiSection from './roi-section'
-import AgentQualityCard from '@/components/portal/agent-quality-card'
-import SmsUsageCard from '@/components/portal/sms-usage-card'
-import { INDUSTRY_AVG_UPSELL_PER_CALL, INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
+
+// ui-v2 design-system components
+import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
+import { KpiCard } from '@/components/portal/ui-v2/kpi-card'
+import { SegmentedControl } from '@/components/portal/ui-v2/segmented-control'
+import { RevenueStrip } from '@/components/portal/ui-v2/revenue-strip'
+import { EofyBanner } from '@/components/portal/ui-v2/eofy-banner'
+import { UpsellBanner } from '@/components/portal/ui-v2/upsell-banner'
+import { StatusCard } from '@/components/portal/ui-v2/status-card'
+import { CallRow } from '@/components/portal/ui-v2/call-row'
+import { VolumeBarChart } from '@/components/portal/ui-v2/charts'
+import { Tag } from '@/components/portal/ui-v2/tag'
+import type { TagVariant } from '@/components/portal/ui-v2/tag'
+
+import { isSaleActive, EOFY_SALE } from '@/lib/eofy-sale'
+import { INDUSTRY_AVG_UPSELL_PER_CALL } from '@/lib/dashboard-defaults'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Call {
   id: string
@@ -62,6 +75,8 @@ interface Props {
   crmHealthHasContacts?: boolean
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function timeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime()
   const m = Math.floor(diff / 60000)
@@ -72,91 +87,93 @@ function timeAgo(date: string) {
   return `${Math.floor(h / 24)}d ago`
 }
 
-function fmt(s: number | null) {
+function fmt(s: number | null): string {
   if (!s) return '—'
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
 }
 
-function outcomeBadge(outcome: string | null) {
-  const o = (outcome || '').toLowerCase()
-  if (!o || o === 'missed') return { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: 'Missed' }
-  if (o.includes('transfer')) return { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: 'Transferred' }
-  if (o === 'faq') return { bg: 'rgba(74,159,232,0.12)', color: '#4A9FE8', label: 'FAQ' }
-  return { bg: 'rgba(34,197,94,0.12)', color: '#22C55E', label: 'Resolved' }
+function callTag(outcome: string | null, transferred: boolean): { variant: TagVariant; label: string } {
+  if (!outcome || outcome === 'Missed') return { variant: 'missed', label: 'Missed' }
+  if (transferred) return { variant: 'transfer', label: 'Transferred' }
+  const o = outcome.toLowerCase()
+  if (o.includes('book')) return { variant: 'book', label: 'Booked' }
+  if (o.includes('quote')) return { variant: 'quote', label: 'Quote' }
+  if (o === 'faq') return { variant: 'question', label: 'FAQ' }
+  return { variant: 'book', label: 'Resolved' }
 }
 
-function PhoneIcon({ color }: { color: string }) {
+/** Convert the 14-day `chartData` array into VolumeBarChart format.
+ *  We only have total count per day from the server; we approximate
+ *  escalated = missed calls are unknown at this granularity, so escalated = 0. */
+function toVolumeData(
+  chartData: { date: string; count: number }[],
+  range: '7d' | '14d',
+): { label: string; handled: number; escalated: number }[] {
+  const slice = range === '7d' ? chartData.slice(-7) : chartData
+  return slice.map(d => ({
+    label: new Date(d.date + 'T00:00:00').toLocaleDateString('en-AU', {
+      day: 'numeric',
+      month: 'short',
+    }),
+    handled: d.count,
+    escalated: 0, // daily escalated not available in props — would need separate query
+  }))
+}
+
+// ─── Icons (inline SVGs, no extra deps) ───────────────────────────────────────
+
+function PhoneIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
     </svg>
   )
 }
 
-function StatCard({ label, value, hint, accent, hintColor }: { label: string; value: string | number; hint: string; accent: string; hintColor?: string }) {
-  return (
-    <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
-      <div style={{ height: 2, background: `linear-gradient(90deg, ${accent}, #1565C0)` }} />
-      <div style={{ padding: '16px 18px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4A7FBB', marginBottom: 8 }}>{label}</div>
-        <div style={{ fontSize: '1.6rem', fontWeight: 800, lineHeight: 1, marginBottom: 4, color: 'white', letterSpacing: '-1px' }}>{value}</div>
-        <div style={{ fontSize: 11, fontWeight: 300, color: hintColor ?? 'rgba(255,255,255,0.4)' }}>{hint}</div>
-      </div>
-    </div>
-  )
+function TrendIcon({ dir }: { dir: 'up' | 'down' | 'flat' }) {
+  if (dir === 'up') return <span className="text-green text-[11px]">↑</span>
+  if (dir === 'down') return <span className="text-red text-[11px]">↓</span>
+  return <span className="text-white/30 text-[11px]">→</span>
 }
 
-function BarChart({ data }: { data: { date: string; count: number }[] }) {
-  const max = Math.max(...data.map(d => d.count), 1)
-  const W = 560, H = 160, ml = 20, mr = 8, mt = 8, mb = 28
-  const cw = W - ml - mr
-  const ch = H - mt - mb
-  const slotW = cw / data.length
-  const barW = Math.max(10, Math.floor(slotW * 0.58))
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {[0, 0.25, 0.5, 0.75, 1].map(t => (
-        <line key={t} x1={ml} y1={mt + ch * (1 - t)} x2={W - mr} y2={mt + ch * (1 - t)} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-      ))}
-      {data.map((d, i) => {
-        const barH = d.count > 0 ? Math.max(3, Math.round((d.count / max) * ch)) : 2
-        const x = ml + i * slotW + (slotW - barW) / 2
-        const y = mt + ch - barH
-        const isToday = i === data.length - 1
-        const label = new Date(d.date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
-        return (
-          <g key={d.date}>
-            <rect x={x} y={y} width={barW} height={barH} rx="3" fill={isToday ? '#E8622A' : 'rgba(232,98,42,0.4)'} />
-            {i % 2 === 0 && <text x={x + barW / 2} y={H - 4} textAnchor="middle" fill="#4A7FBB" fontSize="9">{label}</text>}
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function DashboardClient({
-  business, stats, outcomes, chartData, recentCalls: initialCalls, businessName,
-  callsAnsweredToday = 0, revenueRecoveredThisMonth = 0, vsLastMonthPercent = 0, revenueIsEstimate = false,
+  business,
+  stats,
+  outcomes,
+  chartData,
+  recentCalls: initialCalls,
+  businessName,
+  callsAnsweredToday = 0,
+  revenueRecoveredThisMonth = 0,
+  vsLastMonthPercent = 0,
+  revenueIsEstimate = false,
   planLimit,
-  daysActive, daysSinceSignup, onboardingSteps, needsNps, partner,
-  pendingLegalAcceptances = 0, contactsThisMonth = 0, crmHealthPct = 0, crmHealthHasContacts = false,
+  daysSinceSignup,
+  onboardingSteps,
+  needsNps,
+  partner,
+  pendingLegalAcceptances = 0,
+  contactsThisMonth = 0,
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
   const [liveCalls, setLiveCalls] = useState<Call[]>(initialCalls)
   const [npsOpen, setNpsOpen] = useState(false)
   const [npsClosed, setNpsClosed] = useState(false)
+  const [chartRange, setChartRange] = useState<'7d' | '14d'>('14d')
 
+  // NPS trigger
   useEffect(() => {
     if (needsNps && !npsClosed) {
-      // small delay so the modal doesn't race with first paint
       const t = setTimeout(() => setNpsOpen(true), 800)
       return () => clearTimeout(t)
     }
   }, [needsNps, npsClosed])
 
+  // Live call feed via Supabase realtime
   useEffect(() => {
     const channel = supabase
       .channel('calls-live')
@@ -179,55 +196,97 @@ export function DashboardClient({
     const data = await res.json().catch(() => ({}))
     setNpsOpen(false)
     setNpsClosed(true)
-    // Promoter → push to refer-and-earn
     if (data.isPromoter) router.push('/refer-and-earn')
   }
 
-  const pct = (n: number) => outcomes.total > 0 ? Math.round((n / outcomes.total) * 100) : 0
+  // Derived values
   const firstName = businessName || (business.name || '').split(' ')[0]
   const noData = stats.totalMonth === 0
-  const aiRateColor = noData ? 'rgba(255,255,255,0.3)' : stats.aiResolutionRate >= 85 ? '#22C55E' : stats.aiResolutionRate >= 70 ? '#F59E0B' : '#EF4444'
+  const callsAnswered = stats.totalMonth - stats.missedMonth
+  const saleActive = isSaleActive()
 
-  let vsLastMonthEl: React.ReactNode = null
-  if (vsLastMonthPercent > 0) vsLastMonthEl = <span style={{ color: '#22C55E' }}>↑ {vsLastMonthPercent}% vs last month</span>
-  else if (vsLastMonthPercent < 0) vsLastMonthEl = <span style={{ color: '#EF4444' }}>↓ {Math.abs(vsLastMonthPercent)}% vs last month</span>
-  else vsLastMonthEl = <span style={{ color: 'rgba(255,255,255,0.3)' }}>No data from last month</span>
+  const vsLastMonthDir: 'up' | 'down' | 'flat' =
+    vsLastMonthPercent > 0 ? 'up' : vsLastMonthPercent < 0 ? 'down' : 'flat'
+
+  const aiRateAccent: 'green' | 'orange' | undefined =
+    noData ? undefined : stats.aiResolutionRate >= 80 ? 'green' : undefined
+
+  // Revenue strip items
+  const revenueStripItems = [
+    {
+      value: (
+        <span className="tnum">
+          ${revenueRecoveredThisMonth.toLocaleString()}
+          {revenueIsEstimate && <span className="text-[11px] text-dim ml-1">est.</span>}
+        </span>
+      ),
+      label: 'Revenue captured',
+      sub: 'this month',
+    },
+    {
+      value: <span className="tnum text-blue">{callsAnswered}</span>,
+      label: 'Calls answered',
+      sub: 'this month',
+    },
+    {
+      value: (
+        <span className={`tnum ${stats.missedMonth === 0 ? 'text-green' : 'text-red'}`}>
+          {stats.missedMonth === 0 ? '0 ✓' : stats.missedMonth}
+        </span>
+      ),
+      label: 'Missed calls',
+      sub: stats.missedMonth === 0 ? 'Perfect answer rate' : 'this month',
+    },
+    {
+      value: <span className="tnum text-green">+${INDUSTRY_AVG_UPSELL_PER_CALL.toFixed(0)}</span>,
+      label: 'Avg upsell / call',
+      sub: 'industry benchmark',
+    },
+  ]
+
+  // Chart data
+  const volumeData = toVolumeData(chartData, chartRange)
+
+  // Status card rows
+  const statusRows = [
+    { label: 'Agent', value: business.agent_name || 'TalkMate Agent' },
+    { label: 'Status', value: <span className="text-green">Live · answering calls</span> },
+    { label: 'Number', value: business.talkmate_number || '—' },
+    { label: 'Today', value: <span className="tnum">{callsAnsweredToday} call{callsAnsweredToday !== 1 ? 's' : ''}</span> },
+  ]
+
+  // Upsell: show when starter plan and approaching limit or passed 14 days
+  const showUpsell = business.plan === 'starter' && daysSinceSignup >= 14
 
   return (
-    <div style={{ padding: 28, flex: 1, color: '#F2F6FB' }}>
-      {/* Page header */}
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#E8622A', marginBottom: 6 }}>Dashboard</div>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.5px', margin: 0, lineHeight: 1.1, color: 'white' }}>
+    <div
+      className="flex flex-col gap-4 p-6 lg:p-7"
+      style={{
+        background: 'radial-gradient(1200px 700px at 78% -8%,rgba(238,106,44,.10),transparent 60%),radial-gradient(1000px 800px at 12% 110%,rgba(53,201,138,.06),transparent 55%),var(--bg)',
+        minHeight: '100%',
+      }}
+    >
+      {/* ── Page header ───────────────────────────────────────────────────── */}
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[.1em] text-orange mb-1">Dashboard</div>
+        <h1 className="text-[20px] font-[800] tracking-[-0.4px] leading-tight text-text">
           Welcome back{firstName ? `, ${firstName}` : ''}
         </h1>
+        <p className="text-[13px] text-dim mt-1">
+          {noData ? 'Your agent is live and ready to answer calls.' : `${callsAnsweredToday} call${callsAnsweredToday !== 1 ? 's' : ''} handled today`}
+        </p>
       </div>
 
-      {/* ROI hero + breakdown (Sprint features 2) — self-fetches
-          /api/dashboard/roi. Sits at the very top above all existing
-          content; nothing below is removed. */}
+      {/* ── ROI hero (self-fetches /api/dashboard/roi) ─────────────────── */}
       <RoiSection />
 
-      {/* Session 6 — trial progress card. Self-fetches; renders nothing
-          when the account isn't on trial. */}
+      {/* ── Trial progress (self-fetches, renders nothing when not on trial) */}
       <TrialProgressCard callsThisMonth={stats.totalMonth} />
 
-      {/* Session 9 — pending bookings + callbacks + recent outcomes.
-          Self-fetches counts; receives recent calls from the server. */}
-      <ReceptionistStats recentCalls={liveCalls as unknown as Array<{
-        id: string
-        caller_number: string | null
-        outcome: string | null
-        transfer_to: string | null
-        is_vip_caller: boolean
-        is_repeat_caller: boolean
-        created_at: string
-      }>} />
-
-      {/* Retroactive T&C banner (Session 1 brief Part 1) */}
+      {/* ── Retroactive T&C banner ─────────────────────────────────────── */}
       <RetroactiveTCBanner pendingCount={pendingLegalAcceptances} />
 
-      {/* Onboarding checklist (until complete) */}
+      {/* ── Onboarding checklist (until complete) ─────────────────────── */}
       {!business.onboarding_completed && (
         <OnboardingChecklist
           steps={onboardingSteps}
@@ -235,219 +294,294 @@ export function DashboardClient({
         />
       )}
 
-      {/* Revenue proof strip */}
-      <div style={{
-        background: 'linear-gradient(135deg, #061322 0%, rgba(21,101,192,0.18) 50%, rgba(232,98,42,0.12) 100%)',
-        border: '1px solid rgba(21,101,192,0.25)', borderRadius: 16, padding: '18px 22px', marginBottom: 20,
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14,
-      }}>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Revenue captured</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'white', marginTop: 4 }}>${revenueRecoveredThisMonth.toLocaleString()}{revenueIsEstimate && <span style={{ fontSize: 11, color: '#4A7FBB', marginLeft: 4 }}>est.</span>}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>this month</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Calls answered</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#4A9FE8', marginTop: 4 }}>{stats.totalMonth - stats.missedMonth}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>this month</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Calls missed this month</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: stats.missedMonth === 0 ? '#22C55E' : '#EF4444', marginTop: 4 }}>{stats.missedMonth === 0 ? '0 🎉' : stats.missedMonth}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{stats.missedMonth === 0 ? 'Perfect answer rate' : 'Connect SMS Follow-Ups'}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Avg upsell / call</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#22C55E', marginTop: 4 }}>+${INDUSTRY_AVG_UPSELL_PER_CALL.toFixed(2)}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>industry benchmark</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <button onClick={() => router.push('/analytics')} style={{ background: 'rgba(232,98,42,0.18)', border: '1px solid rgba(232,98,42,0.35)', color: '#E8622A', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
-            View full report →
-          </button>
-        </div>
-      </div>
-
-      {/* Recovered-revenue ROI now lives in <RoiSection /> at the top of the
-          dashboard (single honest source of truth). The old RoiCounter
-          "revenue protected" card was removed to avoid showing two different
-          revenue estimates on the same page. */}
-
-      {/* 4 stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-        <StatCard label="Calls Today" value={callsAnsweredToday} hint={vsLastMonthEl as unknown as string} accent="#4A9FE8" />
-        <StatCard label="Revenue Captured" value={`$${revenueRecoveredThisMonth.toLocaleString()}`} hint={revenueIsEstimate ? 'estimated' : 'actual'} accent="#E8622A" />
-        <StatCard label="Answer Rate" value={noData ? '—' : `${stats.aiResolutionRate}%`} hint="Industry avg 77%" accent={aiRateColor} hintColor="#22C55E" />
-        <StatCard label="Avg Order Value" value={revenueIsEstimate ? '$32' : `$${Math.max(INDUSTRY_AVG_CALL_VALUE, Math.round(revenueRecoveredThisMonth / Math.max(stats.totalMonth, 1)))}`} hint="incl. upsell lift" accent="#8B5CF6" />
-        <StatCard
-          label="New Contacts This Month"
-          value={contactsThisMonth}
-          hint="Callers automatically added to your CRM"
-          accent="#1565C0"
+      {/* ── EOFY banner strip ─────────────────────────────────────────── */}
+      {saleActive && (
+        <EofyBanner
+          mode="strip"
+          message={<><strong>{EOFY_SALE.badge}</strong> — Upgrade now and lock in 50% off forever.</>}
+          ctaLabel="View plans"
+          onCta={() => router.push('/billing')}
         />
-        {crmHealthHasContacts ? (
-          <StatCard
-            label="CRM Health"
-            value={`${crmHealthPct}%`}
-            hint="Contacts with name identified"
-            accent={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
-            hintColor={crmHealthPct >= 60 ? '#22C55E' : crmHealthPct >= 40 ? '#F59E0B' : '#EF4444'}
-          />
-        ) : (
-          <StatCard
-            label="CRM Health"
-            value="—"
-            hint="No contacts yet"
-            accent="rgba(255,255,255,0.25)"
-            hintColor="rgba(255,255,255,0.4)"
-          />
-        )}
-        {/* Session 18 — Agent Quality (Call Intelligence). Self-fetches. */}
-        <AgentQualityCard />
-        {/* Session 19 — SMS This Month. Self-fetches. */}
-        <SmsUsageCard />
-      </div>
+      )}
 
-      {/* Contextual upsell banner */}
-      <ContextualUpsellBanner
-        ctx={{
-          callsUsed: stats.totalMonth,
-          callsLimit: planLimit,
-          daysSinceSignup,
-          plan: business.plan,
-          monthlyRevenue: revenueRecoveredThisMonth,
-          hasReferrals: (partner?.active_referrals ?? 0) > 0,
+      {/* ── Revenue strip ─────────────────────────────────────────────── */}
+      <RevenueStrip
+        items={revenueStripItems}
+        cta={{
+          title: 'Full report →',
+          subtitle: 'Analytics & ROI',
+          onClick: () => router.push('/analytics'),
         }}
       />
 
-      {/* Main grid: recent calls + sidebar */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, marginBottom: 20 }}>
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, overflow: 'hidden' }}>
-          <div style={{ height: 2, background: 'linear-gradient(90deg, #E8622A, #1565C0)' }} />
-          <div style={{ padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Recent calls</div>
-                <div style={{ fontSize: 11, color: '#4A7FBB' }}>Last 5 calls handled by your AI agent</div>
+      {/* ── 4 KPI cards ───────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard
+          label="Calls this month"
+          icon={<PhoneIcon />}
+          value={<span className="tnum">{stats.totalMonth}</span>}
+          sub={<><TrendIcon dir={vsLastMonthDir} /><span>{Math.abs(vsLastMonthPercent)}% vs last month</span></>}
+          ctxTrend={vsLastMonthDir === 'flat' ? 'neutral' : vsLastMonthDir}
+        />
+        <KpiCard
+          label="Missed calls"
+          value={<span className="tnum">{stats.missedMonth}</span>}
+          sub={<span>{noData ? 'No calls yet' : stats.missedMonth === 0 ? 'Perfect answer rate' : 'this month'}</span>}
+          accent={stats.missedMonth === 0 && !noData ? 'green' : undefined}
+          ctxTrend={stats.missedMonth === 0 ? 'up' : 'down'}
+        />
+        <KpiCard
+          label="Revenue captured"
+          value={<span className="tnum">${revenueRecoveredThisMonth.toLocaleString()}</span>}
+          sub={<span>{revenueIsEstimate ? 'estimated' : 'actual'}</span>}
+          accent="orange"
+          ctx={revenueIsEstimate ? 'Based on industry avg' : undefined}
+          ctxTrend="neutral"
+        />
+        <KpiCard
+          label="AI resolution"
+          value={<span className="tnum">{noData ? '—' : `${stats.aiResolutionRate}%`}</span>}
+          sub={<span>Industry avg 77%</span>}
+          accent={aiRateAccent}
+          ctx={noData ? undefined : stats.aiResolutionRate >= 80 ? 'Above benchmark' : 'Below benchmark'}
+          ctxTrend={stats.aiResolutionRate >= 80 ? 'up' : 'down'}
+        />
+      </div>
+
+      {/* ── Upsell banner ─────────────────────────────────────────────── */}
+      {showUpsell && (
+        <UpsellBanner
+          title="Unlock Growth features — Command Centre, SMS follow-ups & more"
+          subtitle={planLimit != null && stats.totalMonth >= planLimit * 0.8
+            ? `You're at ${stats.totalMonth} of ${planLimit} calls — consider upgrading.`
+            : 'Run your business by texting your AI agent.'}
+          ctaLabel="Upgrade now"
+          onCta={() => router.push('/billing')}
+        />
+      )}
+
+      {/* ── Main grid: left (chart + calls) · right (status + bookings) ─ */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_370px]">
+
+        {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-4">
+
+          {/* Call volume panel */}
+          <Panel>
+            <PanelHeader
+              title="Call volume"
+              meta={chartRange === '7d' ? 'Last 7 days' : 'Last 14 days'}
+              action={
+                <SegmentedControl
+                  options={[
+                    { value: '7d', label: '7 days' },
+                    { value: '14d', label: '14 days' },
+                  ]}
+                  value={chartRange}
+                  onChange={setChartRange}
+                />
+              }
+            />
+
+            {noData ? (
+              <div className="flex h-[148px] items-center justify-center text-[13px] text-dim">
+                No calls yet — your agent is live and waiting
               </div>
-              <button onClick={() => router.push('/calls')} style={{ background: 'transparent', border: '1px solid rgba(74,159,232,0.25)', color: '#4A9FE8', padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', fontWeight: 600 }}>View all →</button>
-            </div>
-            {liveCalls.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '32px 0', color: '#4A7FBB', fontSize: 13 }}>No calls yet — your agent is live and waiting</div>
-            ) : liveCalls.map((c, i) => {
-              const badge = outcomeBadge(c.outcome)
-              return (
-                <div key={c.id} onClick={() => router.push('/calls')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: i < liveCalls.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: badge.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <PhoneIcon color={badge.color} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'white' }}>{c.caller_number || 'Unknown'}</div>
-                    <div style={{ fontSize: 11, color: '#4A7FBB' }}>{c.outcome || 'In progress'} · {fmt(c.duration_seconds)}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#4A7FBB' }}>{timeAgo(c.created_at)}</div>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, marginLeft: 10 }}>{badge.label}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Your agent</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>{business.agent_name || 'TalkMate Agent'}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12, color: '#22C55E' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E' }} /> Live · answering calls
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
-              <button onClick={() => router.push('/calls')} style={{ background: 'rgba(232,98,42,0.18)', color: '#E8622A', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 8, padding: '8px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Test call</button>
-              <button onClick={() => router.push('/catalog')} style={{ background: 'transparent', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.3)', borderRadius: 8, padding: '8px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Edit menu</button>
-              <button onClick={() => router.push('/settings')} style={{ background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>View script</button>
-              <button onClick={() => router.push('/settings')} style={{ background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '8px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Settings</button>
-            </div>
-          </div>
-
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Command Centre</div>
-              {(business.plan === 'starter') && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'rgba(232,98,42,0.18)', color: '#E8622A', letterSpacing: '0.05em' }}>GROWTH+</span>}
-            </div>
-            {business.plan === 'starter' ? (
-              <>
-                <p style={{ fontSize: 12, color: '#7BAED4', lineHeight: 1.5, marginBottom: 12 }}>Run your business by texting WhatsApp or Telegram — &quot;send invoice to John&quot;, &quot;pause agent&quot;, &quot;today&apos;s revenue?&quot;.</p>
-                <button onClick={() => router.push('/command-centre')} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 8, padding: '10px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%' }}>Upgrade to Growth →</button>
-              </>
             ) : (
-              <>
-                <p style={{ fontSize: 12, color: '#7BAED4', lineHeight: 1.5, marginBottom: 12 }}>Send a command to your AI assistant via WhatsApp or Telegram.</p>
-                <button onClick={() => router.push('/command-centre')} style={{ background: 'transparent', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', width: '100%' }}>Open Command Centre →</button>
-              </>
+              <VolumeBarChart data={volumeData} height={148} />
             )}
-          </div>
+
+            {/* Legend */}
+            <div className="mt-3 flex items-center gap-4">
+              <span className="flex items-center gap-1.5 text-[11px] text-dim">
+                <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: 'linear-gradient(180deg,#f4843f,#e85f24)' }} />
+                Handled
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-dim">
+                <span className="inline-block h-2 w-2 rounded-[2px] bg-red" />
+                Escalated
+              </span>
+              <span className="ml-auto text-[10px] text-faint">
+                Escalated breakdown requires call intelligence
+              </span>
+            </div>
+          </Panel>
+
+          {/* Recent calls panel */}
+          <Panel>
+            <PanelHeader
+              title="Recent calls"
+              meta="Last 5 calls handled by your AI agent"
+              action={
+                <button
+                  onClick={() => router.push('/calls')}
+                  className="text-[12px] font-semibold text-blue hover:text-text transition-colors cursor-pointer"
+                >
+                  View all →
+                </button>
+              }
+            />
+
+            {liveCalls.length === 0 ? (
+              <div className="flex h-[80px] items-center justify-center text-[13px] text-dim">
+                No calls yet — your agent is live and waiting
+              </div>
+            ) : (
+              <div>
+                {liveCalls.map(c => {
+                  const tag = callTag(c.outcome, c.transferred)
+                  // AI score: we don't have it in this prop set — use 0 to render gracefully
+                  // (the actual score lives in call_intelligence, not fetched here)
+                  return (
+                    <CallRow
+                      key={c.id}
+                      time={timeAgo(c.created_at)}
+                      who={c.caller_number || 'Unknown caller'}
+                      desc={c.outcome || 'In progress'}
+                      score={0}
+                      tag={tag}
+                      duration={fmt(c.duration_seconds)}
+                      onPlay={() => router.push('/calls')}
+                    />
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* ── RIGHT COLUMN ────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-4">
+
+          {/* Receptionist on duty */}
+          <StatusCard
+            title={business.agent_name ? `${business.agent_name} on duty` : 'Receptionist on duty'}
+            rows={statusRows}
+          />
+
+          {/* Today's summary panel (Today's bookings placeholder — jobs table
+              only provides revenue totals, not per-job time/customer data.
+              This panel shows today's call summary instead, which is real data.) */}
+          <Panel>
+            <PanelHeader title="Today's activity" />
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
+                <span className="text-dim">Calls handled</span>
+                <b className="tnum font-[700]">{callsAnsweredToday}</b>
+              </div>
+              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
+                <span className="text-dim">Calls this month</span>
+                <b className="tnum font-[700]">{stats.totalMonth}</b>
+              </div>
+              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
+                <span className="text-dim">New contacts</span>
+                <b className="tnum font-[700]">{contactsThisMonth}</b>
+              </div>
+              <div className="flex items-center justify-between py-[9px] text-[12.5px]">
+                <span className="text-dim">AI resolved</span>
+                <b className="tnum font-[700]">{outcomes.resolved}</b>
+              </div>
+            </div>
+
+            {/* Call outcomes breakdown */}
+            <div className="mt-3 border-t border-line pt-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[.06em] text-faint">
+                Outcomes this month
+              </div>
+              {([
+                ['Resolved by AI', outcomes.resolved, 'var(--green)'],
+                ['Transferred', outcomes.transferred, 'var(--gold)'],
+                ['Missed', outcomes.missed, 'var(--red)'],
+              ] as [string, number, string][]).map(([label, count, color]) => {
+                const pct = outcomes.total > 0 ? Math.round((count / outcomes.total) * 100) : 0
+                return (
+                  <div key={label} className="mb-2">
+                    <div className="flex justify-between text-[11.5px] mb-1">
+                      <span className="text-dim">{label}</span>
+                      <span className="tnum font-bold" style={{ color }}>{noData ? '—' : `${pct}%`}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden bg-card-2">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: noData ? '0%' : `${pct}%`, background: color }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Panel>
+
+          {/* Agent actions card */}
+          <Panel>
+            <div className="mb-3 text-[11px] font-bold uppercase tracking-[.08em] text-faint">Quick actions</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => router.push('/calls')}
+                className="rounded-[8px] border border-[rgba(238,106,44,.3)] bg-[rgba(238,106,44,.15)] px-3 py-2 text-[12px] font-semibold text-orange transition-opacity hover:opacity-80 cursor-pointer"
+              >
+                Test call
+              </button>
+              <button
+                onClick={() => router.push('/catalog')}
+                className="rounded-[8px] border border-line bg-transparent px-3 py-2 text-[12px] font-semibold text-blue transition-opacity hover:opacity-80 cursor-pointer"
+              >
+                Edit menu
+              </button>
+              <button
+                onClick={() => router.push('/settings')}
+                className="rounded-[8px] border border-line bg-transparent px-3 py-2 text-[12px] font-semibold text-dim transition-opacity hover:opacity-80 cursor-pointer"
+              >
+                View script
+              </button>
+              <button
+                onClick={() => router.push(business.plan === 'starter' ? '/billing' : '/command-centre')}
+                className="rounded-[8px] border border-line bg-transparent px-3 py-2 text-[12px] font-semibold text-dim transition-opacity hover:opacity-80 cursor-pointer"
+              >
+                {business.plan === 'starter' ? 'Upgrade plan' : 'Command Centre'}
+              </button>
+            </div>
+          </Panel>
         </div>
       </div>
 
-      {/* Call volume chart */}
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24, marginBottom: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 4 }}>Call volume — last 14 days</div>
-        <div style={{ fontSize: 11, color: '#4A7FBB', marginBottom: 14 }}>Daily calls handled by your AI agent</div>
-        <BarChart data={chartData} />
-      </div>
-
-      {/* Outcomes */}
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24, marginBottom: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 14 }}>Call outcomes — this month</div>
-        {([
-          ['Resolved by AI', pct(outcomes.resolved), '#22C55E'],
-          ['Transferred', pct(outcomes.transferred), '#F59E0B'],
-          ['Missed', pct(outcomes.missed), '#EF4444'],
-        ] as [string, number, string][]).map(([label, value, color]) => (
-          <div key={label} style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-              <span style={{ color: '#7BAED4' }}>{label}</span>
-              <span style={{ fontWeight: 700, color: 'white' }}>{noData ? '—' : `${value}%`}</span>
-            </div>
-            <div style={{ height: 5, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: noData ? '0%' : `${value}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.6s ease' }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Refer & Earn strip */}
+      {/* ── Refer & Earn strip ────────────────────────────────────────── */}
       {partner ? (
-        <div onClick={() => router.push('/refer-and-earn')} style={{ cursor: 'pointer', background: 'linear-gradient(135deg, rgba(34,197,94,0.1), rgba(74,159,232,0.05))', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 14, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ fontSize: 22 }}>💸</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Earning ${partner.pending_payout?.toFixed(2) ?? '0.00'} this month from {partner.active_referrals ?? 0} active referrals</div>
-            <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>Share your link → earn 15-25% of every monthly subscription, every month</div>
+        <div
+          onClick={() => router.push('/refer-and-earn')}
+          className="flex cursor-pointer items-center gap-4 rounded-[11px] border border-[rgba(46,201,138,.25)] bg-[rgba(46,201,138,.08)] p-[14px_18px] transition-opacity hover:opacity-80"
+        >
+          <span className="text-[22px]">💸</span>
+          <div className="flex-1">
+            <div className="text-[13px] font-bold text-text">
+              Earning ${partner.pending_payout?.toFixed(2) ?? '0.00'} this month from {partner.active_referrals ?? 0} active referral{(partner.active_referrals ?? 0) !== 1 ? 's' : ''}
+            </div>
+            <div className="mt-0.5 text-[11px] text-dim">Share your link → earn 15-25% of every monthly subscription</div>
           </div>
-          <span style={{ color: '#22C55E', fontSize: 12, fontWeight: 700 }}>Share your link →</span>
+          <span className="text-[12px] font-bold text-green">Share →</span>
         </div>
       ) : (
-        <div onClick={() => router.push('/refer-and-earn')} style={{ cursor: 'pointer', background: 'rgba(74,159,232,0.06)', border: '1px solid rgba(74,159,232,0.2)', borderRadius: 14, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <span style={{ fontSize: 22 }}>💡</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Earn $74+/mo by telling another business about TalkMate</div>
-            <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 2 }}>The Partner Program pays 15-25% of every subscription, every month</div>
+        <div
+          onClick={() => router.push('/refer-and-earn')}
+          className="flex cursor-pointer items-center gap-4 rounded-[11px] border border-[rgba(74,159,232,.2)] bg-[rgba(74,159,232,.06)] p-[14px_18px] transition-opacity hover:opacity-80"
+        >
+          <span className="text-[22px]">💡</span>
+          <div className="flex-1">
+            <div className="text-[13px] font-bold text-text">Earn $74+/mo by telling another business about TalkMate</div>
+            <div className="mt-0.5 text-[11px] text-dim">The Partner Program pays 15-25% of every subscription, every month</div>
           </div>
-          <span style={{ color: '#4A9FE8', fontSize: 12, fontWeight: 700 }}>Start earning →</span>
+          <span className="text-[12px] font-bold text-blue">Start earning →</span>
         </div>
       )}
 
-      {/* NPS modal */}
+      {/* ── Modals & toasters (preserved exactly) ─────────────────────── */}
       <NpsModal
         open={npsOpen}
         trigger={needsNps ?? 'day30'}
         businessName={business.name.split(' ')[0]}
         onSubmit={submitNps}
       />
-
-      {/* Social proof toaster (dashboard only) */}
       <SocialProofToaster enabled={true} />
-
-      {/* Share-your-win modal */}
       <ShareYourWin
         businessName={business.name}
         monthlyRevenue={revenueRecoveredThisMonth}
