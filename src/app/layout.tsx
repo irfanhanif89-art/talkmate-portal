@@ -1,23 +1,19 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { dmSans, dmMono } from './fonts'
+import { ThemeProvider } from '@/components/theme-provider'
 
 export const metadata: Metadata = {
-  title: {
-    template: '%s — TalkMate',
-    default: 'TalkMate Portal — AI Voice Agent Dashboard',
-  },
+  title: { template: '%s — TalkMate', default: 'TalkMate Portal — AI Voice Agent Dashboard' },
   description: 'Manage your TalkMate AI voice agent. View calls, update settings, and grow your business.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-AU">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
-      </head>
-      <body>{children}</body>
+    <html lang="en-AU" className={`${dmSans.variable} ${dmMono.variable}`} suppressHydrationWarning>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   )
 }
