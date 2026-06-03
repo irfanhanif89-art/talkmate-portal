@@ -12,7 +12,7 @@ export interface CallRowProps {
   time: string
   who: string
   desc: string
-  score: number
+  score: number | null | undefined
   tag: { variant: TagVariant; label: string }
   duration: string
   onPlay?: () => void
@@ -61,7 +61,7 @@ export interface CallListRowProps {
   tag: { variant: TagVariant; label: string }
   preview: string
   time: string
-  score: number
+  score: number | null | undefined
   revenue?: string
   duration: string
   selected?: boolean
