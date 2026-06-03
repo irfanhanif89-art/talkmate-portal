@@ -24,6 +24,13 @@ function fmt(iso: string | null): string {
 
 export default function EmailInbox({ businessId }: { businessId: string }) {
   void businessId
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const update = () => setNarrow(window.innerWidth < 700)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
   const [threads, setThreads] = useState<ThreadListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
@@ -108,9 +115,9 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
   const panel: React.CSSProperties = { background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 320px) 1fr', gap: 16, minHeight: 480 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 320px) 1fr', gap: 16, minHeight: 480 }}>
       {/* Thread list */}
-      <div style={{ ...panel, overflow: 'hidden', maxHeight: 640, overflowY: 'auto' }}>
+      <div style={{ ...panel, overflow: 'hidden', maxHeight: narrow ? 280 : 640, overflowY: 'auto', minWidth: 0 }}>
         {loading ? (
           <div style={{ padding: 18, color: '#7BAED4', fontSize: 13 }}>Loading...</div>
         ) : threads.length === 0 ? (
@@ -136,7 +143,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
       </div>
 
       {/* Thread view */}
-      <div style={{ ...panel, padding: 18, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ ...panel, padding: 18, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {!selected ? (
           <div style={{ color: '#7BAED4', fontSize: 14, margin: 'auto' }}>Select an email to view the conversation.</div>
         ) : loadingThread ? (
