@@ -26,9 +26,9 @@ redesign work now happens in an **isolated git worktree**:
 | 7 | ui-v2: CallRow, BookingRow, DataTable, DetailPanel, Kanban | ✅ | 667eb9c |
 | 8 | ui-v2: charts (Recharts), Meter, Waveform | ✅ | 23db8ef |
 | 9 | Restyle PortalSidebar | ✅ | 57a7357 — gating/active/auth logic verified unchanged via diff |
-| 10 | Restyle PortalTopbar + Shell + ThemeToggle | ⏳ NOT STARTED | next task on resume; worktree clean |
-| 11 | Dashboard | ⏳ | + NEW EOFY banner via isSaleActive() |
-| 12 | Calls | ⏳ | preserve intelligence_* |
+| 10 | Restyle PortalTopbar + Shell + ThemeToggle | ✅ | e2e87a0 — toggle live, logic preserved |
+| 11 | Dashboard | ✅ | 35ab37f — EOFY banner wired; data gaps → backlog |
+| 12 | Calls | ✅ | 4fcfb09 — real intelligence_* wired; AiScoreBadge now hides when no score |
 | 13 | Bookings | ⏳ | |
 | 14 | Analytics | ⏳ | re-point Recharts COLORS |
 | 15 | SMS Activity | ⏳ | keep Starter upsell gate |
@@ -53,6 +53,12 @@ screens (11–20), Phase 4 sales (21–23), Phase 5 cleanup+PR (24).
 3. Continue subagent-driven execution per the plan, one task each, build+tsc+commit per task. Keep subagents pinned to the worktree dir + branch (the concurrent "Session 3A/ServiceM8" session is still in the main checkout — stay isolated).
 4. Task 10 implementer prompt was already drafted (restyle topbar.tsx + portal-shell.tsx, preserve PAGE_TITLES/changelog/notif/avatar-dropdown/onboarding-hide logic, add `<ThemeToggle/>` from `@/components/theme-toggle`).
 5. Nothing pushed; do NOT merge to main / deploy. Irfan audits + tests on return.
+
+## Polish / data-gap backlog (address in Task 24 + flag to Irfan)
+- **Dashboard CallRow score:** dashboard passes `score={0}` → ensure it passes `undefined` so `AiScoreBadge` hides (recentCalls query has no intelligence join). Verify AiScoreBadge hides for 0 too.
+- **Dashboard "Today's bookings":** replaced with an activity panel because the jobs query lacks per-job `scheduled_at`/`customer`. To get full mockup parity, extend the server query in `dashboard/page.tsx` to fetch today's jobs (time/customer/value) and use `BookingRow`.
+- **Dashboard chart:** uses 14-day daily series (no hourly "Today"); escalated breakdown is 0 (not in data). Fine, but note.
+- **Calls est. job value:** shows `—` (calls↔jobs FK not linked). Date filter is a visual pill only.
 
 ## Decisions
 - Per-task verify = `npm run build` + `npx tsc --noEmit` + controller review. Full dual-theme Playwright QA
