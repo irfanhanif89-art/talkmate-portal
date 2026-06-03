@@ -1,9 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Download, Phone, Search } from 'lucide-react'
 import Link from 'next/link'
-import { Search, Upload, Download, ChevronRight } from 'lucide-react'
+import { DataTable } from '@/components/portal/ui-v2/data-table'
+import { DetailPanel, StatGrid, HistoryRow } from '@/components/portal/ui-v2/detail-panel'
+import { Chips } from '@/components/portal/ui-v2/chips'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ContactRow {
   id: string
@@ -15,19 +20,34 @@ interface ContactRow {
   tags: string[] | null
 }
 
-const RECENCY_FILTERS: Array<{ key: string; label: string; days: number | null }> = [
-  { key: 'all', label: 'All time', days: null },
-  { key: 'today', label: 'Today', days: 1 },
-  { key: 'week', label: 'This week', days: 7 },
-  { key: 'month', label: 'This month', days: 30 },
+interface CallRecord {
+  id: string
+  call_id: string
+  call_at: string
+  duration_seconds: number | null
+  outcome: string | null
+  summary: string | null
+  tags_applied: string[] | null
+}
+
+type ChipValue = 'all' | 'active' | 'new' | 'recurring'
+
+const CHIPS: { value: ChipValue; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'new', label: 'New this month' },
+  { value: 'recurring', label: 'Recurring' },
 ]
 
-const COUNT_FILTERS: Array<{ key: string; label: string; min: number; max: number }> = [
-  { key: 'any', label: 'Any', min: 0, max: 999 },
-  { key: '1', label: '1 call', min: 1, max: 1 },
-  { key: '2-5', label: '2-5 calls', min: 2, max: 5 },
-  { key: '5+', label: '5+ calls', min: 5, max: 999 },
+const TABLE_COLUMNS = [
+  { key: 'customer', label: 'Customer', width: '1fr' },
+  { key: 'phone', label: 'Phone', width: '140px' },
+  { key: 'calls', label: 'Calls', width: '70px', align: 'right' as const },
+  { key: 'lastContact', label: 'Last contact', width: '110px' },
+  { key: 'status', label: 'Status', width: '90px' },
 ]
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function formatPhone(phone: string): string {
   const m = phone.match(/^\+61(\d{3})(\d{3})(\d{3})$/)
@@ -38,7 +58,7 @@ function formatPhone(phone: string): string {
 function timeAgo(iso: string | null): string {
   if (!iso) return '—'
   const diffMs = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diffMs / 60000)
+  const m = Math.floor(diffMs / 60_000)
   if (m < 1) return 'just now'
   if (m < 60) return `${m}m ago`
   const h = Math.floor(m / 60)
@@ -49,184 +69,369 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(d / 30)}mo ago`
 }
 
-function tagColor(tag: string): { bg: string; color: string } {
-  const palette: Record<string, { bg: string; color: string }> = {
-    new_caller: { bg: 'rgba(34,197,94,0.12)', color: '#22C55E' },
-    repeat_caller: { bg: 'rgba(74,159,232,0.12)', color: '#4A9FE8' },
-    complaint: { bg: 'rgba(239,68,68,0.12)', color: '#EF4444' },
-    vip_potential: { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B' },
-    upsell_accepted: { bg: 'rgba(34,197,94,0.12)', color: '#22C55E' },
-    after_hours: { bg: 'rgba(139,92,246,0.12)', color: '#8B5CF6' },
-  }
-  return palette[tag] ?? { bg: 'rgba(255,255,255,0.06)', color: '#7BAED4' }
+function fmtDateShort(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default function ContactsListClient({ initialContacts, totalCount }: {
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+/** Derive status from real data: "active" within 30 days, "new" first_seen within 30 days, else "inactive" */
+function deriveStatus(c: ContactRow): 'active' | 'new' | 'inactive' {
+  const now = Date.now()
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000
+  if (c.first_seen && now - new Date(c.first_seen).getTime() < thirtyDays) return 'new'
+  if (c.last_seen && now - new Date(c.last_seen).getTime() < thirtyDays) return 'active'
+  return 'inactive'
+}
+
+/** Gradient avatars from initials */
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg,#2a5060,#1a3545)',
+  'linear-gradient(135deg,#402850,#261538)',
+  'linear-gradient(135deg,#1a4030,#0e2820)',
+  'linear-gradient(135deg,#3a3020,#241e10)',
+  'linear-gradient(135deg,#1a3050,#0e1e34)',
+  'linear-gradient(135deg,#403020,#261e0e)',
+  'linear-gradient(135deg,#2a3050,#1a1e34)',
+]
+
+function initials(name: string | null, phone: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return phone.slice(-2)
+}
+
+function avatarGradient(id: string): string {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length]
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
+export default function ContactsListClient({
+  initialContacts,
+  totalCount,
+}: {
   industry: string | null
   initialContacts: ContactRow[]
   totalCount: number
 }) {
-  const router = useRouter()
   const [contacts] = useState<ContactRow[]>(initialContacts)
   const [search, setSearch] = useState('')
-  const [recency, setRecency] = useState('all')
-  const [countFilter, setCountFilter] = useState('any')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [chip, setChip] = useState<ChipValue>('all')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [panelCalls, setPanelCalls] = useState<CallRecord[]>([])
+  const [panelLoading, setPanelLoading] = useState(false)
 
+  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim().toLowerCase()), 300)
     return () => clearTimeout(t)
   }, [search])
 
+  // Filter contacts by chip + search
   const filtered = useMemo(() => {
-    const recencyDef = RECENCY_FILTERS.find(r => r.key === recency)
-    const countDef = COUNT_FILTERS.find(c => c.key === countFilter)
-    const recencyCutoff = recencyDef?.days ? Date.now() - recencyDef.days * 24 * 60 * 60 * 1000 : null
+    const now = Date.now()
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000
     return contacts.filter(c => {
       if (debouncedSearch) {
-        const haystack = `${c.name ?? ''} ${c.phone}`.toLowerCase()
-        if (!haystack.includes(debouncedSearch)) return false
+        const hay = `${c.name ?? ''} ${c.phone}`.toLowerCase()
+        if (!hay.includes(debouncedSearch)) return false
       }
-      if (recencyCutoff !== null && (!c.last_seen || new Date(c.last_seen).getTime() < recencyCutoff)) return false
-      if (countDef) {
-        const cc = c.call_count ?? 0
-        if (cc < countDef.min || cc > countDef.max) return false
+      if (chip === 'active') {
+        if (!c.last_seen || now - new Date(c.last_seen).getTime() >= thirtyDays) return false
+        // exclude "new" contacts from active bucket
+        if (c.first_seen && now - new Date(c.first_seen).getTime() < thirtyDays) return false
+      }
+      if (chip === 'new') {
+        if (!c.first_seen || now - new Date(c.first_seen).getTime() >= thirtyDays) return false
+      }
+      if (chip === 'recurring') {
+        if ((c.call_count ?? 0) < 2) return false
       }
       return true
     })
-  }, [contacts, debouncedSearch, recency, countFilter])
+  }, [contacts, debouncedSearch, chip])
 
-  const maxCalls = useMemo(() => Math.max(1, ...contacts.map(c => c.call_count ?? 0)), [contacts])
+  // Selected contact object
+  const selectedContact = useMemo(
+    () => contacts.find(c => c.id === selectedId) ?? null,
+    [contacts, selectedId],
+  )
 
-  return (
-    <div style={{ padding: 28, color: '#F2F6FB' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Your CRM</div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: 0 }}>Contacts</h1>
-          <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 4 }}>{totalCount} total · captured automatically by TalkMate</p>
+  // Load call history when a contact is selected
+  const loadCalls = useCallback(async (contactId: string) => {
+    setPanelLoading(true)
+    setPanelCalls([])
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/calls`)
+      if (res.ok) {
+        const data = await res.json()
+        setPanelCalls(data.calls ?? [])
+      }
+    } catch {
+      // ignore fetch errors — history simply won't show
+    } finally {
+      setPanelLoading(false)
+    }
+  }, [])
+
+  function handleRowClick(row: ContactRow) {
+    setSelectedId(row.id)
+    loadCalls(row.id)
+  }
+
+  // Chip counts
+  const chipCounts = useMemo(() => {
+    const now = Date.now()
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000
+    return {
+      all: contacts.length,
+      active: contacts.filter(c => {
+        if (!c.last_seen || now - new Date(c.last_seen).getTime() >= thirtyDays) return false
+        if (c.first_seen && now - new Date(c.first_seen).getTime() < thirtyDays) return false
+        return true
+      }).length,
+      new: contacts.filter(c => c.first_seen && now - new Date(c.first_seen).getTime() < thirtyDays).length,
+      recurring: contacts.filter(c => (c.call_count ?? 0) >= 2).length,
+    }
+  }, [contacts])
+
+  // Render table cell
+  function renderCell(row: ContactRow, col: string) {
+    const status = deriveStatus(row)
+    switch (col) {
+      case 'customer':
+        return (
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="w-9 h-9 rounded-[10px] flex items-center justify-center text-[13px] font-bold flex-shrink-0 text-[#cfe0f2]"
+              style={{ background: avatarGradient(row.id) }}
+            >
+              {initials(row.name, row.phone)}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[14px] font-bold truncate">
+                {row.name ?? <span className="text-dim">Unknown caller</span>}
+              </div>
+            </div>
+          </div>
+        )
+      case 'phone':
+        return <span className="text-[13px] text-dim">{formatPhone(row.phone)}</span>
+      case 'calls':
+        return <span className="text-[14px] font-bold tabular-nums">{row.call_count ?? 0}</span>
+      case 'lastContact':
+        return <span className="text-[12px] text-dim">{timeAgo(row.last_seen)}</span>
+      case 'status':
+        return <StatusTag status={status} />
+      default:
+        return null
+    }
+  }
+
+  // ── Panel content ──────────────────────────────────────────────────────────
+  const panelHeader = selectedContact ? (
+    <div className="flex gap-3.5 items-center p-[22px]">
+      <div
+        className="w-[52px] h-[52px] rounded-[14px] flex items-center justify-center text-[20px] font-extrabold flex-shrink-0 text-[#cfe0f2]"
+        style={{ background: avatarGradient(selectedContact.id) }}
+      >
+        {initials(selectedContact.name, selectedContact.phone)}
+      </div>
+      <div>
+        <div className="text-[18px] font-extrabold tracking-tight">
+          {selectedContact.name ?? <span className="text-dim">Unknown caller</span>}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Link href="/contacts/smart-lists" style={btn('ghost')}>Smart lists</Link>
-          <Link href="/contacts/import" style={btn('ghost')}><Upload size={14} /> Import</Link>
-          <Link href="/contacts/export" style={btn('orange')}><Download size={14} /> Export CSV</Link>
+        <div className="text-[13px] text-dim mt-[3px]">
+          {formatPhone(selectedContact.phone)}
         </div>
       </div>
+    </div>
+  ) : null
 
-      <div style={{
-        background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 14,
-        display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto auto', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const,
-      }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#4A7FBB' }} />
+  const memberMonths = selectedContact?.first_seen
+    ? Math.max(0, Math.round((Date.now() - new Date(selectedContact.first_seen).getTime()) / (30 * 24 * 60 * 60 * 1000)))
+    : null
+
+  const panelStats = selectedContact
+    ? [
+        { value: selectedContact.call_count ?? 0, label: 'Total calls' },
+        { value: memberMonths !== null ? `${memberMonths}mo` : '—', label: 'Member since' },
+        { value: timeAgo(selectedContact.last_seen), label: 'Last contact' },
+        { value: (selectedContact.tags ?? []).length || '—', label: 'Tags' },
+      ]
+    : []
+
+  return (
+    <div className="p-7 flex flex-col gap-5 h-full">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-[10px] font-bold text-orange uppercase tracking-[.1em] mb-1.5">Your CRM</div>
+          <h1 className="text-[1.55rem] font-extrabold tracking-tight">Contacts</h1>
+          <p className="text-[13px] text-dim mt-1">
+            {totalCount} total · captured automatically by TalkMate
+          </p>
+        </div>
+        <Link href="/contacts/export">
+          <ButtonV2 variant="secondary" className="gap-2 text-[13px]">
+            <Download size={14} />
+            Export CSV
+          </ButtonV2>
+        </Link>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Search */}
+        <div className="relative flex-shrink-0 w-[260px]">
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-faint pointer-events-none"
+          />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by name or phone…"
-            style={{
-              width: '100%', padding: '10px 14px 10px 36px',
-              background: '#071829', border: '1px solid rgba(255,255,255,0.08)', color: 'white',
-              borderRadius: 9, fontFamily: 'Outfit, sans-serif', fontSize: 14, outline: 'none',
-            }}
+            className="w-full pl-9 pr-3 py-[9px] bg-card border border-line rounded-[10px] text-[13.5px] text-text placeholder:text-faint outline-none focus:border-[rgba(238,106,44,.4)] transition"
           />
         </div>
-        <select value={recency} onChange={e => setRecency(e.target.value)} style={selectStyle}>
-          {RECENCY_FILTERS.map(r => <option key={r.key} value={r.key} style={{ background: '#0A1E38' }}>Last contact: {r.label}</option>)}
-        </select>
-        <select value={countFilter} onChange={e => setCountFilter(e.target.value)} style={selectStyle}>
-          {COUNT_FILTERS.map(c => <option key={c.key} value={c.key} style={{ background: '#0A1E38' }}>Calls: {c.label}</option>)}
-        </select>
+
+        {/* Chips */}
+        <Chips
+          chips={CHIPS.map(c => ({ ...c, count: chipCounts[c.value] }))}
+          value={chip}
+          onChange={setChip}
+        />
       </div>
 
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden' }}>
-        {filtered.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>👋</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 6 }}>
-              {totalCount === 0 ? 'Your contact list is empty.' : 'No contacts match your filters.'}
+      {/* Body: table + panel */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 overflow-hidden">
+        {/* Table area */}
+        <div className="bg-card border border-line rounded-[var(--r)] overflow-hidden flex flex-col min-h-0">
+          {filtered.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-12 text-center px-8">
+              <div className="text-[32px] mb-3">👋</div>
+              <div className="text-[15px] font-bold mb-2">
+                {totalCount === 0 ? 'Your contact list is empty.' : 'No contacts match your filters.'}
+              </div>
+              <p className="text-[13px] text-dim max-w-[460px] leading-relaxed">
+                {totalCount === 0
+                  ? 'As TalkMate answers calls, contacts will appear here automatically. No data entry required.'
+                  : 'Try widening your search or changing the filter.'}
+              </p>
             </div>
-            <p style={{ fontSize: 13, color: '#7BAED4', maxWidth: 460, margin: '0 auto', lineHeight: 1.6 }}>
-              {totalCount === 0
-                ? 'As TalkMate answers calls, contacts will appear here automatically. No data entry required.'
-                : 'Try widening your search or recency filter.'}
-            </p>
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' as const }}>
-            <thead style={{ background: '#071829' }}>
-              <tr>
-                {['Contact', 'Phone', 'Calls', 'Last contact', 'Tags', ''].map(h => (
-                  <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c, i) => {
-                const cc = c.call_count ?? 0
-                const tagsToShow = (c.tags ?? []).slice(0, 2)
-                const more = (c.tags?.length ?? 0) - tagsToShow.length
-                return (
-                  <tr
-                    key={c.id}
-                    onClick={() => router.push(`/contacts/${c.id}`)}
-                    style={{ cursor: 'pointer', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <td style={{ padding: '14px 18px', fontSize: 14, fontWeight: 600, color: 'white' }}>
-                      {c.name || <span style={{ color: '#7BAED4' }}>Unknown caller</span>}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 13, color: '#7BAED4' }}>{formatPhone(c.phone)}</td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{cc}</span>
-                        <div style={{ width: 60, height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ width: `${(cc / maxCalls) * 100}%`, height: '100%', background: '#E8622A', borderRadius: 2 }} />
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 12, color: '#7BAED4' }}>{timeAgo(c.last_seen)}</td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
-                        {tagsToShow.map(t => {
-                          const color = tagColor(t)
-                          return (
-                            <span key={t} style={{
-                              fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99,
-                              background: color.bg, color: color.color, textTransform: 'capitalize' as const,
-                            }}>{t.replace(/_/g, ' ')}</span>
-                          )
-                        })}
-                        {more > 0 && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99, background: 'rgba(255,255,255,0.06)', color: '#7BAED4' }}>+{more}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                      <ChevronRight size={16} color="#4A7FBB" />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+          ) : (
+            <DataTable
+              columns={TABLE_COLUMNS}
+              rows={filtered}
+              renderCell={renderCell}
+              getRowKey={r => r.id}
+              selectedKey={selectedId ?? undefined}
+              onRowClick={handleRowClick}
+              className="flex-1"
+            />
+          )}
+        </div>
+
+        {/* Detail panel */}
+        <div className="hidden lg:flex flex-col min-h-0">
+          {selectedContact ? (
+            <DetailPanel header={panelHeader} className="flex-1">
+              {/* Stats grid */}
+              <StatGrid stats={panelStats} />
+
+              {/* Tags */}
+              {(selectedContact.tags ?? []).length > 0 && (
+                <div className="px-[18px] pb-[14px] border-b border-line">
+                  <div className="text-[11px] font-bold uppercase tracking-[.08em] text-faint mb-2">Tags</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(selectedContact.tags ?? []).map(t => (
+                      <span
+                        key={t}
+                        className="text-[10.5px] font-bold px-2.5 py-[4px] rounded-full bg-[rgba(74,159,232,.12)] text-blue capitalize"
+                      >
+                        {t.replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Call history */}
+              <div className="px-[18px] py-4">
+                <div className="text-[11px] font-bold uppercase tracking-[.08em] text-faint mb-3">
+                  Call history
+                </div>
+                {panelLoading ? (
+                  <div className="text-[13px] text-dim py-4 text-center">Loading…</div>
+                ) : panelCalls.length === 0 ? (
+                  <div className="text-[13px] text-dim py-4 text-center">No calls yet.</div>
+                ) : (
+                  panelCalls.slice(0, 8).map(call => (
+                    <HistoryRow
+                      key={call.id}
+                      icon={<Phone size={14} color="rgba(240,120,50,1)" />}
+                      iconColor="rgba(238,106,44,.14)"
+                      title={call.summary ?? call.outcome?.replace(/_/g, ' ') ?? 'Call'}
+                      meta={fmtDateTime(call.call_at)}
+                    />
+                  ))
+                )}
+
+                {/* Link to full contact page */}
+                <Link
+                  href={`/contacts/${selectedContact.id}`}
+                  className="mt-4 flex items-center justify-center gap-2 text-[12.5px] font-semibold text-dim hover:text-text transition py-2.5 border border-line rounded-lg"
+                >
+                  View full profile →
+                </Link>
+              </div>
+            </DetailPanel>
+          ) : (
+            /* Empty state for panel */
+            <div className="flex-1 bg-card border border-line rounded-[var(--r)] flex flex-col items-center justify-center text-center p-8 gap-3">
+              <div className="w-11 h-11 rounded-full bg-card-2 border border-line flex items-center justify-center">
+                <Phone size={18} className="text-faint" />
+              </div>
+              <div className="text-[14px] font-bold">Select a contact</div>
+              <p className="text-[12.5px] text-dim leading-relaxed max-w-[200px]">
+                Click any row to see call history and details.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-const selectStyle: React.CSSProperties = {
-  background: '#071829', border: '1px solid rgba(255,255,255,0.08)', color: 'white',
-  borderRadius: 9, padding: '10px 12px', fontFamily: 'Outfit, sans-serif', fontSize: 13, outline: 'none', cursor: 'pointer',
-}
+// ─── StatusTag ───────────────────────────────────────────────────────────────
 
-function btn(variant: 'orange' | 'ghost'): React.CSSProperties {
-  const base: React.CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    padding: '10px 16px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-    cursor: 'pointer', textDecoration: 'none', fontFamily: 'Outfit, sans-serif',
-  }
-  if (variant === 'orange') return { ...base, background: '#E8622A', color: 'white', border: 'none', fontWeight: 700 }
-  return { ...base, background: 'transparent', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.3)' }
+function StatusTag({ status }: { status: 'active' | 'new' | 'inactive' }) {
+  if (status === 'active')
+    return (
+      <span className="inline-block text-[11.5px] font-bold px-[10px] py-[4px] rounded-[8px] bg-green-soft text-green">
+        Active
+      </span>
+    )
+  if (status === 'new')
+    return (
+      <span className="inline-block text-[11.5px] font-bold px-[10px] py-[4px] rounded-[8px] bg-[rgba(238,106,44,.14)] text-orange">
+        New
+      </span>
+    )
+  return (
+    <span className="inline-block text-[11.5px] font-bold px-[10px] py-[4px] rounded-[8px] bg-white/[.06] text-dim">
+      Inactive
+    </span>
+  )
 }
