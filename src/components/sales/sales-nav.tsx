@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
 export default function SalesNav({ repName, repEmail, isOpenMobile, onCloseMobile }: Props) {
   const pathname = usePathname()
   const router = useRouter()
+  const [hovering, setHovering] = useState<string | null>(null)
 
   async function logout() {
     const supabase = createClient()
@@ -44,120 +46,237 @@ export default function SalesNav({ repName, repEmail, isOpenMobile, onCloseMobil
     onCloseMobile()
   }
 
-  const sidebar = (
-    <aside
-      style={{
-        width: 260, minHeight: '100vh', background: '#061322',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', flexDirection: 'column',
-        fontFamily: 'Outfit, sans-serif',
-      }}
-    >
-      {/* Brand */}
-      <div style={{ padding: '24px 22px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+  // Avatar initials from rep name
+  const avatarInitials = (repName || repEmail || 'S')
+    .trim()
+    .split(/\s+/)
+    .map(s => s[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const sidebarBody = (
+    <>
+      {/* Brand block */}
+      <div style={{
+        padding: '20px 14px',
+        borderBottom: '1px solid var(--line)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Same logo SVG as portal sidebar — gradient orange #f58a42→#e66020 */}
+          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="34" height="34" rx="8" fill="url(#tmGSales)" />
+            <path d="M9 10.5h16v3H19V24h-4V13.5H9z" fill="white" />
+            <path d="M23 27a4 4 0 0 1 0-6" stroke="rgba(255,255,255,.8)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            <path d="M20.5 29.5a7.5 7.5 0 0 1 0-11" stroke="rgba(255,255,255,.4)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            <defs>
+              <linearGradient id="tmGSales" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#f58a42" />
+                <stop offset="1" stopColor="#e66020" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          {/* Wordmark + Sales HQ sub-label */}
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'white', letterSpacing: '-0.5px' }}>
-              Sales <span style={{ color: '#E8622A' }}>HQ</span>
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#4A7FBB', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>
-              TalkMate
+            <span style={{ fontWeight: 800, fontSize: 17, color: 'var(--text)', letterSpacing: '-0.5px', lineHeight: 1 }}>
+              Talk<span style={{ fontWeight: 300, color: '#4a9fe8' }}>mate</span>
+            </span>
+            {/* Sales HQ brand-sub label */}
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              color: 'var(--orange)',
+              marginTop: 3,
+              lineHeight: 1,
+            }}>
+              Sales HQ
             </div>
           </div>
-          <button
-            onClick={onCloseMobile}
-            aria-label="Close menu"
-            className="sales-nav-close"
-            style={{
-              display: 'none', background: 'transparent', border: 'none',
-              color: '#7BAED4', cursor: 'pointer', padding: 4,
-            }}
-          >
-            <X size={20} />
-          </button>
         </div>
+
+        {/* Mobile close button */}
+        <button
+          onClick={onCloseMobile}
+          aria-label="Close menu"
+          className="lg:hidden"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--dim)',
+            cursor: 'pointer',
+            padding: 4,
+            display: 'flex',
+          }}
+        >
+          <X size={18} />
+        </button>
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, padding: '12px 14px', overflowY: 'auto' }}>
         {NAV_ITEMS.map(item => {
           const Icon = item.icon
           const active = pathname === item.href || pathname.startsWith(item.href + '/')
+          const isHovering = hovering === item.href
           return (
             <button
               key={item.href}
+              type="button"
               onClick={() => go(item.href)}
+              onMouseEnter={() => setHovering(item.href)}
+              onMouseLeave={() => setHovering(null)}
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 11,
+                padding: '9px 12px',
+                borderRadius: 10,
+                fontSize: 13.5,
+                fontWeight: active ? 600 : 500,
+                cursor: 'pointer',
+                background: active
+                  ? 'rgba(240,120,50,.09)'
+                  : isHovering
+                  ? 'rgba(255,255,255,.04)'
+                  : 'transparent',
+                color: active ? 'var(--text)' : 'var(--dim)',
+                boxShadow: active ? 'inset 2px 0 0 var(--orange)' : 'none',
+                border: 'none',
                 width: '100%',
-                display: 'flex', alignItems: 'center', gap: 12,
-                padding: '11px 14px', marginBottom: 4, borderRadius: 9,
-                background: active ? 'rgba(232,98,42,0.15)' : 'transparent',
-                border: active ? '1px solid rgba(232,98,42,0.3)' : '1px solid transparent',
-                color: active ? '#E8622A' : '#7BAED4',
-                fontFamily: 'Outfit, sans-serif',
-                fontSize: 14, fontWeight: 600,
-                cursor: 'pointer', textAlign: 'left',
+                marginBottom: 2,
+                transition: 'all 0.15s',
+                textAlign: 'left',
               }}
             >
-              <Icon size={18} />
-              {item.label}
+              <span style={{ color: active ? 'var(--orange)' : 'inherit', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                <Icon size={16} />
+              </span>
+              <span style={{ flex: 1, color: active ? 'var(--text)' : 'var(--dim)' }}>{item.label}</span>
             </button>
           )
         })}
       </nav>
 
-      {/* Footer / user */}
-      <div style={{ padding: '14px 16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ fontSize: 13, color: 'white', fontWeight: 700, marginBottom: 2 }}>{repName}</div>
-        <div style={{ fontSize: 11, color: '#4A7FBB', marginBottom: 12, wordBreak: 'break-all' }}>{repEmail}</div>
+      {/* Footer / sidefoot — blue gradient avatar for rep */}
+      <div style={{ padding: 14, borderTop: '1px solid var(--line)' }}>
+        {/* Avatar card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          {/* Blue gradient avatar (distinct from orange client avatar) */}
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: 'linear-gradient(135deg,#1a4a6a,#0d2e50)',
+            color: '#cfe0f2',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 13,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}>
+            {avatarInitials}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: 160,
+            }}>
+              {repName}
+            </div>
+            <div style={{
+              fontSize: 10,
+              color: 'var(--faint)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: 160,
+            }}>
+              Sales Rep
+            </div>
+          </div>
+        </div>
+
+        {/* Log out */}
         <button
           onClick={logout}
           style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            padding: '9px 12px', borderRadius: 8,
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-            color: '#7BAED4', fontFamily: 'Outfit, sans-serif',
-            fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '8px 12px',
+            background: 'transparent',
+            border: '1px solid var(--line)',
+            color: 'var(--dim)',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
           }}
         >
-          <LogOut size={14} /> Sign out
+          <LogOut size={13} /> Sign out
         </button>
       </div>
-    </aside>
+    </>
   )
 
   return (
     <>
-      {/* Desktop */}
-      <div className="sales-nav-desktop">{sidebar}</div>
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden lg:flex"
+        style={{
+          width: 240,
+          background: 'var(--sidebar)',
+          borderRight: '1px solid var(--line)',
+          flexDirection: 'column',
+          height: '100vh',
+          flexShrink: 0,
+          position: 'sticky',
+          top: 0,
+        }}
+      >
+        {sidebarBody}
+      </aside>
 
+      {/* Mobile overlay */}
+      <div
+        onClick={onCloseMobile}
+        className="lg:hidden"
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 40,
+          opacity: isOpenMobile ? 1 : 0, pointerEvents: isOpenMobile ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease',
+        }}
+      />
       {/* Mobile drawer */}
-      {isOpenMobile && (
-        <div
-          onClick={onCloseMobile}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-            zIndex: 100,
-          }}
-          className="sales-nav-mobile-backdrop"
-        >
-          <div onClick={e => e.stopPropagation()} style={{ height: '100vh', width: 280 }}>
-            {sidebar}
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        .sales-nav-desktop { display: none; }
-        .sales-nav-mobile-backdrop { display: block; }
-        @media (min-width: 1024px) {
-          .sales-nav-desktop { display: block; }
-          .sales-nav-mobile-backdrop { display: none !important; }
-        }
-        @media (max-width: 1023px) {
-          .sales-nav-close { display: inline-flex !important; }
-        }
-      `}</style>
+      <aside
+        className="lg:hidden"
+        style={{
+          position: 'fixed', top: 0, bottom: 0, left: 0, width: 260, zIndex: 50,
+          background: 'var(--sidebar)',
+          borderRight: '1px solid var(--line)',
+          display: 'flex',
+          flexDirection: 'column',
+          transform: isOpenMobile ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.25s ease',
+        }}
+      >
+        {sidebarBody}
+      </aside>
     </>
   )
 }
