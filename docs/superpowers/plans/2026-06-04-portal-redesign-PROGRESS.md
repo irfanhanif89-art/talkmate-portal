@@ -22,11 +22,11 @@ redesign work now happens in an **isolated git worktree**:
 | 1-3 | Theme foundation | ✅ | 2c72cf4 — build green, tsc clean |
 | 4 | ui-v2: Panel, KpiCard, Tag, AiScoreBadge | ✅ | 3818d6c |
 | 5 | ui-v2: SegmentedControl, Tabs, Chips, Switch, ButtonV2 | ✅ | 17edc63 |
-| 6 | ui-v2: RevenueStrip, EofyBanner, UpsellBanner, StatusCard, StatsBar | ⏳ | |
-| 7 | ui-v2: CallRow, BookingRow, DataTable, DetailPanel, Kanban | ⏳ | |
-| 8 | ui-v2: charts (Recharts), Meter, Waveform | ⏳ | |
-| 9 | Restyle PortalSidebar | ⏳ | preserve gating/active logic |
-| 10 | Restyle PortalTopbar + Shell + ThemeToggle | ⏳ | |
+| 6 | ui-v2: RevenueStrip, EofyBanner, UpsellBanner, StatusCard, StatsBar | ✅ | 79ea5c6 |
+| 7 | ui-v2: CallRow, BookingRow, DataTable, DetailPanel, Kanban | ✅ | 667eb9c |
+| 8 | ui-v2: charts (Recharts), Meter, Waveform | ✅ | 23db8ef |
+| 9 | Restyle PortalSidebar | ✅ | 57a7357 — gating/active/auth logic verified unchanged via diff |
+| 10 | Restyle PortalTopbar + Shell + ThemeToggle | ⏳ NOT STARTED | next task on resume; worktree clean |
 | 11 | Dashboard | ⏳ | + NEW EOFY banner via isSaleActive() |
 | 12 | Calls | ⏳ | preserve intelligence_* |
 | 13 | Bookings | ⏳ | |
@@ -41,6 +41,18 @@ redesign work now happens in an **isolated git worktree**:
 | 22 | Sales Dashboard | ⏳ | |
 | 23 | Sales Pipeline (kanban) | ⏳ | restyle LeadsBoard |
 | 24 | Cleanup + full sweep + PR to dev | ⏳ | |
+
+## ⏸️ STOPPED 2026-06-04 — account session usage limit (resets 6am Australia/Brisbane)
+Built through **Task 9** (Phase 0 + full Phase 1 component library + sidebar restyle). Worktree CLEAN,
+all commits build green + tsc clean. **Resume at Task 10** (topbar/shell + theme toggle), then Phase 3
+screens (11–20), Phase 4 sales (21–23), Phase 5 cleanup+PR (24).
+
+### To resume (next session, after limit resets)
+1. `cd "C:\Users\info\.claude\WEBSITE BUILD\_worktrees\portal-redesign"` (the isolated worktree — NOT the main talkmate-portal dir).
+2. Confirm: `git branch --show-current` → `feature/portal-ui-redesign`; `git status` clean; `git log --oneline -5`.
+3. Continue subagent-driven execution per the plan, one task each, build+tsc+commit per task. Keep subagents pinned to the worktree dir + branch (the concurrent "Session 3A/ServiceM8" session is still in the main checkout — stay isolated).
+4. Task 10 implementer prompt was already drafted (restyle topbar.tsx + portal-shell.tsx, preserve PAGE_TITLES/changelog/notif/avatar-dropdown/onboarding-hide logic, add `<ThemeToggle/>` from `@/components/theme-toggle`).
+5. Nothing pushed; do NOT merge to main / deploy. Irfan audits + tests on return.
 
 ## Decisions
 - Per-task verify = `npm run build` + `npx tsc --noEmit` + controller review. Full dual-theme Playwright QA
