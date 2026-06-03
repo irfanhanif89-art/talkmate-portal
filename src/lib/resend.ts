@@ -11,6 +11,8 @@ export interface SendEmailOptions {
   from?: string
   replyTo?: string
   attachments?: { filename: string; content: string }[]
+  // Optional raw email headers (e.g. In-Reply-To / References for threading).
+  headers?: Record<string, string>
 }
 
 export async function sendEmail(
@@ -33,6 +35,7 @@ export async function sendEmail(
         subject: opts.subject,
         html: opts.html,
         ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+        ...(opts.headers ? { headers: opts.headers } : {}),
         ...(opts.attachments && opts.attachments.length ? { attachments: opts.attachments } : {}),
       }),
     })
