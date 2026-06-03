@@ -43,15 +43,6 @@ function isPaidPlan(plan: string): boolean {
   return plan === 'growth' || isProPlan(plan)
 }
 
-const LOCKED_BADGE_STYLE: React.CSSProperties = {
-  fontSize: 9, fontWeight: 700,
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  color: '#7BAED4',
-  padding: '1px 5px', borderRadius: 4,
-  letterSpacing: '0.05em',
-}
-
 export default function PortalSidebar(props: Props) {
   const pathname = usePathname()
   const router = useRouter()
@@ -296,6 +287,13 @@ export default function PortalSidebar(props: Props) {
     const Icon = item.icon
     const active = pathname === item.href || pathname.startsWith(item.href + '/')
     const isHovering = hovering === item.href
+
+    // Determine badge style: orange pill (DM Mono) for sms/call counts,
+    // blue pill (.nbadge style) for callbacks/blue-tinted counts.
+    // The badge.bg/color from the sections array still drives the color
+    // so existing behaviour is unchanged — we only restyle the pill shape.
+    const isBlueBadge = item.badge?.color === '#4A9FE8'
+
     return (
       <button
         type="button"
@@ -303,64 +301,138 @@ export default function PortalSidebar(props: Props) {
         onMouseEnter={() => setHovering(item.href)}
         onMouseLeave={() => setHovering(null)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-          borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
-          background: active ? 'rgba(232,98,42,0.13)' : isHovering ? 'rgba(255,255,255,0.04)' : 'transparent',
-          color: active ? '#E8622A' : item.locked ? '#4A7FBB' : '#7BAED4',
-          border: active ? '1px solid rgba(232,98,42,0.22)' : '1px solid transparent',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 11,
+          padding: '9px 12px',
+          borderRadius: 10,
+          fontSize: 13.5,
+          fontWeight: active ? 600 : 500,
+          cursor: 'pointer',
+          background: active
+            ? 'rgba(240,120,50,.09)'
+            : isHovering
+            ? 'rgba(255,255,255,.04)'
+            : 'transparent',
+          color: active ? 'var(--text)' : item.locked ? 'var(--dim)' : 'var(--dim)',
+          boxShadow: active ? 'inset 2px 0 0 var(--orange)' : 'none',
+          border: 'none',
           width: '100%',
           marginBottom: 2,
-          fontFamily: 'Outfit, sans-serif',
           transition: 'all 0.15s',
+          textAlign: 'left',
         }}
       >
-        {item.locked ? <Lock size={15} /> : <Icon size={16} />}
-        <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+        <span style={{ color: active ? 'var(--orange)' : 'inherit', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          {item.locked ? <Lock size={15} /> : <Icon size={16} />}
+        </span>
+        <span style={{ flex: 1, color: active ? 'var(--text)' : 'var(--dim)' }}>{item.label}</span>
         {item.badge && (
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: item.badge.bg, color: item.badge.color }}>
+          <span
+            className="mono"
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 6px',
+              borderRadius: 99,
+              background: isBlueBadge ? 'var(--blue)' : 'var(--orange)',
+              color: '#fff',
+              flexShrink: 0,
+            }}
+          >
             {item.badge.text}
           </span>
         )}
         {item.locked && item.lockReason && (
-          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: 'rgba(232,98,42,0.18)', color: '#E8622A', letterSpacing: '0.05em' }}>
+          <span style={{
+            fontSize: 9,
+            fontWeight: 700,
+            padding: '2px 6px',
+            borderRadius: 99,
+            background: 'rgba(240,120,50,.18)',
+            color: 'var(--orange)',
+            letterSpacing: '0.05em',
+            flexShrink: 0,
+          }}>
             {item.lockReason}
           </span>
         )}
         {item.lockTag && (
-          <span style={LOCKED_BADGE_STYLE}>{item.lockTag}</span>
+          <span style={{
+            fontSize: 9,
+            fontWeight: 700,
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'var(--dim)',
+            padding: '1px 5px',
+            borderRadius: 4,
+            letterSpacing: '0.05em',
+            flexShrink: 0,
+          }}>
+            {item.lockTag}
+          </span>
         )}
       </button>
     )
   }
 
+  // Avatar initials for footer — first letter of business name
+  const avatarLetter = (props.businessName[0] || 'T').toUpperCase()
+
   const sidebarBody = (
     <>
-      <div style={{ padding: '20px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* Brand block */}
+      <div style={{
+        padding: '20px 14px',
+        borderBottom: '1px solid var(--line)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, background: '#E8622A', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg viewBox="0 0 36 36" width="18" height="18" fill="none">
-              <rect x="6" y="8" width="24" height="5" rx="2.5" fill="white" />
-              <rect x="14" y="8" width="8" height="22" rx="2.5" fill="white" />
-            </svg>
-          </div>
-          <span style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 800, fontSize: '1.1rem', color: 'white', letterSpacing: '-0.5px' }}>
-            Talk<span style={{ fontWeight: 300, color: '#4A9FE8', letterSpacing: '2px' }}>Mate</span>
+          {/* Inline SVG logo — 34×34, gradient #f58a42→#e66020 per design spec §1d */}
+          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="34" height="34" rx="8" fill="url(#tmG)" />
+            <path d="M9 10.5h16v3H19V24h-4V13.5H9z" fill="white" />
+            <path d="M23 27a4 4 0 0 1 0-6" stroke="rgba(255,255,255,.8)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            <path d="M20.5 29.5a7.5 7.5 0 0 1 0-11" stroke="rgba(255,255,255,.4)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+            <defs>
+              <linearGradient id="tmG" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#f58a42" />
+                <stop offset="1" stopColor="#e66020" />
+              </linearGradient>
+            </defs>
+          </svg>
+          {/* Wordmark: "Talk" 800-weight text-token, "mate" 300-weight blue, 17px, tracking -.5px */}
+          <span style={{ fontWeight: 800, fontSize: 17, color: 'var(--text)', letterSpacing: '-0.5px', lineHeight: 1 }}>
+            Talk<span style={{ fontWeight: 300, color: '#4a9fe8' }}>mate</span>
           </span>
         </div>
         <button
           onClick={props.onCloseMobile}
           aria-label="Close menu"
           className="lg:hidden"
-          style={{ background: 'transparent', border: 'none', color: '#7BAED4', cursor: 'pointer', padding: 4, display: 'flex' }}
+          style={{ background: 'transparent', border: 'none', color: 'var(--dim)', cursor: 'pointer', padding: 4, display: 'flex' }}
         >
           <X size={18} />
         </button>
       </div>
 
-      <nav style={{ flex: 1, padding: 12, overflowY: 'auto' }}>
+      {/* Nav */}
+      <nav style={{ flex: 1, padding: '12px 14px', overflowY: 'auto' }}>
         {sections.map(section => (
           <div key={section.label} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.25)', padding: '4px 14px 6px' }}>{section.label}</div>
+            {/* Section label: 10px/700 uppercase tracking .12em text-faint */}
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.12em',
+              color: 'var(--faint)',
+              padding: '4px 12px 6px',
+            }}>
+              {section.label}
+            </div>
             {section.items.filter(i => i.show).map(item => (
               <NavLink key={item.href + item.label} {...item} />
             ))}
@@ -373,36 +445,48 @@ export default function PortalSidebar(props: Props) {
         <a
           href="mailto:hello@talkmate.com.au?subject=TalkMate%20Portal%20Help"
           style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-            borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            padding: '9px 12px',
+            borderRadius: 10,
+            fontSize: 13.5,
+            fontWeight: 500,
+            cursor: 'pointer',
             background: 'transparent',
-            color: '#7BAED4',
-            border: '1px solid transparent',
+            color: 'var(--dim)',
+            border: 'none',
             width: '100%',
             marginBottom: 2,
-            fontFamily: 'Outfit, sans-serif',
             textDecoration: 'none',
             boxSizing: 'border-box',
           }}
         >
           <HelpCircle size={16} />
-          <span style={{ flex: 1, textAlign: 'left' }}>Help</span>
+          <span style={{ flex: 1 }}>Help</span>
         </a>
       </nav>
 
-      <div style={{ padding: 14, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* Footer / sidefoot */}
+      <div style={{ padding: 14, borderTop: '1px solid var(--line)' }}>
+        {/* Plan card — bg-card, border-line, rounded-[12px], shadow per spec §1d */}
         <div style={{
-          background: 'rgba(232,98,42,0.06)', border: '1px solid rgba(232,98,42,0.2)', borderRadius: 12, padding: 12, marginBottom: 10,
+          background: 'var(--card)',
+          border: '1px solid var(--line)',
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 10,
+          boxShadow: '0 1px 3px rgba(0,0,0,.3)',
         }}>
-          {/* Session 16 -- "Current plan" label sits above the plan name */}
-          <div style={{ fontSize: 9, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+          {/* "Current plan" label */}
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
             Current plan
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: '#E8622A' }}>{planConfig.label}</span>
-            <span style={{ fontSize: 11, color: '#7BAED4' }}>${planConfig.monthlyPrice}/mo</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--orange)' }}>{planConfig.label}</span>
+            <span style={{ fontSize: 11, color: 'var(--dim)' }}>${planConfig.monthlyPrice}/mo</span>
           </div>
-          <div style={{ fontSize: 11, color: '#7BAED4' }}>
+          <div style={{ fontSize: 11, color: 'var(--dim)' }}>
             {planConfig.callLimit ? `${props.callsThisMonth} / ${planConfig.callLimit} calls used` : `${props.callsThisMonth} calls -- unlimited plan`}
           </div>
           {planConfig.callLimit && (
@@ -410,7 +494,7 @@ export default function PortalSidebar(props: Props) {
               <div style={{
                 width: `${Math.min(100, Math.round((props.callsThisMonth / planConfig.callLimit) * 100))}%`,
                 height: '100%',
-                background: props.callsThisMonth / planConfig.callLimit > 0.8 ? '#EF4444' : '#E8622A',
+                background: props.callsThisMonth / planConfig.callLimit > 0.8 ? 'var(--red)' : 'var(--orange)',
                 borderRadius: 2,
               }} />
             </div>
@@ -419,9 +503,11 @@ export default function PortalSidebar(props: Props) {
             <a
               href={process.env.NEXT_PUBLIC_STRIPE_GROWTH_LINK || '/billing'}
               style={{
-                display: 'block', marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
+                display: 'block', marginTop: 10, width: '100%',
+                background: 'linear-gradient(135deg,#f58a42,#e86526)',
+                color: 'white', border: 'none',
                 padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                fontFamily: 'Outfit,sans-serif', textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
+                textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
               }}
             >
               Upgrade to Growth →
@@ -431,37 +517,67 @@ export default function PortalSidebar(props: Props) {
             <a
               href={process.env.NEXT_PUBLIC_STRIPE_PRO_LINK || '/billing'}
               style={{
-                display: 'block', marginTop: 10, width: '100%', background: '#E8622A', color: 'white', border: 'none',
+                display: 'block', marginTop: 10, width: '100%',
+                background: 'linear-gradient(135deg,#f58a42,#e86526)',
+                color: 'white', border: 'none',
                 padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                fontFamily: 'Outfit,sans-serif', textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
+                textDecoration: 'none', textAlign: 'center', boxSizing: 'border-box',
               }}
             >
               Upgrade to Pro →
             </a>
           )}
           {planConfig.key === 'pro' && (
-            <div style={{ marginTop: 10, fontSize: 11, color: '#7BAED4', textAlign: 'center', fontStyle: 'italic' }}>
+            <div style={{ marginTop: 10, fontSize: 11, color: 'var(--dim)', textAlign: 'center', fontStyle: 'italic' }}>
               You are on our top plan
             </div>
           )}
         </div>
 
+        {/* Avatar + business name + email */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(232,98,42,0.2)', color: '#E8622A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-            {(props.businessName[0] || 'T').toUpperCase()}
+          {/* Rounded-square gradient avatar with initials */}
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: 'linear-gradient(135deg,#f58a42,#e66020)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 13,
+            fontWeight: 700,
+            flexShrink: 0,
+          }}>
+            {avatarLetter}
           </div>
-          <div style={{ minWidth: 0, flex: 1, maxWidth: 160 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{props.businessName}</div>
-            <div title={props.userEmail} style={{ fontSize: 10, color: '#4A7FBB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{props.userEmail}</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+              {props.businessName}
+            </div>
+            <div title={props.userEmail} style={{ fontSize: 10, color: 'var(--faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+              {props.userEmail}
+            </div>
           </div>
         </div>
 
+        {/* Log out button */}
         <button
           onClick={logout}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 12px',
-            background: 'transparent', border: '1px solid rgba(255,255,255,0.06)', color: '#7BAED4', borderRadius: 8,
-            fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '8px 12px',
+            background: 'transparent',
+            border: '1px solid var(--line)',
+            color: 'var(--dim)',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
           }}
         >
           <LogOut size={13} /> Log out
@@ -476,14 +592,20 @@ export default function PortalSidebar(props: Props) {
       <aside
         className="hidden lg:flex"
         style={{
-          width: 240, background: '#071829', borderRight: '1px solid rgba(255,255,255,0.06)',
-          flexDirection: 'column', height: '100vh', flexShrink: 0, position: 'sticky', top: 0,
+          width: 240,
+          background: 'var(--sidebar)',
+          borderRight: '1px solid var(--line)',
+          flexDirection: 'column',
+          height: '100vh',
+          flexShrink: 0,
+          position: 'sticky',
+          top: 0,
         }}
       >
         {sidebarBody}
       </aside>
 
-      {/* Mobile drawer */}
+      {/* Mobile overlay */}
       <div
         onClick={props.onCloseMobile}
         className="lg:hidden"
@@ -493,12 +615,15 @@ export default function PortalSidebar(props: Props) {
           transition: 'opacity 0.2s ease',
         }}
       />
+      {/* Mobile drawer */}
       <aside
         className="lg:hidden"
         style={{
           position: 'fixed', top: 0, bottom: 0, left: 0, width: 260, zIndex: 50,
-          background: '#071829', borderRight: '1px solid rgba(255,255,255,0.06)',
-          display: 'flex', flexDirection: 'column',
+          background: 'var(--sidebar)',
+          borderRight: '1px solid var(--line)',
+          display: 'flex',
+          flexDirection: 'column',
           transform: props.isOpenMobile ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 0.25s ease',
         }}
