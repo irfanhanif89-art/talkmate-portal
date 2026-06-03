@@ -40,7 +40,7 @@ export default async function SmartListDetailPage({ params }: { params: Promise<
 
   return (
     <div style={{ padding: 28, color: '#F2F6FB' }}>
-      <Link href="/contacts/smart-lists" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#7BAED4', textDecoration: 'none', marginBottom: 18 }}>
+      <Link href="/contacts/smart-lists" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--dim)', textDecoration: 'none', marginBottom: 18 }}>
         <ArrowLeft size={14} /> Back to smart lists
       </Link>
 
@@ -48,22 +48,22 @@ export default async function SmartListDetailPage({ params }: { params: Promise<
         <span style={{ fontSize: 32 }}>{list.icon ?? '📋'}</span>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: 0 }}>{list.name}</h1>
       </div>
-      {list.description && <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 14 }}>{list.description}</p>}
+      {list.description && <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 14 }}>{list.description}</p>}
       <div style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 22 }}>
         {total} contact{total === 1 ? '' : 's'} · borderColour {list.color ?? '#1565C0'}
       </div>
 
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden' }}>
         {contacts.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: '#7BAED4' }}>
+          <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: 'var(--dim)' }}>
             No contacts match this list yet. As TalkMate captures more calls they&apos;ll appear here automatically.
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ background: '#071829' }}>
+            <thead style={{ background: 'var(--card-2)' }}>
               <tr>
                 {['Contact', 'Phone', 'Calls', 'Last contact', 'Tags'].map(h => (
-                  <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                  <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -72,12 +72,12 @@ export default async function SmartListDetailPage({ params }: { params: Promise<
                 <tr key={c.id} style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                   <td style={{ padding: '12px 18px' }}>
                     <Link href={`/contacts/${c.id}`} style={{ color: 'white', textDecoration: 'none', fontWeight: 600 }}>
-                      {c.name || <span style={{ color: '#7BAED4' }}>Unknown caller</span>}
+                      {c.name || <span style={{ color: 'var(--dim)' }}>Unknown caller</span>}
                     </Link>
                   </td>
-                  <td style={{ padding: '12px 18px', fontSize: 13, color: '#7BAED4' }}>{formatPhone(c.phone)}</td>
+                  <td style={{ padding: '12px 18px', fontSize: 13, color: 'var(--dim)' }}>{formatPhone(c.phone)}</td>
                   <td style={{ padding: '12px 18px', fontSize: 13, fontWeight: 700, color: 'white' }}>{c.call_count}</td>
-                  <td style={{ padding: '12px 18px', fontSize: 12, color: '#7BAED4' }}>{timeAgo(c.last_seen)}</td>
+                  <td style={{ padding: '12px 18px', fontSize: 12, color: 'var(--dim)' }}>{timeAgo(c.last_seen)}</td>
                   <td style={{ padding: '12px 18px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.tags ?? []).slice(0, 3).map(t => (

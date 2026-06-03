@@ -430,15 +430,15 @@ export function DashboardClient({
               <div>
                 {liveCalls.map(c => {
                   const tag = callTag(c.outcome, c.transferred)
-                  // AI score: we don't have it in this prop set — use 0 to render gracefully
-                  // (the actual score lives in call_intelligence, not fetched here)
+                  // AI score: not fetched in this prop set (lives in call_intelligence)
+                  // Pass undefined so AiScoreBadge hides rather than showing "0/10"
                   return (
                     <CallRow
                       key={c.id}
                       time={timeAgo(c.created_at)}
                       who={c.caller_number || 'Unknown caller'}
                       desc={c.outcome || 'In progress'}
-                      score={0}
+                      score={undefined}
                       tag={tag}
                       duration={fmt(c.duration_seconds)}
                       onPlay={() => router.push('/calls')}

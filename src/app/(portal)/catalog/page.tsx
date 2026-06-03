@@ -339,63 +339,63 @@ export default function CatalogPage({
 
       {/* ── Add / Edit Sheet ─────────────────────────────────────── */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.1)', color: 'white', width: '480px' }}>
+        <SheetContent style={{ background: 'var(--card)', borderColor: 'var(--line)', color: 'var(--text)', width: '480px' }}>
           <SheetHeader>
-            <SheetTitle className="text-white">{editingId ? 'Edit' : 'Add'} {config.catalogItemLabel}</SheetTitle>
+            <SheetTitle className="text-text">{editingId ? 'Edit' : 'Add'} {config.catalogItemLabel}</SheetTitle>
           </SheetHeader>
           <div className="mt-6 space-y-4">
             <div>
-              <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Name *</Label>
+              <Label className="text-xs mb-1.5 block text-faint">Name *</Label>
               <Input value={editing.name || ''} onChange={e => setEditing(v => ({ ...v, name: e.target.value }))}
-                style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
+                style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
             </div>
             <div>
-              <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Description</Label>
+              <Label className="text-xs mb-1.5 block text-faint">Description</Label>
               <Textarea value={editing.description || ''} onChange={e => setEditing(v => ({ ...v, description: e.target.value }))}
-                style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} rows={3} />
+                style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }} rows={3} />
             </div>
             <div>
-              <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Category</Label>
+              <Label className="text-xs mb-1.5 block text-faint">Category</Label>
               <Select value={editing.category || ''} onValueChange={(v) => setEditing(e => ({ ...e, category: v ?? '' }))}>
-                <SelectTrigger style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}>
+                <SelectTrigger style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }}>
                   <SelectValue placeholder="Select category…" />
                 </SelectTrigger>
-                <SelectContent style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  {config.catalogCategories.map(c => <SelectItem key={c} value={c} style={{ color: 'white' }}>{c}</SelectItem>)}
+                <SelectContent style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+                  {config.catalogCategories.map(c => <SelectItem key={c} value={c} style={{ color: 'var(--text)' }}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             {config.hasPricing && (
               <div>
-                <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Price ($)</Label>
+                <Label className="text-xs mb-1.5 block text-faint">Price ($)</Label>
                 <Input type="number" value={editing.price ?? ''} onChange={e => setEditing(v => ({ ...v, price: e.target.value ? Number(e.target.value) : null }))}
-                  style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
+                  style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
               </div>
             )}
             {config.hasAppointments && (
               <div>
-                <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>Duration (minutes)</Label>
+                <Label className="text-xs mb-1.5 block text-faint">Duration (minutes)</Label>
                 <Input type="number" value={editing.duration_minutes ?? ''} onChange={e => setEditing(v => ({ ...v, duration_minutes: e.target.value ? Number(e.target.value) : null }))}
-                  style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} />
+                  style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }} />
               </div>
             )}
             {config.hasUpsells && (
               <div>
-                <Label className="text-xs mb-1.5 block" style={{ color: '#4A7FBB' }}>AI Upsell Prompt</Label>
+                <Label className="text-xs mb-1.5 block text-faint">AI Upsell Prompt</Label>
                 <Textarea value={editing.upsell_prompt || ''} onChange={e => setEditing(v => ({ ...v, upsell_prompt: e.target.value }))}
                   placeholder='e.g. "Would you like to add garlic bread for $3?"'
-                  style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} rows={2} />
+                  style={{ background: 'var(--card-2)', border: '1px solid var(--line)', color: 'var(--text)' }} rows={2} />
               </div>
             )}
             <div className="flex items-center gap-3">
               <ShadSwitch checked={editing.is_featured ?? false} onCheckedChange={v => setEditing(e => ({ ...e, is_featured: v }))} />
-              <Label className="text-sm" style={{ color: '#7BAED4' }}>AI mentions this proactively (featured)</Label>
+              <Label className="text-sm text-dim">AI mentions this proactively (featured)</Label>
             </div>
             <div className="flex items-center gap-3">
               <ShadSwitch checked={editing.active ?? true} onCheckedChange={v => setEditing(e => ({ ...e, active: v }))} />
-              <Label className="text-sm" style={{ color: '#7BAED4' }}>Active</Label>
+              <Label className="text-sm text-dim">Active</Label>
             </div>
-            <Button onClick={save} className="w-full" style={{ background: '#E8622A', color: 'white', border: 'none' }}>
+            <Button onClick={save} className="w-full bg-orange text-white border-none hover:opacity-90">
               Save {config.catalogItemLabel}
             </Button>
           </div>
@@ -545,7 +545,7 @@ function ServicesFromAgentSettings({
           onClick={onManage}
           variant="outline"
           className="gap-2 flex-shrink-0 whitespace-nowrap"
-          style={{ borderColor: '#E8622A', color: '#E8622A' }}
+          style={{ borderColor: 'var(--orange)', color: 'var(--orange)' }}
         >
           <SettingsIcon size={14} /> Manage in Agent Settings
         </Button>
@@ -562,7 +562,7 @@ function ServicesFromAgentSettings({
                 <h3 className="font-semibold text-text text-[14px] mb-1.5">{item.name}</h3>
                 {item.description && <p className="text-[12px] text-dim mb-3">{item.description}</p>}
                 <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-[15px]" style={{ color: item.price ? '#E8622A' : '#637c98' }}>
+                  <span className="font-extrabold text-[15px]" style={{ color: item.price ? 'var(--orange)' : 'var(--dim)' }}>
                     {item.price
                       ? (typeof item.price === 'string'
                         ? (item.price.startsWith('$') ? item.price : '$' + item.price)

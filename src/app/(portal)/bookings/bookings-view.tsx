@@ -705,9 +705,9 @@ function ListView({
       <div className="rounded-[14px] border border-line bg-card overflow-auto">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-[#071829]">
+            <tr className="bg-card-2">
               {['Received', 'Caller', 'Service', 'Scheduled', 'Status', 'Actions'].map(h => (
-                <th key={h} className="text-left px-4 py-2.5 text-[11px] font-bold text-[#4A7FBB] uppercase tracking-[.06em]">{h}</th>
+                <th key={h} className="text-left px-4 py-2.5 text-[11px] font-bold text-faint uppercase tracking-[.06em]">{h}</th>
               ))}
             </tr>
           </thead>
@@ -730,7 +730,7 @@ function ListView({
                   key={b.id}
                   className={[
                     'border-t border-[rgba(255,255,255,.04)]',
-                    i % 2 === 0 ? 'bg-card' : 'bg-[#071829]',
+                    i % 2 === 0 ? 'bg-card' : 'bg-card-2',
                   ].join(' ')}
                 >
                   <td className="px-4 py-3 text-[13px] text-dim text-[12px]">
@@ -922,7 +922,7 @@ function NewBookingModal({ onClose, onCreated, onError }: {
             <input value={scheduledStart} onChange={e => setScheduledStart(e.target.value)} required type="datetime-local" className={inputCls} />
           </Field>
           <Field label="Notes / description">
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={[inputCls, 'resize-y font-[Outfit,sans-serif]'].join(' ')} />
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={[inputCls, 'resize-y'].join(' ')} />
           </Field>
         </div>
         <div className="flex justify-end gap-2.5 mt-4">
