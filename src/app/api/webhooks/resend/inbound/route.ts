@@ -122,18 +122,20 @@ export async function POST(request: NextRequest) {
   const rootKey = cleanId(referencesFirst) ?? cleanId(inReplyTo) ?? cleanId(messageId) ?? `${fromEmail}:${Date.now()}`
   const preview = text.replace(/\s+/g, ' ').trim().slice(0, 120)
 
-  // Upsert contact (contacts uses business_id).
+  // Link to an existing contact by email. NOTE: contacts uses `client_id` (not
+  // business_id) and `phone` is NOT NULL, so we never CREATE a contact from an
+  // email (no phone to satisfy the constraint, and we avoid polluting the CRM).
+  // We only link when a contact with this email already exists; otherwise the
+  // thread is left unlinked (email_threads.contact_id is nullable).
   let contactId: string | null = null
   {
     const { data: existing } = await admin
-      .from('contacts').select('id, name').eq('business_id', business.id).eq('email', fromEmail).maybeSingle()
+      .from('contacts').select('id, name')
+      .eq('client_id', business.id).eq('email', fromEmail).eq('is_merged', false)
+      .limit(1).maybeSingle()
     if (existing) {
       contactId = existing.id as string
       if (fromParsed.name && !existing.name) await admin.from('contacts').update({ name: fromParsed.name }).eq('id', existing.id)
-    } else {
-      const { data: created } = await admin
-        .from('contacts').insert({ business_id: business.id, email: fromEmail, name: fromParsed.name || null, source: 'email' }).select('id').maybeSingle()
-      contactId = (created?.id as string | undefined) ?? null
     }
   }
 
