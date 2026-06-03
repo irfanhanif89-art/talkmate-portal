@@ -82,5 +82,27 @@ Also confirmed: `contacts` uses `business_id` (not `client_id`) and has **no `ad
 ## Concurrency incident (please read)
 This local repo had **another session actively committing to a `feature/portal-redesign` workstream** during my build (commits `03eaeb2`, `bc03ccd` theme foundation, `ea33486` ui-v2 controls). These kept interleaving onto the working branch. I twice had to reconstruct my branch cleanly via cherry-pick onto `origin/dev`. The final clean result is `feature/session-3-final`. The `portal-redesign` work is intact on its own branch — I did not touch it. But heads-up that two automations were writing to the same checkout; you may want to give each session its own worktree.
 
+## Audit results (2026-06-04, end-to-end + browser on a Vercel preview of this branch)
+Audited on a fresh preview deploy pointed at the preview DB, logged in as a real test business (Test Towing Co, growth plan).
+
+**Bugs found and FIXED during audit (both committed + pushed to this branch):**
+- `contacts` actually uses `client_id` (not `business_id`) and `phone` is NOT NULL — my inbound-email contact upsert would have failed on every email. Fixed: link existing contact by `(client_id, email, not merged)`, never create a phone-less row. (The v4 brief's original "contacts.client_id" claim was right; my earlier "correction" was the error.)
+- EmailInbox overflowed horizontally at 375px. Fixed: responsive single-column collapse + `minWidth:0`. Re-verified: 375=375, no overflow.
+
+**Session 3A — PASS (full E2E):** `/train` industry card shows at <3 KB entries; applied Towing via the live route → 11 entries (6 FAQ + 5 service), card auto-hid, `industry_pack_applied='towing'`, `industry` back-filled to `'towing'` (valid against the pre-existing CHECK), `trade_type` null, `kb_sync_status='pending'`. Dedup proven by exact count.
+
+**Session 3B — PASS (UI + DB + code):** ServiceM8 card renders (not-connected: password key input, Show, Connect, help) above WhatsApp; `/settings/servicem8-log` renders with empty state; kill switch `false`; push-job idempotency/gating verified at code+DB. Not exercised: a real ServiceM8 connect (no live key; would hit their API).
+
+**Session 3C — PASS (full E2E incl. AI draft):** Email card renders on growth (not plan-locked); enabling generated `test-towing-co-e990a2@talkmate-reply.com.au` from slug; consent gate warning shown + auto-send disabled. Inbox SMS+Email tabs both work; SMS view intact; Email empty states correct. Webhook tested live on the deploy:
+  - kill switch off → `skipped: globally_off` (nothing created)
+  - switch+consent on → 1 thread + 1 inbound + 1 AI draft (queued, not auto-sent). **The draft correctly pulled from the towing KB** ("truck with you within 30 to 45 minutes... dispatcher will confirm a precise ETA"), AU English, no em dashes.
+  - same message_id again → `skipped: duplicate` (idempotency)
+  - no-reply@ sender → `skipped: auto_or_loop` (loop guard)
+  - After testing, both global kill switches restored to `false`, test email data deleted, test business reset.
+
+**Pre-existing (NOT Session 3):** a React #418 hydration error is present on `/dashboard` before any Session 3 code loads (likely the date header); my components add zero new console errors.
+
+**Not browser-tested (verified by code/DB only):** starter plan-lock UI (no starter test account), ServiceM8 live connect, outbound email send via Resend (needs the real domain + a sent draft). These are logic-verified.
+
 ## Verified on preview
 4 new tables, 7 new businesses/calls columns, 51 industry_packs rows, all 4 admin_settings switches present and `false`/defaults. tsc clean, build clean.
