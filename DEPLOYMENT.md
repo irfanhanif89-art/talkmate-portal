@@ -368,6 +368,30 @@ See the browser audit report appended at deploy time.
 
 ---
 
+## Session 4A v2 — Round 2: Identity / Transfer / Call Flow injection (2026-06-04)
+
+### Status: BUILT, NOT merged to dev, NOT enabled on any agent.
+Branch `feature/session-4a-round2` (off `dev`). build + tsc green. Tests pass: `kb-block.identity.test.ts` (idempotency + GM-byte-identical-when-off) and `safe-fetch.test.ts`. Migration 075 applied to PREVIEW only.
+
+### What it does
+- `kb-block.ts`: `injectIdentityBlock(prompt, ctx, enabled)` — a SEPARATELY delimited block (`=== TALKMATE IDENTITY START/END ===`, own regex, not `KB_BLOCK_RE`) with IDENTITY CONTEXT (agent + owner name, owner-unavailable + who-am-I lines), TRANSFER BEHAVIOUR fallback, and CALL FLOW opening questions. Idempotent (inject twice = byte-identical; no stacking).
+- `performKbSync`: applies the identity block after the KB block, strictly gated on `identity_block_enabled === true && owner_name != null`.
+- Migration `075_identity_block_flag.sql`: `businesses.identity_block_enabled BOOLEAN DEFAULT false`.
+- `scripts/snapshot-live-prompts.ts`: READ-ONLY harness — snapshots every live agent prompt to `prompt-snapshots/` and prints a dry-run diff of what enabling would change. Writes nothing to Vapi.
+
+### Why no live agent is affected
+The flag defaults FALSE for every existing business (incl. GM Towing 25443e10 + Spectrum). When false, `injectIdentityBlock` strips/no-ops, so prompts stay byte-identical on every sync (asserted by the test). No `kb_sync_status='pending'` set on any live agent.
+
+### Enablement runbook (Round 2 is the dangerous path — do not skip)
+1. Apply migration 075 to prod (adds the flag, default false, changes nothing).
+2. `npx tsx scripts/snapshot-live-prompts.ts` — confirm every live agent reports "flag-OFF changes? no — byte-identical (safe)". Keep snapshots as rollback baselines.
+3. PAUSE the kb-sync cron for the test window.
+4. On a THROWAWAY test agent: set owner_name, seed call_flow_questions, set `identity_block_enabled=true` + `kb_sync_status='pending'`, let it sync, diff before/after, place a REAL test call. Verify "I'm <name>, <owner>'s assistant" + transfer fallback.
+5. Only after sign-off: wire `identity_block_enabled=true` into new-agent provisioning. GM/Spectrum stay false unless explicitly chosen, snapshotted, and re-tested.
+6. Re-enable the cron.
+
+---
+
 **Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management) + Session 22 (Pricing overhaul — setup fees, annual billing, commission bonus, website + portal + Sales HQ)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)

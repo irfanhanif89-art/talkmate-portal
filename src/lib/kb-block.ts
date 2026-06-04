@@ -73,3 +73,86 @@ export function injectKbBlock(prompt: string, entries: KbEntry[]): { next: strin
   const next = `${trimmed}\n\n${block}\n`
   return { next, changed: true }
 }
+
+// ── Session 4A Round 2 — Identity / Transfer / Call Flow block ──────────────
+//
+// A SEPARATELY delimited block (its own START/END anchors, distinct from the
+// KB_BLOCK_RE above) so repeated syncs replace it in place and can never stack
+// duplicates. It is injected ONLY when a business has `identity_block_enabled`
+// true AND a non-null `owner_name`. When the flag is off (the default for ALL
+// existing agents, including GM Towing and Spectrum), injectIdentityBlock
+// STRIPS any existing block — so for those agents it is a guaranteed no-op
+// (they never had one). This is what keeps live agents byte-identical.
+
+export const IDENTITY_BLOCK_START = '=== TALKMATE IDENTITY START ==='
+export const IDENTITY_BLOCK_END = '=== TALKMATE IDENTITY END ==='
+const IDENTITY_BLOCK_RE = /=== TALKMATE IDENTITY START ===[\s\S]*?=== TALKMATE IDENTITY END ===\n?/
+
+export interface IdentityContext {
+  agentName: string | null
+  ownerName: string | null
+  businessName: string | null
+  callFlow?: { question: string }[]
+}
+
+// Builds the identity block body. Returns '' when there is no owner_name
+// (we never claim "managed by null"). Deterministic for a given input so the
+// idempotency check holds.
+export function buildIdentityBlock(ctx: IdentityContext): string {
+  const owner = (ctx.ownerName ?? '').trim()
+  if (!owner) return ''
+  const agent = (ctx.agentName ?? '').trim() || 'TalkMate'
+  const biz = (ctx.businessName ?? '').trim() || 'the business'
+
+  const lines: string[] = [IDENTITY_BLOCK_START]
+  lines.push('IDENTITY CONTEXT:')
+  lines.push(`Your name is ${agent}.`)
+  lines.push(`You are the AI assistant for ${biz}, managed by ${owner}.`)
+  lines.push(`When customers ask to speak to the owner or manager, say: "${owner} is unavailable right now but I want to make sure you're looked after. Can I take your details and have them call you back personally?"`)
+  lines.push(`When customers ask who they are speaking to, say: "I'm ${agent}, ${owner}'s assistant at ${biz}."`)
+  lines.push('')
+  lines.push('TRANSFER BEHAVIOUR:')
+  lines.push(`If you attempt to transfer a call to ${owner} and the transfer fails or there is no answer:`)
+  lines.push('- Re-join the caller immediately')
+  lines.push(`- Say: "I wasn't able to reach ${owner} right now. I want to make sure you're looked after though, can I take your name and number and have ${owner} call you back personally?"`)
+  lines.push('- Capture their name, phone number, and a brief message')
+  lines.push('- Send a summary to the owner notification number')
+  lines.push('- Thank the caller warmly and end the call')
+  lines.push('Never leave a caller in silence or on hold for more than 10 seconds.')
+
+  const cf = (ctx.callFlow ?? []).map(q => q.question?.trim()).filter(Boolean)
+  if (cf.length > 0) {
+    lines.push('')
+    lines.push('CALL FLOW - OPENING QUESTIONS:')
+    lines.push('After your greeting, ask these questions in order, one at a time. Only move on after the caller answers. If they indicate urgency, skip to capturing their details.')
+    cf.forEach((q, i) => lines.push(`${i + 1}. ${q}`))
+  }
+
+  lines.push(IDENTITY_BLOCK_END)
+  return lines.join('\n')
+}
+
+// Injects/replaces/strips the identity block idempotently.
+//   enabled=false OR no owner_name -> strip any existing block (no-op if none)
+//   otherwise                       -> replace existing, or append a fresh one
+export function injectIdentityBlock(
+  prompt: string,
+  ctx: IdentityContext,
+  enabled: boolean,
+): { next: string; changed: boolean } {
+  const block = enabled ? buildIdentityBlock(ctx) : ''
+
+  if (!block) {
+    if (!IDENTITY_BLOCK_RE.test(prompt)) return { next: prompt, changed: false }
+    const next = prompt.replace(IDENTITY_BLOCK_RE, '').replace(/\n{3,}/g, '\n\n')
+    return { next, changed: next !== prompt }
+  }
+
+  if (IDENTITY_BLOCK_RE.test(prompt)) {
+    const replaced = prompt.replace(IDENTITY_BLOCK_RE, block + '\n')
+    return { next: replaced, changed: replaced !== prompt }
+  }
+  const trimmed = prompt.replace(/\s+$/, '')
+  const next = `${trimmed}\n\n${block}\n`
+  return { next, changed: true }
+}
