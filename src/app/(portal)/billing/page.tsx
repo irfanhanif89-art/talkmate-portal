@@ -3,10 +3,8 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getPlan } from '@/lib/plan'
-import { isSaleActive } from '@/lib/eofy-sale'
 import PlanComparison from '@/components/portal/plan-comparison'
 import { INDUSTRY_AVG_CALL_VALUE } from '@/lib/dashboard-defaults'
-import { EofyBanner } from '@/components/portal/ui-v2/eofy-banner'
 import { Meter } from '@/components/portal/ui-v2/meter'
 import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
 import { ButtonV2 } from '@/components/portal/ui-v2/button'
@@ -201,8 +199,6 @@ export default function BillingPage() {
   const usagePct = planConfig.callLimit ? Math.min(100, Math.round((callsThisMonth / planConfig.callLimit) * 100)) : 0
   const willEndAt = stripeSummary?.subscription?.current_period_end ?? null
   const alreadyCancelled = stripeSummary?.subscription?.cancel_at_period_end ?? false
-  const saleActive = isSaleActive()
-
   // Next invoice estimate (plan price + 10% GST)
   const nextInvoiceBase = planConfig.monthlyPrice
   const nextInvoiceGst = Math.round(nextInvoiceBase * 0.1 * 100) / 100
@@ -275,19 +271,7 @@ export default function BillingPage() {
       {/* ── Page heading ──────────────────────────────── */}
       <h1 className="mb-5 text-[20px] font-[800] tracking-[-0.4px] text-text">Billing</h1>
 
-      {/* ── 1. EOFY Hero (conditional) ────────────────── */}
-      {saleActive && (
-        <EofyBanner
-          mode="hero"
-          message={<>Save <em className="not-italic font-[800] text-gold">50% off setup fees</em> this financial year</>}
-          heroAmount="$150–$400"
-          heroAmountSub="setup fee savings"
-          ctaLabel="Claim offer →"
-          className="mb-5"
-        />
-      )}
-
-      {/* ── 2. Plan hero ──────────────────────────────── */}
+      {/* ── 1. Plan hero ──────────────────────────────── */}
       <div className="relative mb-5 overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.10)] p-[26px_32px] shadow-[0_1px_4px_rgba(0,0,0,.28)]"
         style={{ background: 'linear-gradient(120deg,#1c2e44 0%,#122236 70%)' }}>
         {/* Glow */}
@@ -469,7 +453,7 @@ export default function BillingPage() {
         </Panel>
       </div>
 
-      {/* ── Plan comparison (PlanComparison handles isSaleActive + pricing) ── */}
+      {/* ── Plan comparison ── */}
       <PlanComparison currentPlan={plan} />
 
       {/* ── ROI summary (conditional) ─────────────────── */}

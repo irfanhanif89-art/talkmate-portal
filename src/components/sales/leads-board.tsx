@@ -184,22 +184,22 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-bg w-full min-w-0 overflow-x-hidden">
       {/* Stats bar */}
       <StatsBar stats={stats} />
 
       {/* Page content */}
-      <div className="px-6 pt-5 pb-10 flex flex-col gap-4 flex-1">
+      <div className="px-4 sm:px-6 pt-5 pb-10 flex flex-col gap-4 flex-1 min-w-0">
         {/* Header row */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
+        <div className="flex items-center justify-between flex-wrap gap-3 min-w-0">
+          <div className="min-w-0">
             <h1 className="text-[22px] font-[800] tracking-[-0.5px] text-text m-0">My Pipeline</h1>
             <p className="text-[13px] text-dim mt-0.5">
               {filtered.length} of {leads.length} leads
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <ButtonV2 variant="primary" onClick={() => setAddLeadOpen(true)}>
               <Plus className="w-[14px] h-[14px]" />
               Add Lead

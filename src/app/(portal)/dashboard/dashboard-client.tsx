@@ -16,7 +16,6 @@ import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
 import { KpiCard } from '@/components/portal/ui-v2/kpi-card'
 import { SegmentedControl } from '@/components/portal/ui-v2/segmented-control'
 import { RevenueStrip } from '@/components/portal/ui-v2/revenue-strip'
-import { EofyBanner } from '@/components/portal/ui-v2/eofy-banner'
 import { UpsellBanner } from '@/components/portal/ui-v2/upsell-banner'
 import { StatusCard } from '@/components/portal/ui-v2/status-card'
 import { CallRow } from '@/components/portal/ui-v2/call-row'
@@ -25,7 +24,6 @@ import { VolumeBarChart } from '@/components/portal/ui-v2/charts'
 import { Tag } from '@/components/portal/ui-v2/tag'
 import type { TagVariant } from '@/components/portal/ui-v2/tag'
 
-import { isSaleActive, EOFY_SALE } from '@/lib/eofy-sale'
 import { INDUSTRY_AVG_UPSELL_PER_CALL } from '@/lib/dashboard-defaults'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -215,8 +213,6 @@ export function DashboardClient({
   const firstName = businessName || (business.name || '').split(' ')[0]
   const noData = stats.totalMonth === 0
   const callsAnswered = stats.totalMonth - stats.missedMonth
-  const saleActive = isSaleActive()
-
   const vsLastMonthDir: 'up' | 'down' | 'flat' =
     vsLastMonthPercent > 0 ? 'up' : vsLastMonthPercent < 0 ? 'down' : 'flat'
 
@@ -303,16 +299,6 @@ export function DashboardClient({
         <OnboardingChecklist
           steps={onboardingSteps}
           onTestCall={() => router.push('/calls')}
-        />
-      )}
-
-      {/* ── EOFY banner strip ─────────────────────────────────────────── */}
-      {saleActive && (
-        <EofyBanner
-          mode="strip"
-          message={<><strong>{EOFY_SALE.badge}</strong> — Upgrade now and lock in 50% off forever.</>}
-          ctaLabel="View plans"
-          onCta={() => router.push('/billing')}
         />
       )}
 

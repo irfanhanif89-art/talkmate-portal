@@ -18,7 +18,7 @@ export function StatsBar({ stats, className }: StatsBarProps) {
   return (
     <div
       className={cn(
-        'flex items-center gap-0 border-b border-line bg-card',
+        'flex items-center gap-0 border-b border-line bg-card overflow-x-auto',
         className
       )}
     >
