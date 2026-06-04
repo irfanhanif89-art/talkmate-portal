@@ -59,6 +59,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (typeof body.welcome_email_sent === 'boolean') update.welcome_email_sent = body.welcome_email_sent
   if (typeof body.agent_phone_number === 'string') update.agent_phone_number = body.agent_phone_number.trim() || null
+  // Session 4A admin parity — edit the businesses.agent_name COLUMN (distinct
+  // from the notifications_config.agent_name jsonb used by the Agent Setup tab).
+  // Sent under the `business_agent_name` key to avoid colliding with that merge.
+  // Round 1: agent_name save does NOT sync to Vapi (that is Round 2).
+  if (typeof body.business_agent_name === 'string') {
+    update.agent_name = body.business_agent_name.trim() || null
+  }
   if (typeof body.billing_override_note === 'string') update.billing_override_note = body.billing_override_note.trim() || null
   if (typeof body.manual_next_billing_date === 'string') {
     update.manual_next_billing_date = body.manual_next_billing_date.trim() || null

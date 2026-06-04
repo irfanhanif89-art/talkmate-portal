@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/admin-auth'
 import { createAdminClient } from '@/lib/supabase/server'
+import { fetchReadinessByBusiness } from '@/lib/onboarding-admin'
 import { ClipboardList } from 'lucide-react'
 import OnboardingQueueClient from '@/components/admin/OnboardingQueueClient'
 
@@ -53,12 +54,25 @@ export default async function OnboardingQueuePage() {
     )
   }
 
+  // Session 4A — go-live readiness percent for the in-progress businesses,
+  // batched in one query (no per-row fetch). Pending leads have no business
+  // row yet so they surface as "Not started".
+  const readinessByBusiness = await fetchReadinessByBusiness(
+    admin,
+    (pendingBusinesses ?? []).map(b => String((b as { id: string }).id)),
+  )
+  const readinessPercent: Record<string, number | null> = {}
+  for (const [bid, summary] of Object.entries(readinessByBusiness)) {
+    readinessPercent[bid] = summary.completionPercent
+  }
+
   return (
     <div style={{ padding: '32px 28px', fontFamily: 'Outfit, sans-serif' }}>
       <Header />
       <OnboardingQueueClient
         pendingLeads={(pendingLeads ?? []).map(normaliseLead)}
         pendingBusinesses={(pendingBusinesses ?? []).map(normaliseBusiness)}
+        readinessPercent={readinessPercent}
         adminEmail={auth.user.email ?? 'admin'}
       />
     </div>

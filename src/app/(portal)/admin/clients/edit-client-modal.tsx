@@ -12,6 +12,7 @@ import { AdminTeamTab, AdminCallRoutingTab, AdminBookingsTab } from './admin-fea
 import { AdminDispatcherTab } from './admin-dispatcher-tab'
 import { AdminCommandTab } from './admin-command-tab'
 import AddressAutocomplete from '@/components/portal/address-autocomplete'
+import { integrationModeChip } from '@/lib/onboarding-admin'
 
 // ── Services library — quick-add chips per industry ───────────────────────────
 const SERVICES_LIBRARY: Record<string, { label: string; icon: string; text: string }[]> = {
@@ -380,6 +381,8 @@ function DetailsTab({
     industry: business.industry ?? 'restaurants',
     plan: (business.plan === 'professional' ? 'pro' : (business.plan ?? 'starter')) as 'starter' | 'growth' | 'pro',
     account_status: (business.account_status ?? 'pending') as AdminBusiness['account_status'],
+    // Session 4A — businesses.agent_name column (the editable display name).
+    agent_name: business.agent_name ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
@@ -389,10 +392,15 @@ function DetailsTab({
   async function save() {
     setSaving(true); setError(null)
     try {
+      // Session 4A — send agent_name under `business_agent_name` so the API
+      // writes the businesses.agent_name COLUMN, not the notifications_config
+      // jsonb (the raw `agent_name` key is reserved for the Agent Setup tab).
+      // Round 1: agent_name save does NOT sync to Vapi (that is Round 2).
+      const { agent_name, ...rest } = form
       const res = await fetch(`/api/admin/clients/${business.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...rest, business_agent_name: agent_name }),
       })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Save failed')
@@ -405,6 +413,7 @@ function DetailsTab({
         industry: form.industry,
         plan: form.plan,
         account_status: form.account_status,
+        agent_name: agent_name.trim() || null,
       })
       setSavedAt(new Date().toLocaleTimeString('en-AU'))
     } catch (e) {
@@ -474,7 +483,33 @@ function DetailsTab({
             ]}
           />
         </Field>
+        {/* Session 4A — businesses.agent_name column. Round 1: saving this does
+            NOT sync to Vapi or the knowledge base (that is Round 2). */}
+        <Field label="Agent name">
+          <Input
+            value={form.agent_name}
+            onChange={v => setForm(f => ({ ...f, agent_name: v }))}
+            placeholder="e.g. Sarah — the assistant's display name"
+          />
+        </Field>
+        {/* Session 4A — integration mode chip (read-only, from businesses.integration_mode) */}
+        <Field label="Integration mode">
+          {(() => {
+            const chip = integrationModeChip(business.integration_mode)
+            return (
+              <span style={{
+                display: 'inline-block', padding: '7px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                background: chip.muted ? 'rgba(255,255,255,0.06)' : `${chip.color}22`,
+                color: chip.color, fontStyle: chip.muted ? 'italic' : 'normal',
+                border: `1px solid ${chip.muted ? 'rgba(255,255,255,0.12)' : `${chip.color}55`}`,
+              }}>{chip.label}</span>
+            )
+          })()}
+        </Field>
       </Grid>
+
+      {/* Session 4A — Go-Live Gate: 5-item checklist breakdown + completion percent */}
+      <GoLiveGatePanel businessId={business.id} />
 
       <div style={{ marginTop: 16, padding: 14, background: '#071829', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
         <p style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Read-only</p>
@@ -506,6 +541,101 @@ function DetailsTab({
           onClose={() => setShowCancel(false)}
           onCancelled={() => { setShowCancel(false); onCancelled(); setForm(f => ({ ...f, account_status: 'cancelled' })) }}
         />
+      )}
+    </div>
+  )
+}
+
+// ── Go-Live Gate panel ─────────────────────────────────────────────────────
+// Session 4A — reads the existing GET /api/onboarding/go-live-status route
+// (adminClientId=businessId) to show the 5-item checklist breakdown +
+// completion percent. Read-only; this never triggers Vapi or KB sync.
+
+interface GateItemView { passed: boolean; label: string; count?: number; required?: number }
+interface GoLiveStatusView {
+  ready: boolean
+  completionPercent: number
+  checklist: {
+    agentNamed: GateItemView
+    modeSelected: GateItemView
+    kbEntriesAdded: GateItemView
+    vipReviewed: GateItemView
+    announcementSent: GateItemView
+  }
+}
+
+const GATE_ORDER: Array<keyof GoLiveStatusView['checklist']> = [
+  'agentNamed', 'modeSelected', 'kbEntriesAdded', 'vipReviewed', 'announcementSent',
+]
+
+function GoLiveGatePanel({ businessId }: { businessId: string }) {
+  const [status, setStatus] = useState<GoLiveStatusView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await fetch(`/api/onboarding/go-live-status?adminClientId=${businessId}`)
+        const data = await res.json()
+        if (cancelled) return
+        if (!res.ok) throw new Error(data?.error || 'Could not load go-live status')
+        setStatus(data as GoLiveStatusView)
+      } catch (e) {
+        if (!cancelled) setErr((e as Error).message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [businessId])
+
+  const pct = status?.completionPercent ?? 0
+  const pctColor = pct >= 100 ? '#22C55E' : pct >= 60 ? '#F59E0B' : '#EF4444'
+
+  return (
+    <div style={{ marginTop: 16, padding: 14, background: '#071829', borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>Go-Live Gate</p>
+        {!loading && !err && status && (
+          <span style={{
+            fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 99,
+            background: `${pctColor}1A`, color: pctColor, border: `1px solid ${pctColor}55`,
+          }}>{status.ready ? 'Ready' : `${pct}%`}</span>
+        )}
+      </div>
+
+      {loading ? (
+        <p style={{ fontSize: 12, color: '#7BAED4', margin: 0 }}>Loading…</p>
+      ) : err ? (
+        <p style={{ fontSize: 12, color: '#EF4444', margin: 0 }}>{err}</p>
+      ) : status ? (
+        <div>
+          {/* Progress bar */}
+          <div style={{ height: 6, borderRadius: 99, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginBottom: 12 }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: pctColor, transition: 'width 0.2s' }} />
+          </div>
+          {GATE_ORDER.map(key => {
+            const it = status.checklist[key]
+            const detail = it.count != null && it.required != null ? ` (${it.count}/${it.required})` : ''
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+                <span style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                  background: it.passed ? '#22C55E' : 'rgba(255,255,255,0.05)',
+                  border: `1px solid ${it.passed ? '#22C55E' : 'rgba(255,255,255,0.1)'}`,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontSize: 11, fontWeight: 700,
+                }}>{it.passed ? '✓' : ''}</span>
+                <span style={{ fontSize: 13, color: it.passed ? 'white' : '#7BAED4' }}>{it.label}{detail}</span>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: '#7BAED4', margin: 0 }}>Not started</p>
       )}
     </div>
   )

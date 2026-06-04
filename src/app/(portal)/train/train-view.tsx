@@ -1,12 +1,26 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
-import { Sparkles, Plus, Pencil, Trash2, Save, X, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Sparkles, Plus, Pencil, Trash2, Save, X, RefreshCw, CheckCircle2, AlertCircle, Clock, ArrowUp, ArrowDown } from 'lucide-react'
 import IndustryTemplateCard from './industry-template-card'
 
 export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'error'
 
 export type CategoryKey = 'faq' | 'service' | 'hours' | 'pricing' | 'team' | 'custom'
+
+// The Call Flow tab (Session 4A) lives alongside the 6 knowledge-base tabs but
+// reads/writes a separate table via /api/onboarding/call-flow.
+type TabKey = CategoryKey | 'callflow'
+
+interface CallFlowQuestion {
+  id: string
+  question: string
+  purpose: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+const CALL_FLOW_INDUSTRIES = ['towing', 'plumbing', 'electrical', 'cleaning', 'hvac', 'other'] as const
 
 export interface KbEntryDTO {
   id: string
@@ -68,7 +82,7 @@ function fmtSyncedAgo(iso: string | null): string {
 
 export default function TrainView(props: Props) {
   const [entries, setEntries] = useState<KbEntryDTO[]>(props.initialEntries)
-  const [activeTab, setActiveTab] = useState<CategoryKey>('faq')
+  const [activeTab, setActiveTab] = useState<TabKey>('faq')
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(props.initialSyncStatus)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(props.initialLastSyncedAt)
   const [syncing, setSyncing] = useState(false)
@@ -89,7 +103,7 @@ export default function TrainView(props: Props) {
     [entries, activeTab],
   )
 
-  const config = TABS.find(t => t.key === activeTab)!
+  const config = TABS.find(t => t.key === activeTab)
 
   const startAdd = useCallback((cat: CategoryKey) => {
     setAddingFor(cat)
@@ -347,9 +361,33 @@ export default function TrainView(props: Props) {
             </button>
           )
         })}
+        {/* Call Flow tab (Session 4A) — separate table, rendered after the KB tabs. */}
+        <button
+          key="callflow"
+          type="button"
+          onClick={() => { setActiveTab('callflow'); cancelForm() }}
+          style={{
+            padding: '10px 16px',
+            background: 'transparent', border: 'none',
+            color: activeTab === 'callflow' ? 'white' : '#7BAED4',
+            borderBottom: activeTab === 'callflow' ? `2px solid ${ORANGE}` : '2px solid transparent',
+            fontSize: 13, fontWeight: activeTab === 'callflow' ? 700 : 500,
+            cursor: 'pointer', fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          Call Flow
+        </button>
       </div>
 
-      {/* Entry list */}
+      {/* Call Flow tab (Session 4A) — draft-only, separate API. */}
+      {activeTab === 'callflow' && (
+        <CallFlowTab adminClientId={props.adminClientId} />
+      )}
+
+      {/* Entry list (the 6 knowledge-base tabs) */}
+      {activeTab !== 'callflow' && config && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {entriesForTab.length === 0 && addingFor !== activeTab && (
           <div style={{
@@ -446,7 +484,7 @@ export default function TrainView(props: Props) {
         {addingFor !== activeTab && (
           <button
             type="button"
-            onClick={() => startAdd(activeTab)}
+            onClick={() => startAdd(activeTab as CategoryKey)}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '12px 16px', marginTop: 4,
@@ -462,6 +500,7 @@ export default function TrainView(props: Props) {
           </button>
         )}
       </div>
+      )}
     </div>
   )
 }
@@ -552,6 +591,495 @@ function EditorCard(props: EditorCardProps) {
           <Save size={13} /> {props.busy ? 'Saving...' : props.saveLabel}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─────────── Call Flow tab (Session 4A) ───────────
+// Opening intake questions the agent asks every caller. Draft-only in Round 1:
+// stored via /api/onboarding/call-flow but NOT synced to the live agent yet.
+
+const cfInputStyle = {
+  width: '100%', padding: '9px 12px', borderRadius: 8,
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  color: '#F1F5F9', fontSize: 14, fontFamily: 'inherit',
+  outline: 'none', boxSizing: 'border-box' as const,
+}
+
+const cfIconBtnStyle = {
+  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)',
+  color: '#7BAED4', borderRadius: 8, padding: 8,
+  cursor: 'pointer', display: 'flex', alignItems: 'center',
+}
+
+function CallFlowTab({ adminClientId }: { adminClientId?: string | null }) {
+  const [questions, setQuestions] = useState<CallFlowQuestion[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  // Inline editor for a single question (text + purpose).
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draftQuestion, setDraftQuestion] = useState('')
+  const [draftPurpose, setDraftPurpose] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+
+  // Add-new inline form.
+  const [adding, setAdding] = useState(false)
+  const [newQuestion, setNewQuestion] = useState('')
+  const [newPurpose, setNewPurpose] = useState('')
+  const [addError, setAddError] = useState<string | null>(null)
+
+  const [reloadIndustry, setReloadIndustry] = useState<string>('towing')
+
+  const sorted = useMemo(
+    () => [...questions].sort((a, b) => a.sort_order - b.sort_order),
+    [questions],
+  )
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const r = await fetch(withAdmin('/api/onboarding/call-flow', adminClientId))
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok) {
+        setLoadError(typeof d.error === 'string' ? d.error : 'Could not load your call flow.')
+        return
+      }
+      setQuestions(Array.isArray(d.questions) ? (d.questions as CallFlowQuestion[]) : [])
+    } catch (e) {
+      setLoadError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [adminClientId])
+
+  useEffect(() => { void load() }, [load])
+
+  function startEdit(q: CallFlowQuestion) {
+    setEditingId(q.id)
+    setDraftQuestion(q.question)
+    setDraftPurpose(q.purpose ?? '')
+    setEditError(null)
+    setAdding(false)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setDraftQuestion('')
+    setDraftPurpose('')
+    setEditError(null)
+  }
+
+  async function saveEdit(id: string) {
+    if (!draftQuestion.trim()) { setEditError('Question is required.'); return }
+    setBusy(true)
+    setEditError(null)
+    try {
+      const r = await fetch(withAdmin('/api/onboarding/call-flow', adminClientId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, question: draftQuestion.trim(), purpose: draftPurpose.trim() }),
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({} as Record<string, unknown>))
+        setEditError(typeof d.error === 'string' ? d.error : 'Update failed.')
+        return
+      }
+      setQuestions(prev => prev.map(x => x.id === id
+        ? { ...x, question: draftQuestion.trim(), purpose: draftPurpose.trim() || null }
+        : x))
+      cancelEdit()
+    } catch (e) {
+      setEditError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function addQuestion() {
+    if (!newQuestion.trim()) { setAddError('Question is required.'); return }
+    setBusy(true)
+    setAddError(null)
+    try {
+      const r = await fetch(withAdmin('/api/onboarding/call-flow', adminClientId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: newQuestion.trim(), purpose: newPurpose.trim() }),
+      })
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok || !d.question) {
+        setAddError(typeof d.error === 'string' ? d.error : 'Could not add question.')
+        return
+      }
+      setQuestions(prev => [...prev, d.question as CallFlowQuestion])
+      setAdding(false)
+      setNewQuestion('')
+      setNewPurpose('')
+    } catch (e) {
+      setAddError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removeQuestion(id: string) {
+    if (!window.confirm('Delete this question?')) return
+    setBusy(true)
+    try {
+      const r = await fetch(withAdmin(`/api/onboarding/call-flow?id=${encodeURIComponent(id)}`, adminClientId), { method: 'DELETE' })
+      if (!r.ok) return
+      setQuestions(prev => prev.filter(x => x.id !== id))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function move(id: string, dir: -1 | 1) {
+    const idx = sorted.findIndex(q => q.id === id)
+    const swapWith = idx + dir
+    if (idx < 0 || swapWith < 0 || swapWith >= sorted.length) return
+    const reordered = [...sorted]
+    const tmp = reordered[idx]
+    reordered[idx] = reordered[swapWith]
+    reordered[swapWith] = tmp
+    const withOrder = reordered.map((q, i) => ({ ...q, sort_order: i }))
+    setQuestions(withOrder)
+    setBusy(true)
+    try {
+      await fetch(withAdmin('/api/onboarding/call-flow', adminClientId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: withOrder.map(q => ({ id: q.id, sort_order: q.sort_order })) }),
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function reloadDefaults() {
+    if (!window.confirm(`This replaces your current questions with the ${reloadIndustry} preset.`)) return
+    setBusy(true)
+    try {
+      const r = await fetch(withAdmin('/api/onboarding/call-flow', adminClientId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reload_defaults', industry: reloadIndustry }),
+      })
+      const d = await r.json().catch(() => ({} as Record<string, unknown>))
+      if (!r.ok) return
+      setQuestions(Array.isArray(d.questions) ? (d.questions as CallFlowQuestion[]) : [])
+      cancelEdit()
+      setAdding(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 16 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: 'white', margin: 0 }}>
+          Opening questions your agent asks every caller
+        </h2>
+        <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 6, marginBottom: 0, lineHeight: 1.5 }}>
+          These are the first questions your agent asks to understand what the caller needs.
+        </p>
+      </div>
+
+      {/* Controls row: reload defaults + disabled sync */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12,
+        padding: '12px 14px', marginBottom: 16, borderRadius: 12,
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: '#4A7FBB', fontWeight: 600 }}>Reload defaults</span>
+          <select
+            value={reloadIndustry}
+            onChange={e => setReloadIndustry(e.target.value)}
+            disabled={busy}
+            style={{
+              padding: '7px 10px', borderRadius: 8,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: '#F1F5F9', fontSize: 12, fontFamily: 'inherit',
+              outline: 'none', cursor: 'pointer',
+            }}
+          >
+            {CALL_FLOW_INDUSTRIES.map(ind => (
+              <option key={ind} value={ind} style={{ background: '#1a2233' }}>
+                {ind.charAt(0).toUpperCase() + ind.slice(1)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={reloadDefaults}
+            disabled={busy}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 12px', borderRadius: 8,
+              background: 'rgba(232,98,42,0.1)', color: ORANGE,
+              border: '1px solid rgba(232,98,42,0.3)',
+              fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              fontFamily: 'inherit', opacity: busy ? 0.5 : 1,
+            }}
+          >
+            <RefreshCw size={12} /> Load preset
+          </button>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#7BAED4' }}>Call Flow goes live in a coming update.</span>
+          <button
+            type="button"
+            disabled
+            title="Call Flow goes live in a coming update."
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 14px', borderRadius: 8,
+              background: ORANGE, color: 'white', border: 'none',
+              fontSize: 12, fontWeight: 700, cursor: 'not-allowed',
+              fontFamily: 'inherit', opacity: 0.4,
+            }}
+          >
+            <RefreshCw size={12} /> Sync Now
+          </button>
+        </div>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div style={{
+          padding: 24, textAlign: 'center', color: '#7BAED4', fontSize: 13,
+          border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12,
+        }}>
+          Loading your call flow...
+        </div>
+      ) : loadError ? (
+        <div style={{
+          padding: 16, color: '#EF4444', fontSize: 13,
+          border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12,
+          background: 'rgba(239,68,68,0.08)',
+        }}>
+          {loadError}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {sorted.length === 0 && !adding && (
+            <div style={{
+              padding: 24, textAlign: 'center',
+              border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 12,
+              color: '#7BAED4', fontSize: 13,
+            }}>
+              No call flow questions yet. Add one, or load your industry defaults.
+            </div>
+          )}
+
+          {sorted.map((q, i) => (
+            editingId === q.id ? (
+              <div key={q.id} style={{
+                background: 'rgba(232,98,42,0.06)',
+                border: '1px solid rgba(232,98,42,0.25)',
+                borderRadius: 12, padding: 16,
+              }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+                  Question
+                </label>
+                <input
+                  type="text"
+                  value={draftQuestion}
+                  onChange={e => setDraftQuestion(e.target.value)}
+                  style={{ ...cfInputStyle, marginBottom: 12 }}
+                />
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+                  Purpose (optional)
+                </label>
+                <input
+                  type="text"
+                  value={draftPurpose}
+                  onChange={e => setDraftPurpose(e.target.value)}
+                  placeholder="What this question is for"
+                  style={cfInputStyle}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                  {editError && <span style={{ fontSize: 12, color: '#EF4444' }}>{editError}</span>}
+                  <div style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: '#7BAED4', fontSize: 12, fontWeight: 500,
+                      cursor: 'pointer', padding: '8px 12px', fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <X size={14} /> Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => saveEdit(q.id)}
+                    disabled={busy}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '8px 16px', borderRadius: 8,
+                      background: ORANGE, color: 'white', border: 'none',
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                      fontFamily: 'inherit', opacity: busy ? 0.5 : 1,
+                    }}
+                  >
+                    <Save size={13} /> {busy ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <article key={q.id} style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: 12, padding: '14px 16px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  {/* Reorder arrows */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => move(q.id, -1)}
+                      disabled={busy || i === 0}
+                      aria-label="Move up"
+                      style={{ ...cfIconBtnStyle, padding: 5, opacity: i === 0 ? 0.3 : 1, cursor: i === 0 ? 'default' : 'pointer' }}
+                    >
+                      <ArrowUp size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => move(q.id, 1)}
+                      disabled={busy || i === sorted.length - 1}
+                      aria-label="Move down"
+                      style={{ ...cfIconBtnStyle, padding: 5, opacity: i === sorted.length - 1 ? 0.3 : 1, cursor: i === sorted.length - 1 ? 'default' : 'pointer' }}
+                    >
+                      <ArrowDown size={13} />
+                    </button>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{q.question}</div>
+                    {q.purpose && (
+                      <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 5, lineHeight: 1.5 }}>
+                        {q.purpose}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(q)}
+                    aria-label="Edit"
+                    style={cfIconBtnStyle}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeQuestion(q.id)}
+                    aria-label="Delete"
+                    style={{
+                      background: 'transparent', border: '1px solid rgba(239,68,68,0.18)',
+                      color: '#EF4444', borderRadius: 8, padding: 8,
+                      cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </article>
+            )
+          ))}
+
+          {/* Add form */}
+          {adding && (
+            <div style={{
+              background: 'rgba(232,98,42,0.06)',
+              border: '1px solid rgba(232,98,42,0.25)',
+              borderRadius: 12, padding: 16,
+            }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+                Question
+              </label>
+              <input
+                type="text"
+                value={newQuestion}
+                onChange={e => setNewQuestion(e.target.value)}
+                placeholder="e.g. What is the address of the breakdown?"
+                style={{ ...cfInputStyle, marginBottom: 12 }}
+              />
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+                Purpose (optional)
+              </label>
+              <input
+                type="text"
+                value={newPurpose}
+                onChange={e => setNewPurpose(e.target.value)}
+                placeholder="What this question is for"
+                style={cfInputStyle}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                {addError && <span style={{ fontSize: 12, color: '#EF4444' }}>{addError}</span>}
+                <div style={{ flex: 1 }} />
+                <button
+                  type="button"
+                  onClick={() => { setAdding(false); setNewQuestion(''); setNewPurpose(''); setAddError(null) }}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: '#7BAED4', fontSize: 12, fontWeight: 500,
+                    cursor: 'pointer', padding: '8px 12px', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <X size={14} /> Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={addQuestion}
+                  disabled={busy}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 16px', borderRadius: 8,
+                    background: ORANGE, color: 'white', border: 'none',
+                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    fontFamily: 'inherit', opacity: busy ? 0.5 : 1,
+                  }}
+                >
+                  <Save size={13} /> {busy ? 'Saving...' : 'Add question'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!adding && (
+            <button
+              type="button"
+              onClick={() => { setAdding(true); cancelEdit() }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '12px 16px', marginTop: 4,
+                background: 'rgba(232,98,42,0.06)',
+                border: '1px dashed rgba(232,98,42,0.3)',
+                borderRadius: 12, color: ORANGE,
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'inherit', justifyContent: 'center',
+              }}
+            >
+              <Plus size={15} /> Add question
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
