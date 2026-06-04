@@ -8,7 +8,7 @@ import { useBusinessType } from '@/context/business-type-context'
 import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, MessageCircle, CreditCard, Lock, X, Users,
-  ClipboardList, Bot,
+  ClipboardList, Bot, Palette,
 } from 'lucide-react'
 
 interface Props {
@@ -138,6 +138,7 @@ export default function PortalSidebar(props: Props) {
         // customers don't lose access.
         { href: '/dispatch', label: 'Dispatch Board', icon: ClipboardList, show: !!props.hasDispatch },
         { href: '/command-centre', label: 'Command Centre', icon: MessageSquare, show: !!props.hasCommandCentre },
+        { href: '/account/white-label', label: 'White Label', icon: Palette, show: !!props.isWhiteLabelPartner && isOwner },
       ],
     },
   ]

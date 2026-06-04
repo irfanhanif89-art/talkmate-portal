@@ -281,12 +281,20 @@ export default function ContactsListClient({
             {totalCount} total · captured automatically by TalkMate
           </p>
         </div>
-        <Link href="/contacts/export">
-          <ButtonV2 variant="secondary" className="gap-2 text-[13px]">
-            <Download size={14} />
-            Export CSV
-          </ButtonV2>
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/vip-callers">
+            <ButtonV2 variant="secondary" className="text-[13px]">VIP Callers</ButtonV2>
+          </Link>
+          <Link href="/contacts/pipeline">
+            <ButtonV2 variant="secondary" className="text-[13px]">Pipeline</ButtonV2>
+          </Link>
+          <Link href="/contacts/export">
+            <ButtonV2 variant="secondary" className="gap-2 text-[13px]">
+              <Download size={14} />
+              Export CSV
+            </ButtonV2>
+          </Link>
+        </div>
       </div>
 
       {/* Filter bar */}

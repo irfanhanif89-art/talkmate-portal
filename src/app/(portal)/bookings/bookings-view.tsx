@@ -315,9 +315,17 @@ export default function BookingsView({ businessName }: { businessName: string })
           </div>
         )}
 
+        <a
+          href="/appointments"
+          className="ml-auto flex items-center gap-1.5 bg-card border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] text-dim no-underline whitespace-nowrap hover:bg-card-2 transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Jobs
+        </a>
+
         <ButtonV2
           variant="primary"
-          className="ml-auto gap-1.5 px-4 py-2 text-[14px] font-bold shadow-[0_4px_14px_rgba(238,106,44,.4)]"
+          className="gap-1.5 px-4 py-2 text-[14px] font-bold shadow-[0_4px_14px_rgba(238,106,44,.4)]"
           onClick={() => setCreating(true)}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">

@@ -3,15 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, ChevronDown, LogOut, Menu, Settings as SettingsIcon, User as UserIcon } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu, Settings as SettingsIcon, User as UserIcon, Lock, Gift } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/calls': 'Calls',
   '/analytics': 'Analytics',
-  '/catalog': 'Services & Menu',
-  '/services': 'Services & Menu',
+  '/catalog': 'Services',
+  '/services': 'Services',
   '/appointments': 'Jobs',
   '/command-centre': 'Command Centre',
   '/refer-and-earn': 'Refer & Earn',
@@ -20,9 +20,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin': 'Admin',
   '/onboarding': 'Setup',
   '/bookings': 'Bookings',
-  '/sms-activity': 'SMS Activity',
-  '/train': 'Train TalkMate',
-  '/contacts': 'Contacts',
+  '/sms-activity': 'Engage',
+  '/train': 'AI Receptionist',
+  '/contacts': 'Customers',
   '/quotes': 'Quotes',
   '/scheduler': 'Scheduler',
   '/chatbot': 'Chatbot',
@@ -249,7 +249,7 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
                 <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{userEmail}</div>
               </div>
               <button
-                onClick={() => { setOpen(false); router.push('/settings') }}
+                onClick={() => { setOpen(false); router.push('/profile') }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', color: 'var(--dim)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 <UserIcon size={14} /> Profile
@@ -259,6 +259,18 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', color: 'var(--dim)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 <SettingsIcon size={14} /> Settings
+              </button>
+              <button
+                onClick={() => { setOpen(false); router.push('/settings/security') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', color: 'var(--dim)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                <Lock size={14} /> Security
+              </button>
+              <button
+                onClick={() => { setOpen(false); router.push('/refer-and-earn') }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', color: 'var(--dim)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                <Gift size={14} /> Refer &amp; Earn
               </button>
               <div style={{ height: 1, background: 'var(--line)' }} />
               <button

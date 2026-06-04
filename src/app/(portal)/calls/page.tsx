@@ -689,6 +689,17 @@ export default function CallsPage() {
           {new Date().toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
         </div>
 
+        {/* Callbacks (folded from sidebar) */}
+        <a
+          href="/callbacks"
+          className="flex items-center gap-1.5 bg-card border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] text-dim no-underline whitespace-nowrap hover:bg-card-2 transition-colors"
+        >
+          <svg className="w-[14px] h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.8" />
+          </svg>
+          Callbacks
+        </a>
+
         {/* Export CSV */}
         <button
           onClick={exportCSV}
