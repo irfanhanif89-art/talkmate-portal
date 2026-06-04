@@ -71,6 +71,10 @@ export type SmsType =
   // Sprint Session 2 — website chatbot captured a lead; the business owner
   // gets an SMS heads-up. Operational alert, bypasses plan limit (below).
   | 'chat_lead_notification'
+  // Session 4B — cancellation-save (transactional, to a just-cancelled owner)
+  // and referral prompt (marketing; only sent when owner_marketing_sms_consent).
+  | 'cancellation_save'
+  | 'referral_prompt'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -108,6 +112,10 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   'review_request',
   // Sprint Session 2 — chatbot lead owner alert is operational.
   'chat_lead_notification',
+  // Session 4B — save attempt + referral are TalkMate-funded growth/retention
+  // messages, not client quota usage.
+  'cancellation_save',
+  'referral_prompt',
 ])
 
 // Session sprint 1 — sent_by classification for the inbox view.
