@@ -63,9 +63,18 @@ Fixed to `dark:'tm-dark'` (committed `45993dc`). This alone justified the browse
 catalog, train, contacts, billing, settings, sales dashboard, sales pipeline. Dark mode verified on dashboard.
 Final `npm run build` 195/195 ✓ + `tsc` clean ✓.
 
-**Minor cosmetic items left (low priority, noted for Irfan):** preserved components not in redesign scope still
-render dark in light mode — `CommissionPolicyModal`, billing `PlanComparison` cards; sales-leads header buttons
-slightly clip at right edge (same pattern as settings, minor). Audit screenshots saved to `WEBSITE BUILD/rd-*.png`.
+Audit screenshots saved to `WEBSITE BUILD/rd-*.png`.
+
+### Follow-up fixes 2026-06-04 (commit `babad64`) — all verified live in light mode
+- **EOFY removed from the PORTAL** per Irfan: deleted the EOFY banner from dashboard + billing and deleted the
+  now-unused `ui-v2/eofy-banner.tsx`. `lib/eofy-sale.ts` + website/proposal/signup usage LEFT INTACT (EOFY stays
+  on the marketing/proposal side only). Net pricing/Stripe checkout untouched.
+- **PlanComparison** dark→token (light-mode correct; plan cards now light).
+- **CommissionPolicyModal** dark→token (light-mode correct).
+- **Sales-leads header** overflow fixed (flex-wrap + stats `overflow-x-auto`).
+All four re-verified live (billing, sales dashboard modal, sales pipeline). Build 195/195 ✓ + tsc clean ✓.
+Remaining un-migrated light-mode surfaces are only OTHER (non-redesigned) portal pages/shared components — the
+documented out-of-scope follow-up, not part of these 12 screens.
 
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
