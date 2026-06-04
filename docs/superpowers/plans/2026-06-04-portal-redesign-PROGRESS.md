@@ -127,6 +127,24 @@ Also aligned topbar PAGE_TITLES to the new nav labels (Customers/Engage/Services
 Remaining from the audit: **#21/#22** = unify /train + settings-AI + /settings/routing into one /receptionist
 tabbed page (Voice/Greeting/FAQ/Escalation/Hours) — larger build, not yet done; nav points to /train.
 
+## 🔀 RECONCILED WITH DEV 2026-06-04 (merge commit f6d50f1)
+Branch had drifted 39 commits behind dev (Sessions 3A/3B/3C ServiceM8+Email+Inbox+Industry Packs, 4A onboarding,
+legal v3). Merged `origin/dev` into `feature/portal-ui-redesign`. Safety ref: `backup/portal-ui-redesign-premerge`
+(at 2965abb, pre-merge). Only 2 files conflicted:
+- **settings/page.tsx** → kept the redesigned page; added `<EmailResponderCard/>` + `<ServiceM8Card/>` to the
+  Automation tab (dev's only functional delta there).
+- **train-view.tsx** → took dev's full-functionality version (Call Flow tab Session 4A + Industry Packs Session 3A
+  = 538 new lines). The AI Receptionist redesign will be RE-APPLIED when the #21/#22 hub is built (that rebuild was
+  always going to replace this screen — folding in Call Flow + Industry + voice/greeting/escalation/hours + design).
+Result: build **203/203** ✓, tsc clean ✓, branch 0-behind/40-ahead of dev. Dashboard + Settings verified live.
+
+### Follow-up restyle backlog (new Session 3/4A features were built DARK → need light-mode/token treatment)
+- Settings Automation: `EmailResponderCard`, `ServiceM8Card` render dark-on-light.
+- AI Receptionist (`/train`): Call Flow tab + Industry Template card are dark (whole screen reverts to dev styling
+  until the #21/#22 hub rebuild re-applies the new design).
+- Email Inbox (`/inbox`), ServiceM8 log, and other Session 3/4A surfaces are dark-only and not yet in the new design.
+- Sidebar still drops "Inbox" (per audit) while Email Inbox now ships at /inbox — decide where Email lives.
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
