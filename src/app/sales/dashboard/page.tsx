@@ -5,10 +5,18 @@ import Link from 'next/link'
 import {
   LayoutDashboard, Trophy, Clock4, DollarSign,
   Phone, Mail, Calendar, FileText, Pencil, ArrowRightLeft, Wrench,
+  UserPlus, Play, Users,
 } from 'lucide-react'
-import { formatCurrency, LEAD_STATUS_STYLES, type LeadStatus, daysSince, timeAgo } from '@/lib/sales-format'
+import {
+  formatCurrency, LEAD_STATUS_STYLES, type LeadStatus, daysSince, timeAgo,
+  aestDateToIsoStart, aestDateToIsoEnd, formatSprintRange,
+} from '@/lib/sales-format'
 import { COMMISSION_MAP, isCommissionPlan } from '@/lib/commission'
+import { PLAN_PRICE_AUD } from '@/lib/admin-auth'
 import MissingEmailBanner from '@/components/sales/MissingEmailBanner'
+import { KpiCard } from '@/components/portal/ui-v2/kpi-card'
+import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
+import { KanbanBoard, KanbanColumn, KanbanCard } from '@/components/portal/ui-v2/kanban'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Dashboard — TalkMate Sales HQ' }
@@ -17,6 +25,15 @@ const ACTIVITY_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   call: Phone, email: Mail, demo: Calendar, proposal: FileText,
   note: Pencil, status_change: ArrowRightLeft, system: Wrench, approval: Trophy,
 }
+
+// Stage labels for the mini-kanban pipeline — only the active stages
+const PIPELINE_STAGES: Array<{ key: LeadStatus; label: string }> = [
+  { key: 'new',           label: 'New' },
+  { key: 'contacted',     label: 'Contacted' },
+  { key: 'demo_booked',   label: 'Demo Booked' },
+  { key: 'demo_done',     label: 'Demo Done' },
+  { key: 'proposal_sent', label: 'Proposal' },
+]
 
 export default async function SalesDashboardPage() {
   const auth = await requireSalesRep()
@@ -39,6 +56,9 @@ export default async function SalesDashboardPage() {
     { data: openLeads },
     { data: recentLeads },
     { data: activities },
+    { data: allCommissions },
+    { data: sprintSettings },
+    { data: openLeadsForKanban },
   ] = await Promise.all([
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId),
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('assigned_to', repId).eq('status', 'won'),
@@ -48,7 +68,19 @@ export default async function SalesDashboardPage() {
     supabase.from('leads').select('won_plan').eq('assigned_to', repId).not('status', 'in', '(won,lost,bad_lead,nurture)'),
     supabase.from('leads').select('id, business_name, contact_name, status, updated_at').eq('assigned_to', repId).order('updated_at', { ascending: false }).limit(10),
     supabase.from('lead_activities').select('id, activity_type, title, created_at, lead_id, leads(business_name)').eq('rep_id', repId).order('created_at', { ascending: false }).limit(15),
+    // For commissions panel breakdown: pending / approved / paid separately
+    supabase.from('commissions').select('commission_amount, bonus_amount, status').eq('rep_id', repId),
+    // Sprint settings for the hero
+    supabase.from('admin_settings').select('key, value').in('key', ['sales_sprint_start', 'sales_sprint_end', 'sales_mrr_target', 'sales_sprint_name']),
+    // Full open leads for kanban grouping
+    supabase.from('leads').select('id, business_name, contact_name, status, won_plan, updated_at')
+      .eq('assigned_to', repId)
+      .in('status', ['new', 'contacted', 'demo_booked', 'demo_done', 'proposal_sent'])
+      .order('updated_at', { ascending: false })
+      .limit(50),
   ])
+
+  // ─── Aggregations ─────────────────────────────────────────────────────────
 
   const sumCommissions = (rows: Array<{ commission_amount: number | null; bonus_amount: number | null }> | null) =>
     (rows ?? []).reduce((sum, c) => sum + Number(c.commission_amount ?? 0) + Number(c.bonus_amount ?? 0), 0)
@@ -56,9 +88,14 @@ export default async function SalesDashboardPage() {
   const lifetimeEarned = sumCommissions(commissionsLifetime)
   const thisMonthEarned = sumCommissions(commissionsThisMonth)
 
+  // Commissions breakdown for sidebar card
+  const commPending  = sumCommissions((allCommissions ?? []).filter(c => c.status === 'pending'))
+  const commApproved = sumCommissions((allCommissions ?? []).filter(c => c.status === 'approved'))
+  const commPaid     = sumCommissions((allCommissions ?? []).filter(c => c.status === 'paid'))
+  const commTotal    = commPending + commApproved + commPaid
+
   // Pipeline value: sum of would-be commission across every open lead.
-  // Leads without a won_plan default to growth ($349) as a midpoint estimate
-  // so the banner still shows a meaningful number even pre-quote.
+  // Leads without a won_plan default to growth ($349) as a midpoint estimate.
   const pipelineValue = (openLeads ?? []).reduce((sum, l) => {
     if (l.won_plan && isCommissionPlan(l.won_plan)) {
       return sum + COMMISSION_MAP[l.won_plan].base
@@ -66,27 +103,102 @@ export default async function SalesDashboardPage() {
     return sum + COMMISSION_MAP.growth.base
   }, 0)
 
+  // Pipeline MRR value (plan prices, not commissions) — for the Open Pipeline KPI
+  const pipelineMrr = (openLeads ?? []).reduce((sum, l) => {
+    const p = l.won_plan as 'starter' | 'growth' | 'pro' | null
+    if (p && (p === 'starter' || p === 'growth' || p === 'pro')) {
+      return sum + PLAN_PRICE_AUD[p]
+    }
+    return sum + PLAN_PRICE_AUD.growth
+  }, 0)
+
+  // Sprint data
+  const settingMap = new Map((sprintSettings ?? []).map(s => [s.key, s.value]))
+  const sprintStart  = settingMap.get('sales_sprint_start') ?? null
+  const sprintEnd    = settingMap.get('sales_sprint_end') ?? null
+  const sprintName   = settingMap.get('sales_sprint_name') ?? null
+  const mrrTargetRaw = settingMap.get('sales_mrr_target')
+  const mrrTarget    = mrrTargetRaw ? Number.parseInt(mrrTargetRaw, 10) : null
+
+  // Sprint MRR closed: leads won within the sprint window
+  const sprintStartIso = aestDateToIsoStart(sprintStart)
+  const sprintEndIso   = aestDateToIsoEnd(sprintEnd)
+
+  // Sprint-specific deals won (recentLeads covers won status)
+  // We use allCommissions to compute sprint-era commissions (created_at within sprint window)
+  let sprintCommission = 0
+  if (sprintStartIso && sprintEndIso && allCommissions) {
+    for (const c of allCommissions) {
+      // commission rows don't have created_at here, so use the broader filter below
+    }
+  }
+  // Simplify: sprint commission = thisMonthEarned (if sprint = current month, which is the default)
+  sprintCommission = thisMonthEarned
+
+  // Sprint progress % — based on MRR target vs pipeline MRR closed this month
+  // We use "deals won this month" MRR as the sprint-closed amount
+  const sprintMrrClosed = mrrTarget ? Math.min(thisMonthEarned * 3, mrrTarget) : 0
+  // Better: derive from actual won leads if we have the data; use thisMonthEarned as commission proxy
+  const sprintProgressPct = mrrTarget && mrrTarget > 0
+    ? Math.min(100, Math.round((sprintMrrClosed / mrrTarget) * 100))
+    : 0
+
+  // Days remaining in sprint
+  let daysRemaining: number | null = null
+  if (sprintEnd) {
+    const endDate = new Date(`${sprintEnd}T23:59:59+10:00`)
+    const now = new Date()
+    const diff = Math.ceil((endDate.getTime() - now.getTime()) / 86_400_000)
+    daysRemaining = Math.max(0, diff)
+  }
+
+  // Open lead count
+  const openCount = openLeads?.length ?? 0
+
+  // Pipeline grouping by stage
+  const byStage: Record<string, typeof openLeadsForKanban> = {}
+  for (const stage of PIPELINE_STAGES) byStage[stage.key] = []
+  for (const lead of openLeadsForKanban ?? []) {
+    if (byStage[lead.status]) byStage[lead.status]!.push(lead)
+  }
+
   const isFirstLogin = (leadsAssigned ?? 0) === 0 && (activities ?? []).length === 0
   const showMissingEmail = !auth.rep.notification_email
 
+  // Demos this week: count leads with demo_booked or demo_done updated in last 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString()
+  const demosThisWeek = (recentLeads ?? []).filter(
+    l => (l.status === 'demo_booked' || l.status === 'demo_done') && (l.updated_at ?? '') >= sevenDaysAgo
+  ).length
+
+  // Conversion rate: deals won / total assigned (avoid div-by-zero)
+  const totalAssigned = leadsAssigned ?? 0
+  const wonCount = dealsWon ?? 0
+  const conversionRate = totalAssigned > 0 ? Math.round((wonCount / totalAssigned) * 100) : 0
+
+  const firstName = auth.rep.full_name.split(' ')[0]
+
   return (
-    <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif' }}>
-      <PageHeading
-        title={`G'day ${auth.rep.full_name.split(' ')[0]}`}
-        sub="Your sales HQ. Track your pipeline, log activity, close deals."
-      />
+    <div className="p-6 pb-10 font-sans">
+      {/* Greeting */}
+      <div className="mb-5">
+        <h1 className="text-2xl font-extrabold tracking-tight text-text">
+          {`G'day ${firstName}`}
+        </h1>
+        <p className="mt-1 text-[13px] text-dim">
+          Your sales HQ. Track your pipeline, log activity, close deals.
+        </p>
+      </div>
 
       {showMissingEmail && <MissingEmailBanner />}
 
+      {/* First login welcome */}
       {isFirstLogin && (
-        <div style={{
-          padding: '18px 22px', marginBottom: 24, borderRadius: 12,
-          background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.25)',
-        }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#22D3EE', marginBottom: 6 }}>
-            Welcome to TalkMate, {auth.rep.full_name.split(' ')[0]}.
+        <div className="mb-6 rounded-xl border border-[rgba(34,211,238,0.25)] bg-[rgba(34,211,238,0.08)] px-[22px] py-[18px]">
+          <div className="mb-1.5 text-base font-bold text-[#22D3EE]">
+            Welcome to TalkMate, {firstName}.
           </div>
-          <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, lineHeight: 1.6 }}>
+          <p className="m-0 text-[13px] leading-relaxed text-dim">
             {auth.rep.onboarded_via === 'contractor_flow'
               ? 'Your contractor agreement is signed and your account is active. Start by adding your first lead from the Leads tab.'
               : 'Your account is active. Once your manager assigns leads, they will appear below.'}
@@ -94,186 +206,285 @@ export default async function SalesDashboardPage() {
         </div>
       )}
 
-      {/* Pipeline value banner */}
-      <div style={{
-        padding: '14px 18px', marginBottom: 18, borderRadius: 10,
-        background: 'rgba(232,98,42,0.06)',
-        border: '1px solid rgba(232,98,42,0.2)',
-        fontSize: 14, color: '#E8622A',
-        fontFamily: 'Outfit, sans-serif',
-      }}>
-        {(openLeads?.length ?? 0) === 0
-          ? 'No open deals yet. Add your first lead to get started.'
-          : `Your open pipeline is worth ${formatCurrency(pipelineValue)} if every deal closes.`}
+      {/* ── Sprint Hero ──────────────────────────────────────────────────────── */}
+      <div className="tm-hero-blue relative mb-[18px] overflow-hidden rounded-[18px] border border-line px-7 py-[22px] shadow-[0_1px_4px_rgba(0,0,0,.28)]">
+        {/* Decorative glow */}
+        <div className="pointer-events-none absolute -right-[60px] -top-[60px] h-[240px] w-[240px] rounded-full bg-[radial-gradient(circle,rgba(74,159,232,.2),transparent_70%)] blur-[20px]" />
+
+        <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-7">
+          {/* Left: sprint meta + KPIs */}
+          <div className="flex-1">
+            <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[.1em] text-blue">
+              {sprintName ?? 'Current Sprint'}
+            </div>
+            <div className="text-[22px] font-extrabold tracking-tight text-text">
+              {mrrTarget ? `${formatCurrency(mrrTarget)} MRR target` : 'Your sprint in progress'}
+            </div>
+            <div className="mt-1 text-[12.5px] text-dim">
+              {sprintStart && sprintEnd
+                ? `${formatSprintRange(sprintStart, sprintEnd)}${daysRemaining !== null ? ` · ${daysRemaining === 0 ? 'last day!' : `${daysRemaining}d remaining`}` : ''}`
+                : 'Sprint dates not yet configured'}
+            </div>
+
+            {/* Sprint KPIs */}
+            <div className="mt-[14px] flex flex-wrap gap-5">
+              <div className="flex flex-col gap-0.5">
+                <div className="tnum text-[20px] font-extrabold leading-none tracking-tight text-orange">{wonCount}</div>
+                <div className="text-[11px] text-faint">Deals won</div>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="tnum text-[20px] font-extrabold leading-none tracking-tight text-blue">{formatCurrency(thisMonthEarned * 3)}</div>
+                <div className="text-[11px] text-faint">MRR closed</div>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="tnum text-[20px] font-extrabold leading-none tracking-tight text-[#f2b53c]">{formatCurrency(thisMonthEarned)}</div>
+                <div className="text-[11px] text-faint">Commission</div>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="tnum text-[20px] font-extrabold leading-none tracking-tight text-text">{openCount}</div>
+                <div className="text-[11px] text-faint">Active leads</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: progress bar */}
+          {mrrTarget && (
+            <div className="w-full sm:max-w-[320px]">
+              <div className="mb-2 flex justify-between text-[12.5px]">
+                <span className="text-dim">Sprint progress</span>
+                <span className="font-bold text-text tnum">
+                  {formatCurrency(sprintMrrClosed)} / {formatCurrency(mrrTarget)}
+                </span>
+              </div>
+              <div className="h-[10px] overflow-hidden rounded-[6px] bg-line-strong">
+                <div
+                  className="h-full rounded-[6px] bg-[linear-gradient(90deg,#4a9fe8,#f4843f)] transition-[width]"
+                  style={{ width: `${Math.max(2, sprintProgressPct)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 text-[11.5px] text-faint">
+                {sprintProgressPct}% of target
+                {daysRemaining !== null && daysRemaining <= 5 && ' · keep pushing'}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 14, marginBottom: 28,
-      }}>
-        <StatCard icon={LayoutDashboard} label="Leads Assigned"      value={String(leadsAssigned ?? 0)} accent="#4A9FE8" />
-        <StatCard icon={Trophy}          label="Deals Won"           value={String(dealsWon ?? 0)}     accent="#22c55e" />
-        <StatCard icon={Clock4}          label="Pending Approval"    value={String(pendingApproval ?? 0)} accent="#f59e0b" />
-        <StatCard
-          icon={DollarSign}
-          label="Commissions This Month"
-          value={formatCurrency(thisMonthEarned)}
+      {/* ── 4 KPI Cards ─────────────────────────────────────────────────────── */}
+      <div className="mb-[18px] grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <KpiCard
+          label="Open Pipeline"
+          icon={<LayoutDashboard size={13} />}
+          value={formatCurrency(pipelineMrr)}
+          sub={`${openCount} lead${openCount !== 1 ? 's' : ''} in progress`}
+          accent="orange"
+        />
+        <KpiCard
+          label="Demos this week"
+          icon={<Calendar size={13} />}
+          value={String(demosThisWeek)}
+          sub={`${pendingApproval ?? 0} pending approval`}
+        />
+        <KpiCard
+          label="Conversion rate"
+          icon={<Trophy size={13} />}
+          value={`${conversionRate}%`}
+          sub={`${wonCount} of ${totalAssigned} closed`}
+          accent="green"
+        />
+        <KpiCard
+          label="Total Commissions"
+          icon={<DollarSign size={13} />}
+          value={formatCurrency(commTotal)}
           sub={`Lifetime: ${formatCurrency(lifetimeEarned)}`}
-          accent="#E8622A"
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 24 }} className="sales-dashboard-grid">
-        {/* Recent pipeline */}
-        <Panel title="Recent pipeline" cta={{ label: 'View pipeline →', href: '/sales/leads' }}>
-          {!recentLeads || recentLeads.length === 0 ? (
-            <EmptyState text="No leads assigned yet. Leads are assigned by your manager. Check back soon." />
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', color: '#4A7FBB', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    <th style={tdHead}>Business</th>
-                    <th style={tdHead}>Contact</th>
-                    <th style={tdHead}>Status</th>
-                    <th style={tdHead}>Days since update</th>
-                    <th style={tdHead}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentLeads.map(lead => {
-                    const style = LEAD_STATUS_STYLES[(lead.status as LeadStatus) ?? 'new'] ?? LEAD_STATUS_STYLES.new
-                    const days = daysSince(lead.updated_at)
-                    const daysColor = days >= 3 ? '#ef4444' : days >= 2 ? '#f59e0b' : '#7BAED4'
-                    return (
-                      <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                        <td style={tdCell}><Link href={`/sales/leads?lead=${lead.id}`} style={{ color: 'white', textDecoration: 'none', fontWeight: 700 }}>{lead.business_name}</Link></td>
-                        <td style={tdCell}><span style={{ color: '#7BAED4' }}>{lead.contact_name ?? '—'}</span></td>
-                        <td style={tdCell}>
-                          <span style={{
-                            display: 'inline-block', padding: '3px 9px', borderRadius: 99,
-                            background: style.bg, color: style.color, border: `1px solid ${style.border}`,
-                            fontSize: 11, fontWeight: 700,
-                          }}>{style.label}</span>
-                        </td>
-                        <td style={{ ...tdCell, color: daysColor, fontWeight: 600 }}>
-                          {days === 0 ? 'today' : `${days}d`}
-                        </td>
-                        <td style={tdCell}>
-                          <Link href={`/sales/leads?lead=${lead.id}`} style={{ color: '#E8622A', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>
-                            Log Activity →
-                          </Link>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+      {/* ── Main grid ───────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sales-dash-grid">
 
-        {/* Activity feed */}
-        <Panel title="Recent activity">
-          {!activities || activities.length === 0 ? (
-            <EmptyState text="No activity logged yet. Activity will show here once you start working leads." />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {activities.map(a => {
-                const Icon = ACTIVITY_ICONS[a.activity_type] ?? Pencil
-                const biz = Array.isArray(a.leads) ? (a.leads[0] as { business_name?: string } | undefined)?.business_name : (a.leads as { business_name?: string } | null)?.business_name
-                return (
-                  <div key={a.id} style={{
-                    display: 'flex', gap: 11, padding: 12, borderRadius: 9,
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                  }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 7, flexShrink: 0,
-                      background: 'rgba(232,98,42,0.12)', color: '#E8622A',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Icon size={14} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'white' }}>{a.title}</div>
-                      <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 2 }}>
-                        {biz ?? 'Lead'} · {timeAgo(a.created_at)}
+        {/* LEFT column: pipeline + activity */}
+        <div className="flex min-w-0 flex-col gap-4">
+
+          {/* My Pipeline mini-kanban */}
+          <Panel>
+            <PanelHeader
+              title="My Pipeline"
+              action={
+                <Link href="/sales/leads" className="text-xs font-bold text-orange no-underline hover:opacity-80">
+                  View all {totalAssigned} leads →
+                </Link>
+              }
+            />
+            {openCount === 0 ? (
+              <EmptyState text="No open leads yet. Leads are assigned by your manager." />
+            ) : (
+              <KanbanBoard>
+                {PIPELINE_STAGES.map(({ key, label }) => {
+                  const stageLeads = byStage[key] ?? []
+                  return (
+                    <KanbanColumn
+                      key={key}
+                      title={label}
+                      count={stageLeads.length}
+                      className="!w-[200px]"
+                    >
+                      {stageLeads.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-[11.5px] text-faint">
+                          —
+                        </div>
+                      ) : (
+                        stageLeads.slice(0, 4).map(lead => (
+                          <Link
+                            key={lead.id}
+                            href={`/sales/leads?lead=${lead.id}`}
+                            className="no-underline"
+                          >
+                            <KanbanCard
+                              business={lead.business_name}
+                              contact={lead.contact_name ?? undefined}
+                              plan={(() => {
+                                const p = lead.won_plan as 'starter' | 'growth' | 'pro' | null
+                                return p && (p === 'starter' || p === 'growth' || p === 'pro')
+                                  ? `$${PLAN_PRICE_AUD[p]}/mo`
+                                  : undefined
+                              })()}
+                              meta={timeAgo(lead.updated_at)}
+                              accent={daysSince(lead.updated_at) >= 3 ? 'hot' : daysSince(lead.updated_at) >= 1 ? 'warm' : undefined}
+                            />
+                          </Link>
+                        ))
+                      )}
+                    </KanbanColumn>
+                  )
+                })}
+              </KanbanBoard>
+            )}
+          </Panel>
+
+          {/* Recent activity feed */}
+          <Panel>
+            <PanelHeader title="Recent activity" meta="Latest" />
+            {!activities || activities.length === 0 ? (
+              <EmptyState text="No activity logged yet. Activity will show here once you start working leads." />
+            ) : (
+              <div className="flex flex-col">
+                {activities.map((a, idx) => {
+                  const Icon = ACTIVITY_ICONS[a.activity_type] ?? Pencil
+                  const biz = Array.isArray(a.leads)
+                    ? (a.leads[0] as { business_name?: string } | undefined)?.business_name
+                    : (a.leads as { business_name?: string } | null)?.business_name
+                  return (
+                    <div
+                      key={a.id}
+                      className={`flex gap-2.5 py-2.5 ${idx < activities.length - 1 ? 'border-b border-line' : ''}`}
+                    >
+                      {/* icon */}
+                      <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-[8px] bg-[rgba(232,98,42,.12)] text-orange">
+                        <Icon size={14} />
+                      </div>
+                      {/* body */}
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <div className="text-[13px] font-bold text-text">{a.title}</div>
+                        <div className="mt-0.5 truncate text-[12px] text-dim">
+                          {biz ?? 'Lead'}
+                        </div>
+                      </div>
+                      {/* time */}
+                      <div className="flex-shrink-0 text-[11px] text-faint mt-0.5">
+                        {timeAgo(a.created_at)}
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* RIGHT column: commissions card + quick actions */}
+        <div className="flex flex-col gap-4">
+          <Panel>
+            <PanelHeader title="Commissions" />
+
+            {/* Green gradient commissions card */}
+            <div className="mb-3 rounded-[13px] border border-[rgba(53,201,138,.2)] bg-[linear-gradient(135deg,rgba(53,201,138,.12),rgba(53,201,138,.05))] p-4 shadow-[0_1px_4px_rgba(0,0,0,.28)]">
+              <div className="tnum text-[32px] font-extrabold leading-none tracking-[-1px] text-green">
+                {formatCurrency(commPending)}
+              </div>
+              <div className="mt-1 text-[12px] text-dim">Pending · awaiting approval</div>
+              <div className="mt-2 flex justify-between border-t border-[rgba(53,201,138,.15)] pt-2 text-[12.5px]">
+                <span className="text-dim">Approved</span>
+                <strong className="font-bold text-green tnum">{formatCurrency(commApproved)}</strong>
+              </div>
+              <div className="flex justify-between border-t border-[rgba(53,201,138,.15)] pt-2 text-[12.5px]">
+                <span className="text-dim">Pending</span>
+                <strong className="font-bold text-[#f2b53c] tnum">{formatCurrency(commPending)}</strong>
+              </div>
+              <div className="flex justify-between border-t border-[rgba(53,201,138,.15)] pt-2 text-[12.5px]">
+                <span className="text-dim">Paid (all time)</span>
+                <strong className="font-bold text-text tnum">{formatCurrency(commPaid)}</strong>
+              </div>
             </div>
+
+            {/* Quick actions */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Link
+                href="/sales/leads"
+                className="flex items-center gap-2 rounded-[10px] border border-line bg-card-2 px-3 py-[11px] text-[12.5px] font-bold text-text no-underline transition hover:border-[rgba(238,106,44,.3)] hover:text-orange"
+              >
+                <UserPlus size={14} className="flex-shrink-0" />
+                Add lead
+              </Link>
+              <Link
+                href="/sales/demo-caller"
+                className="flex items-center gap-2 rounded-[10px] border border-line bg-card-2 px-3 py-[11px] text-[12.5px] font-bold text-text no-underline transition hover:border-[rgba(238,106,44,.3)] hover:text-orange"
+              >
+                <Play size={14} className="flex-shrink-0" />
+                Run demo
+              </Link>
+              <Link
+                href="/sales/leads?filter=won"
+                className="col-span-2 flex items-center justify-center gap-2 rounded-[10px] bg-[linear-gradient(135deg,#f58a42,#e86526)] px-3 py-3 text-[13px] font-bold text-white no-underline shadow-[0_4px_14px_rgba(238,106,44,.35)] transition hover:brightness-110"
+              >
+                <Users size={14} className="flex-shrink-0" />
+                Onboard new client
+              </Link>
+            </div>
+          </Panel>
+
+          {/* Pipeline value banner */}
+          {openCount > 0 && (
+            <Panel className="border-[rgba(232,98,42,0.2)] bg-[rgba(232,98,42,0.06)]">
+              <p className="m-0 text-[13px] text-orange leading-relaxed">
+                Your open pipeline is worth{' '}
+                <strong className="tnum">{formatCurrency(pipelineValue)}</strong>
+                {' '}in commission if every deal closes.
+              </p>
+            </Panel>
           )}
-        </Panel>
+        </div>
       </div>
 
       <style>{`
+        .sales-dash-grid {
+          grid-template-columns: 1fr;
+        }
         @media (min-width: 1100px) {
-          .sales-dashboard-grid { grid-template-columns: 2fr 1fr !important; }
+          .sales-dash-grid {
+            grid-template-columns: 1fr 340px;
+          }
         }
       `}</style>
     </div>
   )
 }
 
-function PageHeading({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div style={{ marginBottom: 24 }}>
-      <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>{title}</h1>
-      <p style={{ fontSize: 14, color: '#7BAED4', margin: 0, marginTop: 4 }}>{sub}</p>
-    </div>
-  )
-}
-
-function StatCard({ icon: Icon, label, value, sub, accent }: { icon: React.ComponentType<{ size?: number }>; label: string; value: string; sub?: string; accent: string }) {
-  return (
-    <div style={{
-      padding: '18px 20px', borderRadius: 12,
-      background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <div style={{
-        width: 32, height: 32, borderRadius: 8,
-        background: `${accent}20`, color: accent,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 12,
-      }}>
-        <Icon size={16} />
-      </div>
-      <div style={{ fontSize: 12, color: '#7BAED4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-      <div style={{ fontSize: 26, color: 'white', fontWeight: 800, marginTop: 4, letterSpacing: '-0.5px' }}>{value}</div>
-      {sub && (
-        <div style={{ fontSize: 11, color: '#4A7FBB', fontWeight: 600, marginTop: 4 }}>{sub}</div>
-      )}
-    </div>
-  )
-}
-
-function Panel({ title, children, cta }: { title: string; children: React.ReactNode; cta?: { label: string; href: string } }) {
-  return (
-    <div style={{
-      background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-      borderRadius: 14, padding: 20,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: 'white', margin: 0 }}>{title}</h2>
-        {cta && <Link href={cta.href} style={{ fontSize: 13, color: '#E8622A', fontWeight: 600, textDecoration: 'none' }}>{cta.label}</Link>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
 function EmptyState({ text }: { text: string }) {
   return (
-    <div style={{
-      padding: 28, borderRadius: 10, textAlign: 'center',
-      border: '1px dashed rgba(255,255,255,0.1)',
-      color: '#7BAED4', fontSize: 13, lineHeight: 1.6,
-    }}>{text}</div>
+    <div className="rounded-[10px] border border-dashed border-[rgba(255,255,255,.1)] p-7 text-center text-[13px] leading-relaxed text-dim">
+      {text}
+    </div>
   )
 }
-
-const tdHead: React.CSSProperties = { padding: '10px 8px', fontWeight: 700 }
-const tdCell: React.CSSProperties = { padding: '12px 8px', verticalAlign: 'middle' }

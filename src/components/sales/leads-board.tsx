@@ -2,13 +2,26 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { LayoutGrid, List as ListIcon, Search, Phone, Plus } from 'lucide-react'
+import { LayoutGrid, List as ListIcon, Search, Plus } from 'lucide-react'
 import {
   LEAD_STATUS_COLUMNS, LEAD_STATUS_STYLES,
-  type LeadStatus, daysSince, timeAgo,
+  type LeadStatus, daysSince, timeAgo, formatCurrency,
 } from '@/lib/sales-format'
+import { StatsBar, type StatItem } from '@/components/portal/ui-v2/stats-bar'
+import {
+  KanbanBoard, KanbanColumn, KanbanCard,
+} from '@/components/portal/ui-v2/kanban'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
+import { Tag, type TagVariant } from '@/components/portal/ui-v2/tag'
 import LeadDrawer from './lead-drawer'
 import AddLeadModal from './add-lead-modal'
+
+// Plan prices defined here (not imported from admin-auth to avoid pulling next/headers into a client component)
+const PLAN_PRICE: Record<'starter' | 'growth' | 'pro', number> = {
+  starter: 299,
+  growth: 499,
+  pro: 799,
+}
 
 export interface LeadRow {
   id: string
@@ -39,6 +52,43 @@ interface Props {
   initialLeads: LeadRow[]
   repId: string
 }
+
+// Map a lead's won_plan to a monthly AUD value
+function leadMrr(lead: LeadRow): number {
+  if (!lead.won_plan) return 0
+  return PLAN_PRICE[lead.won_plan] ?? 0
+}
+
+// Map industry string to the closest Tag variant
+function industryTagVariant(industry: string | null): TagVariant {
+  if (!industry) return 'question'
+  const lower = industry.toLowerCase()
+  if (lower.includes('trade') || lower.includes('plumb') || lower.includes('elec') || lower.includes('build')) return 'emergency'
+  if (lower.includes('food') || lower.includes('hospit') || lower.includes('cater') || lower.includes('resto')) return 'book'
+  if (lower.includes('tow') || lower.includes('transport') || lower.includes('logis')) return 'transfer'
+  if (lower.includes('health') || lower.includes('med') || lower.includes('dent') || lower.includes('physio')) return 'book'
+  if (lower.includes('retail') || lower.includes('ecomm')) return 'quote'
+  return 'question'
+}
+
+// Determine accent for a card based on recency of update
+function cardAccent(lead: LeadRow): 'hot' | 'warm' | undefined {
+  if (lead.status === 'won' || lead.status === 'lost' || lead.status === 'bad_lead') return undefined
+  const days = daysSince(lead.updated_at)
+  if (days === 0) return 'hot'
+  if (days === 1) return 'warm'
+  return undefined
+}
+
+// Map LEAD_STATUS_COLUMNS to KanbanColumn tone + title color
+function columnTone(status: LeadStatus): 'default' | 'won' | 'lost' {
+  if (status === 'won') return 'won'
+  if (status === 'lost' || status === 'bad_lead') return 'lost'
+  return 'default'
+}
+
+// Terminal statuses don't need the "Add lead" footer
+const TERMINAL_STATUSES: LeadStatus[] = ['won', 'lost', 'bad_lead']
 
 export default function LeadsBoard({ initialLeads, repId }: Props) {
   const search = useSearchParams()
@@ -92,6 +142,37 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
     return m
   }, [filtered])
 
+  // ── Stats bar computations (from real data) ──────────────────────────────
+  const stats = useMemo<StatItem[]>(() => {
+    const activeStatuses: LeadStatus[] = ['new', 'contacted', 'demo_booked', 'demo_done', 'proposal_sent', 'nurture']
+    const activeLeads = leads.filter(l => activeStatuses.includes(l.status))
+    const wonLeads = leads.filter(l => l.status === 'won')
+
+    // Pipeline value: sum of plan MRR for all active leads (use growth as default if no plan set)
+    const pipelineValue = activeLeads.reduce((sum, l) => {
+      return sum + (l.won_plan ? leadMrr(l) : PLAN_PRICE.growth)
+    }, 0)
+
+    // Won this sprint: won leads (we don't have sprint window here, so count all won)
+    const wonCount = wonLeads.length
+
+    // MRR closed: sum of won_plan MRR for won leads
+    const mrrClosed = wonLeads.reduce((sum, l) => sum + leadMrr(l), 0)
+
+    // Close rate: won / (won + lost + bad_lead) if any terminal
+    const lostCount = leads.filter(l => l.status === 'lost' || l.status === 'bad_lead').length
+    const total = wonCount + lostCount
+    const closeRate = total > 0 ? Math.round((wonCount / total) * 100) : 0
+
+    return [
+      { value: activeLeads.length.toString(), label: 'Active leads' },
+      { value: formatCurrency(pipelineValue), label: 'Pipeline value', color: 'var(--color-orange)' },
+      { value: wonCount.toString(), label: 'Won', color: 'var(--color-green)' },
+      { value: mrrClosed > 0 ? formatCurrency(mrrClosed) : '—', label: 'MRR closed', color: 'var(--color-green)' },
+      { value: total > 0 ? `${closeRate}%` : '—', label: 'Close rate' },
+    ]
+  }, [leads])
+
   const selectedLead = leads.find(l => l.id === selectedLeadId) ?? null
 
   function patchLead(updated: LeadRow) {
@@ -103,115 +184,103 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
   }
 
   return (
-    <div style={{ padding: '24px 24px 40px', fontFamily: 'Outfit, sans-serif' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>My Pipeline</h1>
-          <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginTop: 2 }}>
-            {filtered.length} of {leads.length} leads
-          </p>
-        </div>
+    <div className="flex flex-col min-h-screen bg-bg w-full min-w-0 overflow-x-hidden">
+      {/* Stats bar */}
+      <StatsBar stats={stats} />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            onClick={() => setAddLeadOpen(true)}
-            style={{
-              padding: '9px 16px', borderRadius: 9, cursor: 'pointer',
-              background: '#E8622A', color: 'white', border: 'none',
-              fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}
-          >
-            <Plus size={14} /> Add Lead
-          </button>
+      {/* Page content */}
+      <div className="px-4 sm:px-6 pt-5 pb-10 flex flex-col gap-4 flex-1 min-w-0">
+        {/* Header row */}
+        <div className="flex items-center justify-between flex-wrap gap-3 min-w-0">
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-[800] tracking-[-0.5px] text-text m-0">My Pipeline</h1>
+            <p className="text-[13px] text-dim mt-0.5">
+              {filtered.length} of {leads.length} leads
+            </p>
+          </div>
 
-          {/* View toggle */}
-          <div style={{ display: 'flex', background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 3 }}>
-            {(['kanban', 'list'] as ViewMode[]).map(m => (
-              <button
-                key={m}
-                onClick={() => setView(m)}
-                style={{
-                  padding: '7px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                  background: view === m ? '#E8622A' : 'transparent',
-                  color: view === m ? 'white' : '#7BAED4',
-                  fontFamily: 'Outfit, sans-serif', fontSize: 12, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                {m === 'kanban' ? <LayoutGrid size={13} /> : <ListIcon size={13} />}
-                {m === 'kanban' ? 'Pipeline' : 'List'}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <ButtonV2 variant="primary" onClick={() => setAddLeadOpen(true)}>
+              <Plus className="w-[14px] h-[14px]" />
+              Add Lead
+            </ButtonV2>
+
+            {/* View toggle */}
+            <div className="flex bg-card border border-line rounded-[10px] p-[3px]">
+              {(['kanban', 'list'] as ViewMode[]).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setView(m)}
+                  className={[
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-[7px] text-[12px] font-bold transition-colors cursor-pointer border-none',
+                    view === m
+                      ? 'bg-[linear-gradient(135deg,#f58a42,#e86526)] text-white'
+                      : 'bg-transparent text-dim hover:text-text',
+                  ].join(' ')}
+                >
+                  {m === 'kanban' ? <LayoutGrid className="w-[13px] h-[13px]" /> : <ListIcon className="w-[13px] h-[13px]" />}
+                  {m === 'kanban' ? 'Pipeline' : 'List'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360 }}>
-          <Search size={14} style={{ position: 'absolute', top: 12, left: 12, color: '#7BAED4' }} />
-          <input
-            value={filterText}
-            onChange={e => setFilterText(e.target.value)}
-            placeholder="Search business or contact"
-            style={{
-              width: '100%', padding: '10px 12px 10px 34px', borderRadius: 9,
-              background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)',
-              color: 'white', fontFamily: 'Outfit, sans-serif', fontSize: 13, outline: 'none',
-            }}
-          />
-        </div>
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value as 'all' | LeadStatus)}
-          style={selectStyle}
-        >
-          <option value="all">All statuses</option>
-          {LEAD_STATUS_COLUMNS.map(s => (
-            <option key={s} value={s}>{LEAD_STATUS_STYLES[s].label}</option>
-          ))}
-        </select>
-        <select
-          value={filterIndustry}
-          onChange={e => setFilterIndustry(e.target.value)}
-          style={selectStyle}
-          disabled={industries.length === 0}
-        >
-          <option value="all">All industries</option>
-          {industries.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
-      </div>
+        {/* Filter bar */}
+        <div className="flex gap-2.5 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[200px] max-w-[360px]">
+            <Search className="absolute top-1/2 left-3 -translate-y-1/2 w-[14px] h-[14px] text-dim pointer-events-none" />
+            <input
+              value={filterText}
+              onChange={e => setFilterText(e.target.value)}
+              placeholder="Search business or contact"
+              className="w-full pl-9 pr-3 py-2.5 rounded-[9px] bg-card border border-line text-text text-[13px] placeholder:text-faint outline-none focus:border-orange/50 transition-colors"
+            />
+          </div>
 
-      {leads.length === 0 ? (
-        <div style={{
-          padding: 40, borderRadius: 12, background: '#0A1E38',
-          border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center',
-        }}>
-          <p style={{ fontSize: 14, color: 'white', margin: 0, marginBottom: 6, fontWeight: 600 }}>
-            No leads yet.
-          </p>
-          <p style={{ fontSize: 13, color: '#7BAED4', margin: 0, marginBottom: 18 }}>
-            Start building your pipeline by adding your first lead.
-          </p>
-          <button
-            onClick={() => setAddLeadOpen(true)}
-            style={{
-              padding: '10px 18px', borderRadius: 9, cursor: 'pointer',
-              background: '#E8622A', color: 'white', border: 'none',
-              fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 700,
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}
+          {/* Industry filter */}
+          <select
+            value={filterIndustry}
+            onChange={e => setFilterIndustry(e.target.value)}
+            disabled={industries.length === 0}
+            className="px-3 py-2.5 rounded-[9px] bg-card border border-line text-text text-[13px] outline-none cursor-pointer disabled:opacity-50"
           >
-            <Plus size={14} /> Add Your First Lead
-          </button>
-        </div>
-      ) : view === 'kanban' ? (
-        <KanbanView grouped={grouped} onSelect={setSelectedLeadId} />
-      ) : (
-        <ListView leads={filtered} onSelect={setSelectedLeadId} />
-      )}
+            <option value="all">All industries</option>
+            {industries.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
 
+          {/* Status filter */}
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value as 'all' | LeadStatus)}
+            className="px-3 py-2.5 rounded-[9px] bg-card border border-line text-text text-[13px] outline-none cursor-pointer"
+          >
+            <option value="all">All statuses</option>
+            {LEAD_STATUS_COLUMNS.map(s => (
+              <option key={s} value={s}>{LEAD_STATUS_STYLES[s].label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Empty state */}
+        {leads.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 p-10 rounded-xl bg-card border border-dashed border-line-strong text-center">
+            <p className="text-[14px] font-semibold text-text m-0">No leads yet.</p>
+            <p className="text-[13px] text-dim m-0">Start building your pipeline by adding your first lead.</p>
+            <ButtonV2 variant="primary" onClick={() => setAddLeadOpen(true)}>
+              <Plus className="w-[14px] h-[14px]" />
+              Add Your First Lead
+            </ButtonV2>
+          </div>
+        ) : view === 'kanban' ? (
+          <KanbanBoardView grouped={grouped} onSelect={setSelectedLeadId} onAddLead={() => setAddLeadOpen(true)} />
+        ) : (
+          <LeadListView leads={filtered} onSelect={setSelectedLeadId} />
+        )}
+      </div>
+
+      {/* Drawer */}
       {selectedLead && (
         <LeadDrawer
           lead={selectedLead}
@@ -222,6 +291,7 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
         />
       )}
 
+      {/* Add lead modal */}
       {addLeadOpen && (
         <AddLeadModal
           onClose={() => setAddLeadOpen(false)}
@@ -232,138 +302,127 @@ export default function LeadsBoard({ initialLeads, repId }: Props) {
   )
 }
 
-function KanbanView({ grouped, onSelect }: { grouped: Record<string, LeadRow[]>; onSelect: (id: string) => void }) {
+// ── Kanban board ──────────────────────────────────────────────────────────────
+function KanbanBoardView({
+  grouped,
+  onSelect,
+  onAddLead,
+}: {
+  grouped: Record<string, LeadRow[]>
+  onSelect: (id: string) => void
+  onAddLead: () => void
+}) {
   return (
-    <div style={{
-      display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12,
-      scrollSnapType: 'x mandatory',
-    }}>
+    <KanbanBoard>
       {LEAD_STATUS_COLUMNS.map(status => {
         const style = LEAD_STATUS_STYLES[status]
         const items = grouped[status] ?? []
+        const tone = columnTone(status)
+        const isTerminal = TERMINAL_STATUSES.includes(status)
+
         return (
-          <div
+          <KanbanColumn
             key={status}
-            style={{
-              minWidth: 260, maxWidth: 280, flex: '0 0 auto',
-              background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 12, padding: 12, scrollSnapAlign: 'start',
-            }}
+            title={style.label}
+            count={items.length}
+            tone={tone}
+            titleColor={style.color}
+            onAddLead={isTerminal ? undefined : onAddLead}
           >
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              marginBottom: 10,
-            }}>
-              <span style={{
-                fontSize: 11, fontWeight: 800, color: style.color,
-                textTransform: 'uppercase', letterSpacing: '0.06em',
-              }}>{style.label}</span>
-              <span style={{
-                fontSize: 11, fontWeight: 700, color: '#7BAED4',
-                background: 'rgba(255,255,255,0.05)', padding: '2px 7px', borderRadius: 99,
-              }}>{items.length}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.length === 0 ? (
-                <div style={{ fontSize: 12, color: '#4A7FBB', padding: '14px 8px', textAlign: 'center', fontStyle: 'italic' }}>
-                  Empty
-                </div>
-              ) : items.map(lead => (
-                <LeadCard key={lead.id} lead={lead} onClick={() => onSelect(lead.id)} />
-              ))}
-            </div>
-          </div>
+            {items.length === 0 ? (
+              <div className="text-[12px] text-faint italic py-4 text-center">Empty</div>
+            ) : (
+              items.map(lead => {
+                const days = daysSince(lead.updated_at)
+                const metaText = days === 0 ? 'today' : timeAgo(lead.updated_at)
+                const industry = lead.industry
+                const variant = industry ? industryTagVariant(industry) : null
+
+                return (
+                  <KanbanCard
+                    key={lead.id}
+                    business={lead.business_name}
+                    contact={lead.contact_name ?? undefined}
+                    plan={lead.won_plan
+                      ? `${lead.won_plan.charAt(0).toUpperCase()}${lead.won_plan.slice(1)} — $${PLAN_PRICE[lead.won_plan]}/mo`
+                      : undefined}
+                    tag={variant && industry ? { variant, label: industry } : undefined}
+                    meta={metaText}
+                    accent={cardAccent(lead)}
+                    wonBadge={lead.status === 'won'}
+                    onClick={() => onSelect(lead.id)}
+                  />
+                )
+              })
+            )}
+          </KanbanColumn>
         )
       })}
-    </div>
+    </KanbanBoard>
   )
 }
 
-function LeadCard({ lead, onClick }: { lead: LeadRow; onClick: () => void }) {
-  const days = daysSince(lead.updated_at)
-  const dayColor = days >= 3 ? '#ef4444' : days >= 2 ? '#f59e0b' : '#7BAED4'
+// ── List view ─────────────────────────────────────────────────────────────────
+function LeadListView({
+  leads,
+  onSelect,
+}: {
+  leads: LeadRow[]
+  onSelect: (id: string) => void
+}) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        textAlign: 'left', width: '100%',
-        background: '#061322', border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 10, padding: 12, cursor: 'pointer',
-        fontFamily: 'Outfit, sans-serif', color: 'white',
-      }}
-    >
-      <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25, marginBottom: 4 }}>
-        {lead.business_name}
-      </div>
-      {lead.contact_name && (
-        <div style={{ fontSize: 12, color: '#7BAED4', marginBottom: 6 }}>
-          {lead.contact_name}
-        </div>
-      )}
-      {lead.phone && (
-        <div style={{ fontSize: 12, color: '#4A9FE8', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
-          <Phone size={11} /> {lead.phone}
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        {lead.industry ? (
-          <span style={{
-            fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 99,
-            background: 'rgba(74,159,232,0.12)', color: '#4A9FE8',
-            border: '1px solid rgba(74,159,232,0.3)',
-          }}>{lead.industry}</span>
-        ) : <span />}
-        <span style={{ fontSize: 11, color: dayColor, fontWeight: 700 }}>
-          {days === 0 ? 'today' : `${days}d`}
-        </span>
-      </div>
-    </button>
-  )
-}
-
-function ListView({ leads, onSelect }: { leads: LeadRow[]; onSelect: (id: string) => void }) {
-  return (
-    <div style={{
-      background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)',
-      borderRadius: 12, overflow: 'hidden',
-    }}>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 720 }}>
+    <div className="bg-card border border-line rounded-xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]" style={{ minWidth: 720 }}>
           <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.03)', color: '#4A7FBB', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              <th style={th}>Business</th>
-              <th style={th}>Contact</th>
-              <th style={th}>Phone</th>
-              <th style={th}>Industry</th>
-              <th style={th}>Status</th>
-              <th style={th}>Last activity</th>
-              <th style={th}>Days</th>
+            <tr className="bg-card-2 text-faint text-[11px] uppercase tracking-[.06em]">
+              <th className="px-4 py-2.5 text-left font-semibold">Business</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Contact</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Industry</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Plan</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Status</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Last activity</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Age</th>
             </tr>
           </thead>
           <tbody>
             {leads.map(lead => {
               const sty = LEAD_STATUS_STYLES[lead.status]
               const days = daysSince(lead.updated_at)
-              const dayColor = days >= 3 ? '#ef4444' : days >= 2 ? '#f59e0b' : '#7BAED4'
+              const dayColorClass = days >= 3 ? 'text-red-400' : days >= 2 ? 'text-gold' : 'text-dim'
+              const industry = lead.industry
+              const variant = industry ? industryTagVariant(industry) : null
+
               return (
                 <tr
                   key={lead.id}
                   onClick={() => onSelect(lead.id)}
-                  style={{ borderTop: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+                  className="border-t border-line cursor-pointer hover:bg-card-2 transition-colors"
                 >
-                  <td style={td}><strong style={{ color: 'white' }}>{lead.business_name}</strong></td>
-                  <td style={{ ...td, color: '#7BAED4' }}>{lead.contact_name ?? '—'}</td>
-                  <td style={{ ...td, color: '#4A9FE8' }}>{lead.phone ?? '—'}</td>
-                  <td style={{ ...td, color: '#7BAED4' }}>{lead.industry ?? '—'}</td>
-                  <td style={td}>
-                    <span style={{
-                      display: 'inline-block', padding: '3px 9px', borderRadius: 99,
-                      background: sty.bg, color: sty.color, border: `1px solid ${sty.border}`,
-                      fontSize: 11, fontWeight: 700,
-                    }}>{sty.label}</span>
+                  <td className="px-4 py-3 font-[700] text-text">{lead.business_name}</td>
+                  <td className="px-4 py-3 text-dim">{lead.contact_name ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    {variant && industry
+                      ? <Tag variant={variant}>{industry}</Tag>
+                      : <span className="text-faint">—</span>}
                   </td>
-                  <td style={{ ...td, color: '#7BAED4' }}>{timeAgo(lead.updated_at)}</td>
-                  <td style={{ ...td, color: dayColor, fontWeight: 700 }}>{days === 0 ? 'today' : `${days}d`}</td>
+                  <td className="px-4 py-3 text-orange font-semibold text-[12px]">
+                    {lead.won_plan
+                      ? `${lead.won_plan.charAt(0).toUpperCase()}${lead.won_plan.slice(1)}`
+                      : <span className="text-faint">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-[700]"
+                      style={{ background: sty.bg, color: sty.color, border: `1px solid ${sty.border}` }}
+                    >
+                      {sty.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-dim">{timeAgo(lead.updated_at)}</td>
+                  <td className={`px-4 py-3 font-[700] ${dayColorClass}`}>
+                    {days === 0 ? 'today' : `${days}d`}
+                  </td>
                 </tr>
               )
             })}
@@ -373,11 +432,3 @@ function ListView({ leads, onSelect }: { leads: LeadRow[]; onSelect: (id: string
     </div>
   )
 }
-
-const selectStyle: React.CSSProperties = {
-  padding: '10px 12px', borderRadius: 9,
-  background: '#0A1E38', border: '1px solid rgba(255,255,255,0.08)',
-  color: 'white', fontFamily: 'Outfit, sans-serif', fontSize: 13, outline: 'none',
-}
-const th: React.CSSProperties = { padding: '10px 12px', textAlign: 'left' }
-const td: React.CSSProperties = { padding: '12px', verticalAlign: 'middle' }

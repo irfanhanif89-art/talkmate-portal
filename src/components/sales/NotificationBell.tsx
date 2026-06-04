@@ -102,10 +102,9 @@ export default function NotificationBell({ repId }: Props) {
         style={{
           position: 'relative',
           background: 'transparent',
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: '1px solid var(--line)',
           borderRadius: 8, padding: '8px 10px',
-          color: '#7BAED4', cursor: 'pointer',
-          fontFamily: 'Outfit, sans-serif',
+          color: 'var(--dim)', cursor: 'pointer',
         }}
       >
         <Bell size={16} />
@@ -114,7 +113,7 @@ export default function NotificationBell({ repId }: Props) {
             position: 'absolute', top: -4, right: -4,
             width: 10, height: 10, borderRadius: '50%',
             background: '#ef4444',
-            border: '2px solid #061322',
+            border: '2px solid var(--card)',
           }} />
         )}
       </button>
@@ -124,7 +123,7 @@ export default function NotificationBell({ repId }: Props) {
           onClick={() => setOpen(false)}
           style={{
             position: 'fixed', inset: 0, zIndex: 200,
-            background: 'rgba(6,19,34,0.6)', backdropFilter: 'blur(2px)',
+            background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)',
           }}
         >
           <aside
@@ -132,19 +131,19 @@ export default function NotificationBell({ repId }: Props) {
             style={{
               position: 'fixed', top: 0, right: 0, bottom: 0,
               width: 'min(380px, 100vw)',
-              background: '#0A1E38', color: 'white',
-              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              borderLeft: '1px solid var(--line)',
               overflowY: 'auto', display: 'flex', flexDirection: 'column',
-              fontFamily: 'Outfit, sans-serif',
               zIndex: 201,
             }}
           >
             <div style={{
               padding: '18px 20px',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              borderBottom: '1px solid var(--line)',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Notifications</h2>
+              <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text)' }}>Notifications</h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {unreadCount > 0 && (
                   <button
@@ -160,9 +159,9 @@ export default function NotificationBell({ repId }: Props) {
                   aria-label="Close"
                   style={{
                     background: 'transparent',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: '1px solid var(--line)',
                     borderRadius: 7, padding: 6,
-                    color: '#7BAED4', cursor: 'pointer',
+                    color: 'var(--dim)', cursor: 'pointer',
                   }}
                 ><X size={14} /></button>
               </div>
@@ -170,19 +169,19 @@ export default function NotificationBell({ repId }: Props) {
 
             <div style={{ flex: 1, padding: '12px 12px 22px' }}>
               {loading && items.length === 0 ? (
-                <div style={{ padding: 24, textAlign: 'center', color: '#7BAED4', fontSize: 13 }}>
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--dim)', fontSize: 13 }}>
                   Loading...
                 </div>
               ) : items.length === 0 ? (
                 <div style={{
-                  padding: 28, textAlign: 'center', color: '#7BAED4',
-                  fontSize: 13, border: '1px dashed rgba(255,255,255,0.08)',
+                  padding: 28, textAlign: 'center', color: 'var(--dim)',
+                  fontSize: 13, border: '1px dashed var(--line)',
                   borderRadius: 10, margin: '16px 8px',
                 }}>You are all caught up.</div>
               ) : (
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {items.map(item => {
-                    const meta = NOTIFICATION_META[item.type] ?? { icon: Bell, color: '#7BAED4' }
+                    const meta = NOTIFICATION_META[item.type] ?? { icon: Bell, color: 'var(--dim)' }
                     const Icon = meta.icon
                     return (
                       <li key={item.id}>
@@ -192,8 +191,8 @@ export default function NotificationBell({ repId }: Props) {
                             width: '100%', textAlign: 'left', cursor: 'pointer',
                             display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 9,
                             background: item.read ? 'transparent' : 'rgba(232,98,42,0.05)',
-                            border: '1px solid ' + (item.read ? 'rgba(255,255,255,0.05)' : 'rgba(232,98,42,0.25)'),
-                            fontFamily: 'Outfit, sans-serif', color: 'white',
+                            border: '1px solid ' + (item.read ? 'var(--line)' : 'rgba(232,98,42,0.25)'),
+                            color: 'var(--text)',
                           }}
                         >
                           <div style={{
@@ -204,10 +203,10 @@ export default function NotificationBell({ repId }: Props) {
                             <Icon size={14} />
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, color: 'white', fontWeight: item.read ? 500 : 700, lineHeight: 1.4 }}>
+                            <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: item.read ? 500 : 700, lineHeight: 1.4 }}>
                               {item.message}
                             </div>
-                            <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 2 }}>
+                            <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 2 }}>
                               {timeAgo(item.created_at)}
                             </div>
                           </div>

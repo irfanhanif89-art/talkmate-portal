@@ -13,8 +13,8 @@ import {
   ChevronDown, TrendingUp, TrendingDown, Info, X, CheckCircle2,
 } from 'lucide-react'
 
-const NAVY = '#061322'
-const ORANGE = '#E8622A'
+const NAVY = 'var(--card)'
+const ORANGE = 'var(--orange)'
 
 type Period = 'this_month' | 'last_month' | 'all_time'
 
@@ -99,7 +99,7 @@ function BreakdownCard(props: {
         {props.secondary && (
           <div style={{ fontSize: 13, fontWeight: 700, color: '#22C55E', marginTop: 3 }}>{props.secondary}</div>
         )}
-        <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 5, lineHeight: 1.4 }}>{props.sub}</div>
+        <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 5, lineHeight: 1.4 }}>{props.sub}</div>
       </div>
     </div>
   )
@@ -216,7 +216,7 @@ export default function RoiSection() {
     !bannerDismissed && data != null && data.avgJobValue === 250
 
   return (
-    <div style={{ marginBottom: 22, fontFamily: 'Outfit, sans-serif' }}>
+    <div style={{ marginBottom: 22 }}>
       {/* Hero */}
       <div style={{
         background: NAVY,
@@ -238,7 +238,7 @@ export default function RoiSection() {
                   fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   fontFamily: 'inherit',
                   background: active ? ORANGE : 'rgba(255,255,255,0.06)',
-                  color: active ? 'white' : '#7BAED4',
+                  color: active ? 'white' : 'var(--dim)',
                   border: active ? '1px solid ' + ORANGE : '1px solid rgba(255,255,255,0.08)',
                   transition: 'all 0.15s',
                 }}
@@ -249,7 +249,7 @@ export default function RoiSection() {
           })}
         </div>
 
-        <div style={{ fontSize: 14, color: '#7BAED4', marginBottom: 6 }}>
+        <div style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 6 }}>
           TalkMate recovered an estimated
         </div>
 
@@ -275,7 +275,7 @@ export default function RoiSection() {
           )}
         </div>
 
-        <div style={{ fontSize: 14, color: '#7BAED4', marginTop: 6 }}>
+        <div style={{ fontSize: 14, color: 'var(--dim)', marginTop: 6 }}>
           for you {periodSuffix}
         </div>
 
@@ -286,7 +286,7 @@ export default function RoiSection() {
           style={{
             marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6,
             background: 'transparent', border: 'none', cursor: 'pointer',
-            color: '#7BAED4', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', padding: 0,
+            color: 'var(--dim)', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', padding: 0,
           }}
         >
           <Info size={13} />
@@ -397,7 +397,7 @@ export default function RoiSection() {
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               background: 'transparent', border: 'none', cursor: 'pointer',
-              color: '#7BAED4', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', padding: 0,
+              color: 'var(--dim)', fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit', padding: 0,
             }}
           >
             Adjust assumptions

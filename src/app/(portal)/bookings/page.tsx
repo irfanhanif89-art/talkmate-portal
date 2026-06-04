@@ -14,7 +14,7 @@ export default async function BookingsPage() {
     .from('businesses').select('id, name').eq('owner_user_id', user.id).single()
   if (!business) redirect('/register')
   return (
-    <div style={{ padding: 28, maxWidth: 1200, margin: '0 auto', color: '#F2F6FB' }}>
+    <div className="flex flex-col h-full overflow-hidden">
       <BookingsView businessName={business.name as string} />
     </div>
   )

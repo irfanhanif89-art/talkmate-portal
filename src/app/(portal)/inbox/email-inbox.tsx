@@ -3,10 +3,9 @@
 // Email inbox pane — Session 3C. Self-contained: lists email threads, shows a
 // thread with its messages, surfaces the queued AI draft (edit / send / regen /
 // discard) and a manual reply box. Uses the /api/email/* routes.
+// Styling uses design-system tokens so it adapts to dark/light.
 
 import { useCallback, useEffect, useState } from 'react'
-
-const ORANGE = '#E8622A'
 
 interface ThreadListItem {
   id: string; from_email: string; from_name: string | null; subject: string | null
@@ -16,6 +15,11 @@ interface Message {
   id: string; direction: 'inbound' | 'outbound'; from_name: string | null; from_email: string
   body_text: string | null; subject: string | null; status: string; sent_by: string; ai_drafted: boolean; created_at: string
 }
+
+const fieldCls =
+  'w-full rounded-[10px] border border-[var(--line-strong)] bg-card-2 px-3 py-2.5 ' +
+  'text-[13px] text-text font-sans outline-none transition-colors ' +
+  'focus:border-orange focus:shadow-[0_0_0_3px_rgba(238,106,44,.15)]'
 
 function fmt(iso: string | null): string {
   if (!iso) return ''
@@ -55,7 +59,7 @@ export default function EmailInbox({ businessId, adminClientId }: { businessId: 
       if (j.ok) setThreads(j.threads)
     } catch { /* ignore */ }
     setLoading(false)
-  }, [])
+  }, [adminClientId])
 
   useEffect(() => { loadThreads() }, [loadThreads])
 
@@ -72,7 +76,7 @@ export default function EmailInbox({ businessId, adminClientId }: { businessId: 
       }
     } catch { setErr('Could not load the conversation.') }
     setLoadingThread(false)
-  }, [])
+  }, [adminClientId])
 
   async function generate() {
     if (!selected) return
@@ -118,86 +122,87 @@ export default function EmailInbox({ businessId, adminClientId }: { businessId: 
     setBusy(false)
   }
 
-  const panel: React.CSSProperties = { background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 320px) 1fr', gap: 16, minHeight: 480 }}>
+    <div className="grid gap-4" style={{ gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 320px) 1fr', minHeight: 480 }}>
       {/* Thread list */}
-      <div style={{ ...panel, overflow: 'hidden', maxHeight: narrow ? 280 : 640, overflowY: 'auto', minWidth: 0 }}>
+      <div
+        className="overflow-y-auto rounded-[14px] border border-line bg-card"
+        style={{ maxHeight: narrow ? 280 : 640, minWidth: 0 }}
+      >
         {loading ? (
-          <div style={{ padding: 18, color: '#7BAED4', fontSize: 13 }}>Loading...</div>
+          <div className="p-[18px] text-[13px] text-dim">Loading…</div>
         ) : threads.length === 0 ? (
-          <div style={{ padding: 18, color: '#7BAED4', fontSize: 13 }}>
+          <div className="p-[18px] text-[13px] text-dim">
             No emails yet. When customers email your TalkMate address, their messages will appear here.
           </div>
         ) : threads.map((t) => (
-          <button key={t.id} onClick={() => openThread(t.id)}
-            style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', border: 'none',
-              borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer',
-              background: selected === t.id ? 'rgba(232,98,42,0.10)' : 'transparent', color: '#F1F5F9', fontFamily: 'Outfit,sans-serif',
-            }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>{t.from_name || t.from_email}</span>
-              {t.unread_count > 0 && <span style={{ width: 8, height: 8, borderRadius: 4, background: ORANGE, flexShrink: 0, marginTop: 5 }} />}
+          <button
+            key={t.id}
+            onClick={() => openThread(t.id)}
+            className={[
+              'block w-full border-b border-line px-3.5 py-3 text-left text-text transition',
+              selected === t.id ? 'bg-orange/10' : 'hover:bg-white/[.03]',
+            ].join(' ')}
+          >
+            <div className="flex justify-between gap-2">
+              <span className="text-[14px] font-bold">{t.from_name || t.from_email}</span>
+              {t.unread_count > 0 && <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-orange" />}
             </div>
-            <div style={{ fontSize: 12, color: '#C8D8EA', marginTop: 2 }}>{t.subject || 'No subject'}</div>
-            <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.last_message_preview ?? ''}</div>
-            <div style={{ fontSize: 11, color: '#4A7FBB', marginTop: 2 }}>{fmt(t.last_message_at)}</div>
+            <div className="mt-0.5 text-[12px] text-dim">{t.subject || 'No subject'}</div>
+            <div className="mt-0.5 truncate text-[12px] text-dim">{t.last_message_preview ?? ''}</div>
+            <div className="mt-0.5 text-[11px] text-faint">{fmt(t.last_message_at)}</div>
           </button>
         ))}
       </div>
 
       {/* Thread view */}
-      <div style={{ ...panel, padding: 18, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="flex min-w-0 flex-col rounded-[14px] border border-line bg-card p-[18px]">
         {!selected ? (
-          <div style={{ color: '#7BAED4', fontSize: 14, margin: 'auto' }}>Select an email to view the conversation.</div>
+          <div className="m-auto text-[14px] text-dim">Select an email to view the conversation.</div>
         ) : loadingThread ? (
-          <div style={{ color: '#7BAED4', fontSize: 14, margin: 'auto' }}>Loading...</div>
+          <div className="m-auto text-[14px] text-dim">Loading…</div>
         ) : (
           <>
-            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 360, marginBottom: 12 }}>
+            <div className="mb-3 flex-1 overflow-y-auto" style={{ maxHeight: 360 }}>
               {messages.filter((m) => m.status !== 'queued' && m.status !== 'discarded').map((m) => (
-                <div key={m.id} style={{
-                  background: m.direction === 'inbound' ? 'rgba(255,255,255,0.04)' : 'rgba(21,101,192,0.18)',
-                  borderRadius: 10, padding: '10px 12px', marginBottom: 8,
-                  marginLeft: m.direction === 'inbound' ? 0 : 40, marginRight: m.direction === 'inbound' ? 40 : 0,
-                }}>
-                  <div style={{ fontSize: 11, color: '#7BAED4', marginBottom: 4, display: 'flex', gap: 8 }}>
+                <div
+                  key={m.id}
+                  className={[
+                    'mb-2 rounded-[10px] px-3 py-2.5',
+                    m.direction === 'inbound' ? 'bg-card-2 mr-10' : 'bg-blue/[.16] ml-10',
+                  ].join(' ')}
+                >
+                  <div className="mb-1 flex gap-2 text-[11px] text-dim">
                     <span>{m.direction === 'inbound' ? (m.from_name || m.from_email) : 'You'}</span>
-                    {m.sent_by === 'ai' && <span style={{ color: ORANGE, fontWeight: 700 }}>AI</span>}
-                    <span style={{ marginLeft: 'auto' }}>{fmt(m.created_at)}</span>
+                    {m.sent_by === 'ai' && <span className="font-bold text-orange">AI</span>}
+                    <span className="ml-auto">{fmt(m.created_at)}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: '#F1F5F9', whiteSpace: 'pre-wrap' }}>{m.body_text}</div>
+                  <div className="whitespace-pre-wrap text-[13px] text-text">{m.body_text}</div>
                 </div>
               ))}
             </div>
 
             {draftId ? (
-              <div style={{ background: 'rgba(232,98,42,0.06)', border: '1px solid rgba(232,98,42,0.25)', borderRadius: 12, padding: 14, marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 8 }}>AI Draft Ready</div>
-                <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={6}
-                  style={{ width: '100%', background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: 12, fontFamily: 'Outfit,sans-serif', fontSize: 13 }} />
-                <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-                  <button disabled={busy} onClick={sendDraft} style={{ background: ORANGE, color: 'white', border: 'none', padding: '9px 18px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Send Now</button>
-                  <button disabled={busy} onClick={generate} style={{ background: 'transparent', color: '#C8D8EA', border: '1px solid rgba(255,255,255,0.18)', padding: '9px 14px', borderRadius: 9, fontSize: 14, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Regenerate</button>
-                  <button disabled={busy} onClick={discardDraft} style={{ background: 'none', color: '#7BAED4', border: 'none', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Discard</button>
+              <div className="mb-2 rounded-[12px] border border-orange/25 bg-orange/[.06] p-3.5">
+                <div className="mb-2 text-[13px] font-bold text-text">AI Draft Ready</div>
+                <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={6} className={fieldCls + ' resize-y'} />
+                <div className="mt-2.5 flex items-center gap-2.5">
+                  <button disabled={busy} onClick={sendDraft} className="rounded-[9px] bg-[linear-gradient(135deg,#f58a42,#e86526)] px-[18px] py-2.5 text-[14px] font-bold text-white shadow-[0_4px_14px_rgba(238,106,44,.35)] disabled:opacity-50">Send Now</button>
+                  <button disabled={busy} onClick={generate} className="rounded-[9px] border border-line-strong px-3.5 py-2.5 text-[14px] text-dim transition hover:text-text disabled:opacity-50">Regenerate</button>
+                  <button disabled={busy} onClick={discardDraft} className="text-[13px] text-dim transition hover:text-text disabled:opacity-50">Discard</button>
                 </div>
               </div>
             ) : (
-              <button disabled={busy} onClick={generate}
-                style={{ alignSelf: 'flex-start', background: 'transparent', color: ORANGE, border: `1px solid ${ORANGE}`, padding: '9px 16px', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: 8, fontFamily: 'Outfit,sans-serif' }}>
+              <button disabled={busy} onClick={generate} className="mb-2 self-start rounded-[9px] border border-orange px-4 py-2.5 text-[14px] font-semibold text-orange transition hover:bg-orange/[.08] disabled:opacity-50">
                 Generate AI Reply
               </button>
             )}
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply..."
-                style={{ flex: 1, background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '10px 12px', fontFamily: 'Outfit,sans-serif', fontSize: 13 }} />
-              <button disabled={busy || !reply.trim()} onClick={sendManual}
-                style={{ background: '#1565C0', color: 'white', border: 'none', padding: '0 18px', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}>Send</button>
+            <div className="flex gap-2">
+              <input value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" className={fieldCls + ' flex-1'} />
+              <button disabled={busy || !reply.trim()} onClick={sendManual} className="rounded-[10px] bg-blue px-[18px] font-semibold text-white transition hover:brightness-110 disabled:opacity-50">Send</button>
             </div>
-            {err && <div style={{ marginTop: 10, fontSize: 13, color: '#EF4444' }}>{err}</div>}
+            {err && <div className="mt-2.5 text-[13px] text-red">{err}</div>}
           </>
         )}
       </div>

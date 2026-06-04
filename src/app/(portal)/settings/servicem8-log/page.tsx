@@ -46,45 +46,45 @@ export default async function ServiceM8LogPage() {
 
   const log = (rows ?? []) as LogRow[]
 
-  const th: React.CSSProperties = { textAlign: 'left', padding: '10px 12px', fontSize: 12, color: '#4A7FBB', fontWeight: 700, borderBottom: '1px solid rgba(255,255,255,0.08)' }
-  const td: React.CSSProperties = { padding: '10px 12px', fontSize: 13, color: '#C8D8EA', borderBottom: '1px solid rgba(255,255,255,0.04)', verticalAlign: 'top' }
+  const thCls = 'border-b border-line-strong px-3 py-2.5 text-left text-[12px] font-bold text-dim'
+  const tdCls = 'border-b border-line px-3 py-2.5 align-top text-[13px] text-dim'
 
-  function statusColor(s: string): string {
-    if (s === 'success') return '#22C55E'
-    if (s === 'failed') return '#EF4444'
-    return '#FBBF24'
+  function statusCls(s: string): string {
+    if (s === 'success') return 'text-green'
+    if (s === 'failed') return 'text-red'
+    return 'text-gold'
   }
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 980, margin: '0 auto', color: '#F1F5F9', fontFamily: 'Outfit, sans-serif' }}>
-      <a href="/settings" style={{ color: '#4A9FE8', fontSize: 13, textDecoration: 'none' }}>← Back to Settings</a>
-      <h1 style={{ fontSize: 22, fontWeight: 800, color: 'white', margin: '12px 0 4px' }}>ServiceM8 Push Log</h1>
-      <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 0, marginBottom: 24 }}>The last 50 jobs TalkMate attempted to push to ServiceM8.</p>
+    <div className="mx-auto max-w-[980px] p-7 md:px-8">
+      <a href="/settings" className="text-[13px] text-blue no-underline">← Back to Settings</a>
+      <h1 className="mb-1 mt-3 text-[22px] font-[800] text-text">ServiceM8 Push Log</h1>
+      <p className="mb-6 text-[13px] text-dim">The last 50 jobs TalkMate attempted to push to ServiceM8.</p>
 
       {log.length === 0 ? (
-        <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24, fontSize: 14, color: '#7BAED4' }}>
+        <div className="rounded-[14px] border border-line bg-card p-6 text-[14px] text-dim">
           No jobs pushed yet. When a qualifying call ends, the job will appear here.
         </div>
       ) : (
-        <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="overflow-hidden rounded-[14px] border border-line bg-card">
+          <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th style={th}>Date</th>
-                <th style={th}>Contact</th>
-                <th style={th}>Job UUID</th>
-                <th style={th}>Status</th>
-                <th style={th}>Error</th>
+                <th className={thCls}>Date</th>
+                <th className={thCls}>Contact</th>
+                <th className={thCls}>Job UUID</th>
+                <th className={thCls}>Status</th>
+                <th className={thCls}>Error</th>
               </tr>
             </thead>
             <tbody>
               {log.map((r) => (
                 <tr key={r.id}>
-                  <td style={td}>{new Date(r.pushed_at).toLocaleString('en-AU')}</td>
-                  <td style={td}>{(r.contact_id && nameById[r.contact_id]) || '—'}</td>
-                  <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{r.servicem8_job_uuid ?? '—'}</td>
-                  <td style={{ ...td, color: statusColor(r.status), fontWeight: 700 }}>{r.status}</td>
-                  <td style={{ ...td, color: '#EF4444', maxWidth: 280, wordBreak: 'break-word' }}>{r.error_message ?? ''}</td>
+                  <td className={tdCls}>{new Date(r.pushed_at).toLocaleString('en-AU')}</td>
+                  <td className={tdCls}>{(r.contact_id && nameById[r.contact_id]) || '—'}</td>
+                  <td className={tdCls + ' font-mono text-[11px]'}>{r.servicem8_job_uuid ?? '—'}</td>
+                  <td className={tdCls + ' font-bold ' + statusCls(r.status)}>{r.status}</td>
+                  <td className={tdCls + ' max-w-[280px] break-words text-red'}>{r.error_message ?? ''}</td>
                 </tr>
               ))}
             </tbody>

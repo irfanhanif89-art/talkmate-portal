@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 export default function CommissionPolicyModal() {
   const router = useRouter()
@@ -23,54 +24,50 @@ export default function CommissionPolicyModal() {
   }
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      background: 'rgba(6,19,34,0.92)', backdropFilter: 'blur(6px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20, fontFamily: 'Outfit, sans-serif',
-    }}>
-      <div style={{
-        background: '#0A1E38', color: 'white',
-        border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16,
-        maxWidth: 560, width: '100%', maxHeight: '90vh', overflowY: 'auto',
-        padding: 32, boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-      }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '4px 10px', background: 'rgba(232,98,42,0.15)',
-          border: '1px solid rgba(232,98,42,0.3)', borderRadius: 99,
-          fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
-          textTransform: 'uppercase', color: '#E8622A', marginBottom: 18,
-        }}>
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-5"
+      style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
+    >
+      <div
+        className="bg-card border border-line rounded-[16px] text-text w-full max-w-[560px] max-h-[90vh] overflow-y-auto p-8 shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+      >
+        <div
+          className="inline-flex items-center gap-1.5 px-[10px] py-1 rounded-full mb-[18px]
+            text-[10px] font-[700] tracking-[0.1em] uppercase text-orange
+            bg-[rgba(232,98,42,0.15)] border border-[rgba(232,98,42,0.3)]"
+        >
           One-time acknowledgement
         </div>
 
-        <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, marginBottom: 8, letterSpacing: '-0.5px' }}>
-          TalkMate Sales Commission Policy <span style={{ color: '#7BAED4', fontWeight: 500 }}>(v1)</span>
+        <h1 className="text-[24px] font-[800] tracking-[-0.5px] m-0 mb-2">
+          TalkMate Sales Commission Policy{' '}
+          <span className="text-dim font-[500]">(v1)</span>
         </h1>
-        <p style={{ fontSize: 14, color: '#7BAED4', margin: 0, marginBottom: 24 }}>
-          Please read this before you start submitting deals. Once you agree, you'll have access to your pipeline, commission tracker, and onboarding tools.
+        <p className="text-[14px] text-dim m-0 mb-6">
+          Please read this before you start submitting deals. Once you agree, you&apos;ll have access to your pipeline, commission tracker, and onboarding tools.
         </p>
 
-        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 18, marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#E8622A', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+        {/* Monthly close card */}
+        <div className="bg-card-2 border border-line rounded-[12px] p-[18px] mb-[14px]">
+          <div className="text-[12px] font-[700] text-orange tracking-[0.08em] uppercase mb-[10px]">
             Monthly close
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 12 }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))' }}>
             <RateCard plan="Starter" amount={299} />
             <RateCard plan="Growth"  amount={349} />
             <RateCard plan="Pro"     amount={399} />
           </div>
         </div>
 
-        <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 12, padding: 18, marginBottom: 18 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#22C55E', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+        {/* Annual close card */}
+        <div className="bg-card-2 border border-[rgba(34,197,94,0.25)] rounded-[12px] p-[18px] mb-[18px]">
+          <div className="text-[12px] font-[700] text-green tracking-[0.08em] uppercase mb-[10px]">
             Annual close (client pays 12 months upfront)
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 12 }}>
-            <RateCard plan="Starter" amount={373.75} accent="#22C55E" />
-            <RateCard plan="Growth"  amount={473.75} accent="#22C55E" />
-            <RateCard plan="Pro"     amount={598.75} accent="#22C55E" />
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))' }}>
+            <RateCard plan="Starter" amount={373.75} accent="text-green" />
+            <RateCard plan="Growth"  amount={473.75} accent="text-green" />
+            <RateCard plan="Pro"     amount={598.75} accent="text-green" />
           </div>
         </div>
 
@@ -91,41 +88,34 @@ export default function CommissionPolicyModal() {
           body="Any commission dispute must be raised within 30 days of the close date."
         />
 
-        <label style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-          padding: 14, marginTop: 18, marginBottom: 16,
-          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: 10, cursor: 'pointer',
-        }}>
+        <label className="flex items-start gap-[10px] p-[14px] mt-[18px] mb-4 bg-card-2 border border-line rounded-[10px] cursor-pointer">
           <input
             type="checkbox"
             checked={agreed}
             onChange={e => setAgreed(e.target.checked)}
-            style={{ marginTop: 3, width: 16, height: 16, accentColor: '#E8622A', cursor: 'pointer' }}
+            className="mt-[3px] w-4 h-4 cursor-pointer"
+            style={{ accentColor: '#E8622A' }}
           />
-          <span style={{ fontSize: 14, color: 'white', lineHeight: 1.5 }}>
+          <span className="text-[14px] text-text leading-[1.5]">
             I have read and understood the TalkMate Commission Policy.
           </span>
         </label>
 
         {error && (
-          <div style={{
-            padding: '10px 14px', marginBottom: 14, borderRadius: 8,
-            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
-            color: '#ef4444', fontSize: 13,
-          }}>{error}</div>
+          <div className="px-[14px] py-[10px] mb-[14px] rounded-[8px] bg-[rgba(239,68,68,0.1)] border border-[rgba(239,68,68,0.25)] text-red text-[13px]">
+            {error}
+          </div>
         )}
 
         <button
           onClick={handleAgree}
           disabled={!agreed || submitting}
-          style={{
-            width: '100%', padding: '14px',
-            background: !agreed || submitting ? '#7B3A1A' : '#E8622A',
-            color: 'white', border: 'none', borderRadius: 12,
-            fontFamily: 'Outfit, sans-serif', fontSize: 16, fontWeight: 700,
-            cursor: !agreed || submitting ? 'not-allowed' : 'pointer',
-          }}
+          className={cn(
+            'w-full py-[14px] rounded-[12px] text-[16px] font-[700] text-white border-none transition-opacity',
+            !agreed || submitting
+              ? 'bg-orange/40 cursor-not-allowed'
+              : 'bg-orange cursor-pointer hover:opacity-90',
+          )}
         >
           {submitting ? 'Saving…' : "I Agree, Let's Go"}
         </button>
@@ -134,16 +124,13 @@ export default function CommissionPolicyModal() {
   )
 }
 
-function RateCard({ plan, amount, accent = '#E8622A' }: { plan: string; amount: number; accent?: string }) {
+function RateCard({ plan, amount, accent = 'text-orange' }: { plan: string; amount: number; accent?: string }) {
   return (
-    <div style={{
-      background: '#061322', border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 10, padding: '14px 12px', textAlign: 'center',
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#7BAED4', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4 }}>
+    <div className="bg-bg border border-line rounded-[10px] p-[14px_12px] text-center">
+      <div className="text-[11px] font-[700] text-dim tracking-[0.05em] uppercase mb-1">
         {plan}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: accent, letterSpacing: '-0.5px' }}>
+      <div className={`text-[22px] font-[800] tracking-[-0.5px] ${accent}`}>
         ${amount}
       </div>
     </div>
@@ -152,9 +139,9 @@ function RateCard({ plan, amount, accent = '#E8622A' }: { plan: string; amount: 
 
 function PolicyRow({ title, body }: { title: string; body: string }) {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 4 }}>{title}</div>
-      <div style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.6 }}>{body}</div>
+    <div className="mb-3">
+      <div className="text-[13px] font-[700] text-text mb-1">{title}</div>
+      <div className="text-[13px] text-dim leading-[1.6]">{body}</div>
     </div>
   )
 }

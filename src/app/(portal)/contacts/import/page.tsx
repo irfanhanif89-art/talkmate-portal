@@ -99,18 +99,18 @@ export default function ContactsImportPage() {
 
   return (
     <div style={{ padding: 28, color: '#F2F6FB', maxWidth: 880 }}>
-      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#7BAED4', textDecoration: 'none', marginBottom: 18 }}>
+      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--dim)', textDecoration: 'none', marginBottom: 18 }}>
         <ArrowLeft size={14} /> All contacts
       </Link>
       <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 6 }}>Import contacts</h1>
-      <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 24 }}>Bring an existing customer list across. We&apos;ll de-duplicate by phone number.</p>
+      <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 24 }}>Bring an existing customer list across. We&apos;ll de-duplicate by phone number.</p>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 22, flexWrap: 'wrap' }}>
         {(['Upload', 'Map columns', 'Review', 'Done'] as const).map((label, i) => (
           <span key={label} style={{
             fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 99,
             background: step > i + 1 ? 'rgba(34,197,94,0.12)' : step === i + 1 ? 'rgba(232,98,42,0.12)' : 'rgba(255,255,255,0.04)',
-            color: step > i + 1 ? '#22C55E' : step === i + 1 ? '#E8622A' : '#7BAED4',
+            color: step > i + 1 ? '#22C55E' : step === i + 1 ? 'var(--orange)' : 'var(--dim)',
             border: `1px solid ${step === i + 1 ? 'rgba(232,98,42,0.3)' : 'rgba(255,255,255,0.06)'}`,
           }}>
             {step > i + 1 ? <Check size={11} style={{ verticalAlign: '-1px', marginRight: 4 }} /> : `${i + 1}.`} {label}
@@ -118,7 +118,7 @@ export default function ContactsImportPage() {
         ))}
       </div>
 
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 24 }}>
         {error && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(239,68,68,0.1)', color: '#EF4444', fontSize: 13 }}><AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> {error}</div>}
 
         {step === 1 && (
@@ -129,7 +129,7 @@ export default function ContactsImportPage() {
           }}>
             <Upload size={36} color="#4A9FE8" />
             <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginTop: 14 }}>Drop or pick a CSV file</div>
-            <div style={{ fontSize: 13, color: '#7BAED4', marginTop: 4 }}>Phone column is required. Other fields optional.</div>
+            <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 4 }}>Phone column is required. Other fields optional.</div>
             <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
           </label>
         )}
@@ -137,7 +137,7 @@ export default function ContactsImportPage() {
         {step === 2 && (
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 6 }}>Map your columns</h2>
-            <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 16 }}>Match each TalkMate field to a column from your CSV. Preview shows the first 5 rows.</p>
+            <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 16 }}>Match each TalkMate field to a column from your CSV. Preview shows the first 5 rows.</p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 12, marginBottom: 22 }}>
               {FIELDS.map(f => (
@@ -147,17 +147,17 @@ export default function ContactsImportPage() {
                     key={f.key + '-s'}
                     value={mapping[f.key] !== undefined ? String(mapping[f.key]) : ''}
                     onChange={e => setMap(f.key, e.target.value)}
-                    style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 9, padding: '9px 12px', fontSize: 13, fontFamily: 'Outfit, sans-serif', outline: 'none' }}
+                    style={{ background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 9, padding: '9px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
                   >
-                    <option value="" style={{ background: '#0A1E38' }}>Skip this field</option>
-                    {headers.map((h, i) => <option key={i} value={String(i)} style={{ background: '#0A1E38' }}>{h}</option>)}
+                    <option value="" style={{ background: 'var(--card)' }}>Skip this field</option>
+                    {headers.map((h, i) => <option key={i} value={String(i)} style={{ background: 'var(--card)' }}>{h}</option>)}
                   </select>
                 </>
               ))}
             </div>
 
-            <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 9, padding: 12, overflowX: 'auto', marginBottom: 18 }}>
-              <table style={{ minWidth: '100%', fontSize: 12, color: '#7BAED4', borderCollapse: 'collapse' }}>
+            <div style={{ background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 9, padding: 12, overflowX: 'auto', marginBottom: 18 }}>
+              <table style={{ minWidth: '100%', fontSize: 12, color: 'var(--dim)', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>{headers.map((h, i) => <th key={i} style={{ padding: 6, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.06)', fontWeight: 700 }}>{h}</th>)}</tr>
                 </thead>
@@ -170,8 +170,8 @@ export default function ContactsImportPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setStep(1)} style={{ background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '10px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Back</button>
-              <button onClick={() => setStep(3)} disabled={mapping.phone === undefined} style={{ background: mapping.phone === undefined ? 'rgba(232,98,42,0.4)' : '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Review →</button>
+              <button onClick={() => setStep(1)} style={{ background: 'transparent', color: 'var(--dim)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '10px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Back</button>
+              <button onClick={() => setStep(3)} disabled={mapping.phone === undefined} style={{ background: mapping.phone === undefined ? 'rgba(232,98,42,0.4)' : 'var(--orange)', color: 'white', border: 'none', borderRadius: 9, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Review →</button>
             </div>
           </div>
         )}
@@ -179,10 +179,10 @@ export default function ContactsImportPage() {
         {step === 3 && (
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 6 }}>Ready to import</h2>
-            <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 16 }}>{rows.length} rows will be processed. Existing contacts (matched by phone) will have name/email filled in if currently blank, never overwritten.</p>
+            <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 16 }}>{rows.length} rows will be processed. Existing contacts (matched by phone) will have name/email filled in if currently blank, never overwritten.</p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setStep(2)} style={{ background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '10px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Back</button>
-              <button onClick={runImport} disabled={importing} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+              <button onClick={() => setStep(2)} style={{ background: 'transparent', color: 'var(--dim)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '10px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Back</button>
+              <button onClick={runImport} disabled={importing} style={{ background: 'var(--orange)', color: 'white', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {importing ? 'Importing…' : `Import ${rows.length} contacts`}
               </button>
             </div>
@@ -195,10 +195,10 @@ export default function ContactsImportPage() {
               <Check size={26} color="#22C55E" />
             </div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'white', marginBottom: 8 }}>Import complete</div>
-            <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 20 }}>
+            <div style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 20 }}>
               {result.imported} new · {result.updated} updated · {result.skipped} skipped
             </div>
-            <Link href="/contacts" style={{ background: '#E8622A', color: 'white', borderRadius: 9, padding: '11px 20px', fontSize: 13, fontWeight: 700, textDecoration: 'none', fontFamily: 'Outfit, sans-serif' }}>View contacts →</Link>
+            <Link href="/contacts" style={{ background: 'var(--orange)', color: 'white', borderRadius: 9, padding: '11px 20px', fontSize: 13, fontWeight: 700, textDecoration: 'none', fontFamily: 'inherit' }}>View contacts →</Link>
           </div>
         )}
       </div>
