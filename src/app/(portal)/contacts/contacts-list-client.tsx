@@ -276,7 +276,7 @@ export default function ContactsListClient({
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="text-[10px] font-bold text-orange uppercase tracking-[.1em] mb-1.5">Your CRM</div>
-          <h1 className="text-[1.55rem] font-extrabold tracking-tight">Contacts</h1>
+          <h1 className="text-[1.55rem] font-extrabold tracking-tight">Customers</h1>
           <p className="text-[13px] text-dim mt-1">
             {totalCount} total · captured automatically by TalkMate
           </p>
