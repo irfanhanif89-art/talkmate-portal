@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin-auth'
+import { DEMO_INDUSTRIES } from '@/lib/demo-config'
 
 export const dynamic = 'force-dynamic'
+
+// Industries that have a live demo behind them. Only these may be written to
+// sales_reps.demo_industry — setting a non-live key would point the rep's demo
+// portal at an industry with no demo business (404). The UI disables the rest.
+const AVAILABLE_DEMO_INDUSTRIES = new Map(
+  DEMO_INDUSTRIES.filter((i) => i.available).map((i) => [i.key as string, i.label]),
+)
 
 // Bulk-imports leads from a CSV-parsed payload and assigns them to a
 // single sales rep. Called by the /admin/leads-import page after the
@@ -59,7 +67,7 @@ export async function POST(req: Request) {
   // leads to a terminated or non-existent rep.
   const { data: rep } = await admin
     .from('sales_reps')
-    .select('id, status, full_name')
+    .select('id, status, full_name, email, demo_industry')
     .eq('id', repId)
     .maybeSingle()
   if (!rep) return NextResponse.json({ ok: false, error: 'Sales rep not found' }, { status: 404 })
@@ -132,11 +140,40 @@ export async function POST(req: Request) {
     inserted += data?.length ?? 0
   }
 
+  // Wire the chosen industry into the rep's demo setup. Picking a live demo
+  // industry switches the rep's demo portal + demo agent to match the pack we
+  // just gave them. Only live demo keys are written (UI disables the rest).
+  let demoIndustryLabel: string | null = null
+  if (industryDefault && AVAILABLE_DEMO_INDUSTRIES.has(industryDefault)) {
+    if (rep.demo_industry !== industryDefault) {
+      const { error: demoErr } = await admin
+        .from('sales_reps')
+        .update({ demo_industry: industryDefault })
+        .eq('id', repId)
+      if (demoErr) {
+        // Non-fatal: leads imported fine; surface but don't fail the import.
+        console.error('[bulk-import] demo_industry update error', demoErr)
+      } else {
+        demoIndustryLabel = AVAILABLE_DEMO_INDUSTRIES.get(industryDefault) ?? industryDefault
+        await admin.from('admin_audit_log').insert({
+          admin_email: auth.user.email,
+          action: 'rep_demo_industry_updated',
+          before_value: { rep_id: repId, rep_email: rep.email, demo_industry: rep.demo_industry, via: 'leads_import' },
+          after_value: { rep_id: repId, rep_email: rep.email, demo_industry: industryDefault, via: 'leads_import' },
+        })
+      }
+    } else {
+      // Already set to this industry — report it so the admin gets confirmation.
+      demoIndustryLabel = AVAILABLE_DEMO_INDUSTRIES.get(industryDefault) ?? industryDefault
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     inserted,
     skipped: errors.length,
     errors,
     rep_name: rep.full_name,
+    demo_industry_label: demoIndustryLabel,
   })
 }
