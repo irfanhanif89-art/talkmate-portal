@@ -97,12 +97,22 @@ export interface SmsVerification {
   note: string
 }
 
+// Session 4B — a customer question the agent could not answer, mined from
+// the transcript in the same scoring pass. Surfaced on /insights and offered
+// for one-tap add to the knowledge base.
+export interface TranscriptGapItem {
+  question: string
+  context: string
+}
+
 export interface CallIntelligenceResult {
   score: number
   status: IntelligenceStatus
   summary: string
   flags: CallFlag[]
   actions: CallAction[]
+  // Session 4B — unanswered-question gaps (max 5; [] when handled well).
+  gaps: TranscriptGapItem[]
   should_alert_owner: boolean
   alert_message: string | null
   // Session 19 — present when SMS verification ran (which is always,
@@ -231,8 +241,16 @@ function buildUserPrompt(input: CallIntelligenceInput): string {
     '  "sms_verification": {',
     '    "status": <"correct"|"mismatch"|"no_sms"|"unverified">,',
     '    "note": <one short sentence — what was correct or what the mismatch was>',
-    '  }',
+    '  },',
+    '  "gaps": [',
+    '    { "question": <a question the caller asked that the agent could NOT answer>, "context": <short quote from the transcript> }',
+    '  ]',
     '}',
+    '',
+    'For "gaps": include ONLY moments where the agent could not answer a caller question',
+    '(e.g. "I don\'t have that information", "you\'d need to speak to someone", caller',
+    'repeated a question, or hung up right after an unanswered question). Max 5. Return',
+    '[] when the agent answered everything. Do not invent questions the caller did not ask.',
     '',
     'Flag types to use (only include if genuinely present):',
     '- short_call: under 30 seconds with no clear resolution and not a wrong number',
@@ -354,6 +372,20 @@ function coerceResult(parsed: unknown, hadSms: boolean): CallIntelligenceResult 
 
   const sms_verification = coerceSmsVerification(p.sms_verification, hadSms)
 
+  const gaps: TranscriptGapItem[] = Array.isArray(p.gaps)
+    ? (p.gaps
+        .map((g): TranscriptGapItem | null => {
+          if (!g || typeof g !== 'object') return null
+          const r = g as Record<string, unknown>
+          const question = typeof r.question === 'string' ? r.question.trim().slice(0, 300) : ''
+          if (!question) return null
+          const context = typeof r.context === 'string' ? r.context.trim().slice(0, 500) : ''
+          return { question, context }
+        })
+        .filter(Boolean) as TranscriptGapItem[])
+        .slice(0, 5)
+    : []
+
   // Belt-and-braces: if the model reported a mismatch but forgot to add
   // the sms_mismatch flag, add it ourselves so admin UI is consistent.
   if (sms_verification.status === 'mismatch' && !flags.some(f => f.type === 'sms_mismatch')) {
@@ -366,6 +398,7 @@ function coerceResult(parsed: unknown, hadSms: boolean): CallIntelligenceResult 
     summary,
     flags,
     actions,
+    gaps,
     should_alert_owner,
     alert_message: alert_message || null,
     sms_verification,

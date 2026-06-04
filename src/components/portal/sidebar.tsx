@@ -8,7 +8,7 @@ import { useBusinessType } from '@/context/business-type-context'
 import {
   LayoutDashboard, Phone, BarChart2, FileText, Settings, Calendar,
   MessageSquare, MessageCircle, CreditCard, Lock, X, Users,
-  ClipboardList, Bot, Palette,
+  ClipboardList, Bot, Palette, Lightbulb,
 } from 'lucide-react'
 
 interface Props {
@@ -84,6 +84,21 @@ export default function PortalSidebar(props: Props) {
     }
   }, [businessId])
 
+  // Session 4B — Insights badge: count of pending unanswered-question gaps.
+  const [gapsPending, setGapsPending] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/transcript/gaps')
+        if (!r.ok) return
+        const d = (await r.json()) as { gaps?: unknown[] }
+        if (!cancelled && Array.isArray(d.gaps)) setGapsPending(d.gaps.length)
+      } catch { /* silent */ }
+    })()
+    return () => { cancelled = true }
+  }, [businessId])
+
   function go(href: string) {
     router.push(href)
     props.onCloseMobile()
@@ -114,6 +129,10 @@ export default function PortalSidebar(props: Props) {
         {
           href: '/calls', label: 'Calls', icon: Phone, show: true,
           badge: props.todayCallCount > 0 ? { text: String(props.todayCallCount), bg: '', color: '#fff' } : undefined,
+        },
+        {
+          href: '/insights', label: 'Insights', icon: Lightbulb, show: true,
+          badge: gapsPending > 0 ? { text: gapsPending > 99 ? '99+' : String(gapsPending), bg: '', color: '#fff' } : undefined,
         },
         { href: '/bookings', label: 'Bookings', icon: Calendar, show: true },
         { href: '/contacts', label: 'Customers', icon: Users, show: true },

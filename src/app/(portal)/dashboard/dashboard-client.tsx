@@ -12,6 +12,7 @@ import { RevenueStrip } from '@/components/portal/ui-v2/revenue-strip'
 import { UpsellBanner } from '@/components/portal/ui-v2/upsell-banner'
 import { StatusCard } from '@/components/portal/ui-v2/status-card'
 import { CallRow } from '@/components/portal/ui-v2/call-row'
+import FeaturePrompts from '@/components/portal/feature-prompts'
 import { BookingRow } from '@/components/portal/ui-v2/booking-row'
 import { VolumeBarChart } from '@/components/portal/ui-v2/charts'
 import type { TagVariant } from '@/components/portal/ui-v2/tag'
@@ -252,6 +253,9 @@ export function DashboardClient({
         items={revenueStripItems}
         cta={{ title: 'See full report', subtitle: 'Analytics →', onClick: () => router.push('/analytics') }}
       />
+
+      {/* ── Feature-discovery prompts (Session 4B) ────────────────────── */}
+      <FeaturePrompts />
 
       {/* ── 4 KPI cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

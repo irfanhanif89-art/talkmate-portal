@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import BillingContactCard from '@/components/portal/billing-contact-card'
 import { createClient } from '@/lib/supabase/client'
 import ServicePricingEditor, { type ServicePricing } from '@/components/portal/service-pricing-editor'
 import ServiceAreaEditor, { type ServiceArea } from '@/components/portal/service-area-editor'
@@ -662,6 +663,9 @@ export default function SettingsPage() {
                   Win back missed callers and ask happy customers for a Google review — automatically.
                 </p>
               </div>
+
+              {/* Session 4B — monthly summary recipient */}
+              <BillingContactCard />
 
               {/* Stats row */}
               <div className="grid grid-cols-2 gap-3">
