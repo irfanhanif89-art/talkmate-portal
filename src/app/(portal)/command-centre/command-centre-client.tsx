@@ -66,7 +66,7 @@ export default function CommandCentreClient(props: Props) {
 
         <div style={{
           background: 'linear-gradient(135deg, #1565C0, #8B5CF6)',
-          borderRadius: 18, padding: 32, color: 'white', marginBottom: 24,
+          borderRadius: 18, padding: 32, color: '#fff', marginBottom: 24,
         }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.85 }}>Run your business by texting</div>
           <div style={{ fontSize: 28, fontWeight: 800, marginTop: 8, lineHeight: 1.1 }}>Send commands. Get answers. From anywhere.</div>
@@ -81,20 +81,20 @@ export default function CommandCentreClient(props: Props) {
             { title: '✏️ Update on the go', samples: ['Add menu item', 'Change opening hours', 'Pause for 2 hours'] },
             { title: '💸 Run the back office', samples: ['Send invoice to Sarah', 'Send weekly summary', 'Confirm jobs'] },
           ].map(c => (
-            <div key={c.title} style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 18 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginBottom: 10 }}>{c.title}</div>
+            <div key={c.title} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 18 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 10 }}>{c.title}</div>
               {c.samples.map(s => (
-                <div key={s} style={{ background: '#071829', borderRadius: 7, padding: '8px 10px', marginBottom: 6, fontSize: 12, color: '#7BAED4' }}>&quot;{s}&quot;</div>
+                <div key={s} style={{ background: 'var(--card-2)', borderRadius: 7, padding: '8px 10px', marginBottom: 6, fontSize: 12, color: 'var(--dim)' }}>&quot;{s}&quot;</div>
               ))}
             </div>
           ))}
         </div>
 
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: 28, textAlign: 'center' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid rgba(232,98,42,0.3)', borderRadius: 16, padding: 28, textAlign: 'center' }}>
           <Lock size={28} color="#E8622A" />
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'white', marginTop: 14 }}>Add to your plan for $200/mo (upgrade to Growth)</div>
-          <div style={{ fontSize: 13, color: '#7BAED4', marginTop: 8 }}>Already includes 800 calls/mo + Command Centre. Most clients break even by week one.</div>
-          <button onClick={() => router.push('/billing')} style={{ marginTop: 18, background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, padding: '12px 26px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Upgrade to Growth →</button>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)', marginTop: 14 }}>Add to your plan for $200/mo (upgrade to Growth)</div>
+          <div style={{ fontSize: 13, color: 'var(--dim)', marginTop: 8 }}>Already includes 800 calls/mo + Command Centre. Most clients break even by week one.</div>
+          <button onClick={() => router.push('/billing')} style={{ marginTop: 18, background: '#E8622A', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 26px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>Upgrade to Growth →</button>
         </div>
       </div>
     )
@@ -131,11 +131,11 @@ export default function CommandCentreClient(props: Props) {
           <p style={{ fontSize: 13, color: 'var(--dim)', marginTop: 6 }}>Connect your Telegram bot in two minutes.</p>
         </div>
 
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 22 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'white', marginBottom: 8 }}>Connect Telegram</div>
-          <ol style={{ paddingLeft: 18, fontSize: 13, color: '#7BAED4', lineHeight: 1.8, marginBottom: 14 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 22 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Connect Telegram</div>
+          <ol style={{ paddingLeft: 18, fontSize: 13, color: 'var(--dim)', lineHeight: 1.8, marginBottom: 14 }}>
             <li>In Telegram, message <strong>@BotFather</strong>.</li>
-            <li>Run <code style={{ background: '#071829', padding: '2px 6px', borderRadius: 4 }}>/newbot</code> and follow the steps.</li>
+            <li>Run <code style={{ background: 'var(--card-2)', padding: '2px 6px', borderRadius: 4 }}>/newbot</code> and follow the steps.</li>
             <li>Paste your bot token below and click <strong>Test connection</strong>.</li>
           </ol>
 
@@ -143,10 +143,10 @@ export default function CommandCentreClient(props: Props) {
             value={token}
             onChange={e => setToken(e.target.value)}
             placeholder="Telegram bot token"
-            style={{ width: '100%', background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 9, padding: '11px 14px', fontFamily: 'monospace', fontSize: 12, outline: 'none' }}
+            style={{ width: '100%', background: 'var(--card-2)', border: '1px solid var(--line-strong)', color: 'var(--text)', borderRadius: 9, padding: '11px 14px', fontFamily: 'monospace', fontSize: 12, outline: 'none' }}
           />
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-            <button onClick={saveToken} disabled={savingToken || !token} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', opacity: !token ? 0.5 : 1 }}>
+            <button onClick={saveToken} disabled={savingToken || !token} style={{ background: '#E8622A', color: '#fff', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif', opacity: !token ? 0.5 : 1 }}>
               {savingToken ? 'Saving…' : 'Test connection & save'}
             </button>
           </div>
@@ -190,22 +190,22 @@ export default function CommandCentreClient(props: Props) {
       {props.pending && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 12, padding: 16, marginBottom: 20 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>⏳ Waiting for confirmation</div>
-          <div style={{ fontSize: 13, color: 'white' }}>{props.pending.raw_command}</div>
-          <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 4 }}>Reply YES or CANCEL on {props.pending.platform}.</div>
+          <div style={{ fontSize: 13, color: 'var(--text)' }}>{props.pending.raw_command}</div>
+          <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 4 }}>Reply YES or CANCEL on {props.pending.platform}.</div>
         </div>
       )}
 
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 18, marginBottom: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 12 }}>Send a command</div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 18, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>Send a command</div>
         <div style={{ display: 'flex', gap: 10 }}>
           <input
             value={testCmd}
             onChange={e => setTestCmd(e.target.value)}
             placeholder="Try: How many calls today?"
-            style={{ flex: 1, background: '#071829', border: '1px solid rgba(255,255,255,0.08)', color: 'white', borderRadius: 9, padding: '11px 14px', fontFamily: 'Outfit, sans-serif', fontSize: 13, outline: 'none' }}
+            style={{ flex: 1, background: 'var(--card-2)', border: '1px solid var(--line-strong)', color: 'var(--text)', borderRadius: 9, padding: '11px 14px', fontFamily: 'Outfit, sans-serif', fontSize: 13, outline: 'none' }}
             onKeyDown={e => { if (e.key === 'Enter') sendCommand() }}
           />
-          <button onClick={sendCommand} disabled={sending || !testCmd.trim()} style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 9, padding: '0 18px', fontSize: 13, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
+          <button onClick={sendCommand} disabled={sending || !testCmd.trim()} style={{ background: '#E8622A', color: '#fff', border: 'none', borderRadius: 9, padding: '0 18px', fontSize: 13, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', fontFamily: 'Outfit, sans-serif' }}>
             <Send size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> Send
           </button>
         </div>
@@ -214,35 +214,35 @@ export default function CommandCentreClient(props: Props) {
         )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
           {EXAMPLE_COMMANDS.map(s => (
-            <button key={s} onClick={() => setTestCmd(s)} style={{ background: 'rgba(255,255,255,0.04)', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 99, padding: '5px 11px', fontSize: 11, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>{s}</button>
+            <button key={s} onClick={() => setTestCmd(s)} style={{ background: 'var(--card-2)', color: 'var(--dim)', border: '1px solid var(--line)', borderRadius: 99, padding: '5px 11px', fontSize: 11, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}>{s}</button>
           ))}
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16 }}>
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>Command history</div>
-            <div style={{ fontSize: 11, color: '#7BAED4' }}>{props.dailyLimit ? `${props.dailyCount}/${props.dailyLimit} today` : 'Unlimited'}</div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Command history</div>
+            <div style={{ fontSize: 11, color: 'var(--dim)' }}>{props.dailyLimit ? `${props.dailyCount}/${props.dailyLimit} today` : 'Unlimited'}</div>
           </div>
           {props.history.length === 0 ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#4A7FBB', fontSize: 13 }}>
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--faint)', fontSize: 13 }}>
               <MessageSquare size={28} style={{ margin: '0 auto 8px', opacity: 0.6 }} />
               No commands yet. Send one above.
             </div>
           ) : (
             <div>
               {props.history.map((h, i) => (
-                <div key={h.id} style={{ padding: '12px 18px', borderBottom: i < props.history.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                <div key={h.id} style={{ padding: '12px 18px', borderBottom: i < props.history.length - 1 ? '1px solid var(--line)' : 'none' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                    <div style={{ fontSize: 13, color: 'white', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{h.raw_command}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{h.raw_command}</div>
                     <span style={{
                       fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0,
-                      background: h.outcome === 'success' ? 'rgba(34,197,94,0.15)' : h.outcome === 'failed' ? 'rgba(239,68,68,0.15)' : h.outcome === 'cancelled' ? 'rgba(255,255,255,0.06)' : 'rgba(245,158,11,0.15)',
-                      color: h.outcome === 'success' ? '#22C55E' : h.outcome === 'failed' ? '#EF4444' : h.outcome === 'cancelled' ? '#7BAED4' : '#F59E0B',
+                      background: h.outcome === 'success' ? 'rgba(34,197,94,0.15)' : h.outcome === 'failed' ? 'rgba(239,68,68,0.15)' : h.outcome === 'cancelled' ? 'var(--line-strong)' : 'rgba(245,158,11,0.15)',
+                      color: h.outcome === 'success' ? '#22C55E' : h.outcome === 'failed' ? '#EF4444' : h.outcome === 'cancelled' ? 'var(--dim)' : '#F59E0B',
                     }}>{h.outcome.replace('_', ' ')}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: '#7BAED4', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
                     {h.parsed_intent || '—'} · {h.platform} · {new Date(h.created_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })}
                   </div>
                 </div>
@@ -251,15 +251,15 @@ export default function CommandCentreClient(props: Props) {
           )}
         </div>
 
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 18 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 12 }}>Settings</div>
-          <div style={{ fontSize: 11, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Connected</div>
-          <div style={{ fontSize: 13, color: 'white', marginTop: 4 }}>{props.connectedPlatform}</div>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '14px 0' }} />
-          <div style={{ fontSize: 11, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Authorised numbers</div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>Settings</div>
+          <div style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Connected</div>
+          <div style={{ fontSize: 13, color: 'var(--text)', marginTop: 4 }}>{props.connectedPlatform}</div>
+          <div style={{ height: 1, background: 'var(--line-strong)', margin: '14px 0' }} />
+          <div style={{ fontSize: 11, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Authorised numbers</div>
           {props.authorisedNumbers.length === 0
-            ? <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 4 }}>Owner only — add team numbers in Settings.</div>
-            : props.authorisedNumbers.map(n => <div key={n} style={{ fontSize: 12, color: 'white', marginTop: 4 }}>{n}</div>)
+            ? <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 4 }}>Owner only — add team numbers in Settings.</div>
+            : props.authorisedNumbers.map(n => <div key={n} style={{ fontSize: 12, color: 'var(--text)', marginTop: 4 }}>{n}</div>)
           }
         </div>
       </div>
