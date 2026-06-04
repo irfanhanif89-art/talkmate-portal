@@ -272,8 +272,7 @@ export default function BillingPage() {
       <h1 className="mb-5 text-[20px] font-[800] tracking-[-0.4px] text-text">Billing</h1>
 
       {/* ── 1. Plan hero ──────────────────────────────── */}
-      <div className="relative mb-5 overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.10)] p-[26px_32px] shadow-[0_1px_4px_rgba(0,0,0,.28)]"
-        style={{ background: 'linear-gradient(120deg,#1c2e44 0%,#122236 70%)' }}>
+      <div className="tm-hero relative mb-5 overflow-hidden rounded-[18px] border border-line p-[26px_32px] shadow-[0_1px_4px_rgba(0,0,0,.28)]">
         {/* Glow */}
         <div className="pointer-events-none absolute right-[-80px] top-[-60px] h-[280px] w-[280px] rounded-full"
           style={{ background: 'radial-gradient(circle,rgba(238,106,44,.25),transparent 70%)', filter: 'blur(15px)' }}

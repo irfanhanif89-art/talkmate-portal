@@ -143,7 +143,7 @@ function PhoneIcon({ size = 14 }: { size?: number }) {
 function TrendIcon({ dir }: { dir: 'up' | 'down' | 'flat' }) {
   if (dir === 'up') return <span className="text-green text-[11px]">↑</span>
   if (dir === 'down') return <span className="text-red text-[11px]">↓</span>
-  return <span className="text-white/30 text-[11px]">→</span>
+  return <span className="text-faint text-[11px]">→</span>
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

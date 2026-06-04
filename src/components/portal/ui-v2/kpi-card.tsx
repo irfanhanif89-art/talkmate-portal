@@ -12,7 +12,7 @@ export function KpiCard({ label, icon, value, sub, ctx, ctxTrend = 'up', accent 
   accent?: 'orange' | 'green'
 }) {
   const valColor = accent === 'orange' ? 'text-orange' : accent === 'green' ? 'text-green' : 'text-text'
-  const ctxColor = ctxTrend === 'up' ? 'text-green' : ctxTrend === 'down' ? 'text-red' : 'text-white/30'
+  const ctxColor = ctxTrend === 'up' ? 'text-green' : ctxTrend === 'down' ? 'text-red' : 'text-faint'
   return (
     <div className="relative overflow-hidden rounded-[var(--r)] border border-line bg-card p-[17px_20px] shadow-[0_1px_4px_rgba(0,0,0,.28)]">
       <div className="flex items-center gap-[7px] text-[11.5px] font-semibold uppercase tracking-[.06em] text-dim">

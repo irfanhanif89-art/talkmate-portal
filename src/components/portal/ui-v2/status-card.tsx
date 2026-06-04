@@ -24,8 +24,7 @@ export function StatusCard({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-[var(--r)] border border-[rgba(53,201,138,.2)] p-[18px_20px]',
-        'bg-[linear-gradient(150deg,#16304a,#0f2236)]',
+        'tm-status relative overflow-hidden rounded-[var(--r)] border border-[rgba(53,201,138,.2)] p-[18px_20px]',
         className
       )}
     >

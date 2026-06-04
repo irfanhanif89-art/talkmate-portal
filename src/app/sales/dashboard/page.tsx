@@ -207,7 +207,7 @@ export default async function SalesDashboardPage() {
       )}
 
       {/* ── Sprint Hero ──────────────────────────────────────────────────────── */}
-      <div className="relative mb-[18px] overflow-hidden rounded-[18px] border border-[rgba(255,255,255,.10)] bg-[linear-gradient(135deg,#122234,#0d1b2a)] px-7 py-[22px] shadow-[0_1px_4px_rgba(0,0,0,.28)]">
+      <div className="tm-hero-blue relative mb-[18px] overflow-hidden rounded-[18px] border border-line px-7 py-[22px] shadow-[0_1px_4px_rgba(0,0,0,.28)]">
         {/* Decorative glow */}
         <div className="pointer-events-none absolute -right-[60px] -top-[60px] h-[240px] w-[240px] rounded-full bg-[radial-gradient(circle,rgba(74,159,232,.2),transparent_70%)] blur-[20px]" />
 
@@ -256,7 +256,7 @@ export default async function SalesDashboardPage() {
                   {formatCurrency(sprintMrrClosed)} / {formatCurrency(mrrTarget)}
                 </span>
               </div>
-              <div className="h-[10px] overflow-hidden rounded-[6px] bg-[rgba(255,255,255,.06)]">
+              <div className="h-[10px] overflow-hidden rounded-[6px] bg-line-strong">
                 <div
                   className="h-full rounded-[6px] bg-[linear-gradient(90deg,#4a9fe8,#f4843f)] transition-[width]"
                   style={{ width: `${Math.max(2, sprintProgressPct)}%` }}

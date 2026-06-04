@@ -69,3 +69,13 @@ body {
 /* design-system keyframes */
 @keyframes tm-pulse{0%{transform:scale(.6);opacity:.5}100%{transform:scale(2.2);opacity:0}}
 @keyframes tm-wave{0%,100%{height:6px}50%{height:24px}}
+
+/* Hero / accent gradient surfaces — dark gradient in dark mode (unchanged from the
+   original design), pale gradient in light mode, so themed text (var(--text)/--dim/
+   --faint) stays readable on BOTH themes. */
+.tm-hero{background:linear-gradient(120deg,#1c2e44 0%,#122236 70%)}
+.tm-light .tm-hero{background:linear-gradient(120deg,#e4edf8,#edf4fb)}
+.tm-hero-blue{background:linear-gradient(135deg,#122234,#0d1b2a)}
+.tm-light .tm-hero-blue{background:linear-gradient(135deg,#e6eef9,#eef3fb)}
+.tm-status{background:linear-gradient(150deg,#16304a,#0f2236)}
+.tm-light .tm-status{background:linear-gradient(150deg,#e6eef0,#eff4f2)}

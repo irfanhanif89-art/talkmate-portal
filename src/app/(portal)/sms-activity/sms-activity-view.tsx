@@ -415,7 +415,7 @@ export default function SmsActivityView({
               {used} <span className="text-[13px] font-normal text-faint">/ {cap}</span>
             </div>
             {/* Progress bar */}
-            <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,.07)]">
+            <div className="h-1.5 overflow-hidden rounded-full bg-line-strong">
               <div
                 className="h-full rounded-full transition-all"
                 style={{
