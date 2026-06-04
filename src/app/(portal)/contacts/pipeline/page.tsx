@@ -23,9 +23,9 @@ export default async function PipelinePage() {
   if (!hasPipeline(industry)) {
     return (
       <div style={{ padding: 28, color: '#F2F6FB' }}>
-        <Link href="/contacts" style={{ fontSize: 13, color: '#7BAED4', textDecoration: 'none' }}>← All contacts</Link>
+        <Link href="/contacts" style={{ fontSize: 13, color: 'var(--dim)', textDecoration: 'none' }}>← All contacts</Link>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginTop: 8, marginBottom: 8 }}>Pipeline</h1>
-        <p style={{ fontSize: 14, color: '#7BAED4', marginBottom: 12, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 12, lineHeight: 1.6 }}>
           Pipelines are available for real estate, trades, and professional services.
           {industry ? <> Your current industry is <strong style={{ color: 'white' }}>{industry.replace(/_/g, ' ')}</strong>.</> : null}
         </p>
@@ -34,8 +34,8 @@ export default async function PipelinePage() {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             background: 'rgba(232,98,42,0.12)', border: '1px solid rgba(232,98,42,0.3)',
-            color: '#E8622A', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-            textDecoration: 'none', fontFamily: 'Outfit, sans-serif',
+            color: 'var(--orange)', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            textDecoration: 'none', fontFamily: 'inherit',
           }}
         >
           Update your industry in Account Settings →

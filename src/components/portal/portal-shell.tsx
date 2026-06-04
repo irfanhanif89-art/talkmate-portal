@@ -44,7 +44,7 @@ export default function PortalShell(props: Props) {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#061322' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       <PortalSidebar
         businessName={props.businessName}
         userEmail={props.userEmail}

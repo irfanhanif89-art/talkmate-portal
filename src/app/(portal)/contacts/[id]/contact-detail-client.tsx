@@ -119,7 +119,7 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
 
   return (
     <div style={{ padding: 28, color: '#F2F6FB' }}>
-      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#7BAED4', textDecoration: 'none', marginBottom: 18 }}>
+      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--dim)', textDecoration: 'none', marginBottom: 18 }}>
         <ArrowLeft size={14} /> All contacts
       </Link>
 
@@ -128,7 +128,7 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
 
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 24 }}>
             {editing ? (
               <div>
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" style={detailInput} />
@@ -141,10 +141,10 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
             ) : (
               <>
                 <h1 style={{ fontSize: 28, fontWeight: 800, color: 'white', marginBottom: 4 }}>
-                  {contact.name || <span style={{ color: '#7BAED4' }}>Unknown caller</span>}
+                  {contact.name || <span style={{ color: 'var(--dim)' }}>Unknown caller</span>}
                 </h1>
-                <div style={{ fontSize: 14, color: '#7BAED4' }}>{formatPhone(contact.phone)}{contact.email && ` · ${contact.email}`}</div>
-                <div style={{ fontSize: 12, color: '#4A7FBB', marginTop: 6 }}>
+                <div style={{ fontSize: 14, color: 'var(--dim)' }}>{formatPhone(contact.phone)}{contact.email && ` · ${contact.email}`}</div>
+                <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>
                   First seen {fmtDate(contact.first_seen)} · {contact.call_count} call{contact.call_count === 1 ? '' : 's'}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -156,10 +156,10 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
           </div>
 
           {/* Tags */}
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Tags</div>
+          <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Tags</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-              {(contact.tags ?? []).length === 0 && <span style={{ fontSize: 12, color: '#7BAED4' }}>No tags yet</span>}
+              {(contact.tags ?? []).length === 0 && <span style={{ fontSize: 12, color: 'var(--dim)' }}>No tags yet</span>}
               {(contact.tags ?? []).map(t => (
                 <span key={t} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -175,7 +175,7 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
               <button onClick={() => setShowTagDropdown(s => !s)} style={{ ...ghostBtn, padding: '5px 10px', fontSize: 11, fontWeight: 600 }}><Plus size={11} /> Add tag</button>
             </div>
             {showTagDropdown && (
-              <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: 12 }}>
+              <div style={{ background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                   {STANDARD_TAGS.filter(t => !(contact.tags ?? []).includes(t)).map(t => (
                     <button key={t} onClick={() => addTag(t)} style={{ ...ghostBtn, padding: '5px 9px', fontSize: 11 }}>{t.replace(/_/g, ' ')}</button>
@@ -190,9 +190,9 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
           </div>
 
           {/* Notes */}
-          <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Notes</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Notes</div>
               {savingNotes && <span style={{ fontSize: 11, color: '#22C55E' }}>Saving…</span>}
             </div>
             <textarea
@@ -212,8 +212,8 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
 
           {/* Industry-specific fields — structured display per industry */}
           {industry && Object.keys(contact.industry_data ?? {}).length > 0 && (
-            <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
+            <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>
                 {industry.replace(/_/g, ' ')} details
               </div>
               <IndustryDataView industry={industry} data={contact.industry_data} />
@@ -234,21 +234,21 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
         </div>
 
         {/* RIGHT */}
-        <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#7BAED4', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Call history</div>
+        <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: 22 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Call history</div>
           {calls.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 28, fontSize: 13, color: '#7BAED4' }}>No calls logged yet.</div>
+            <div style={{ textAlign: 'center', padding: 28, fontSize: 13, color: 'var(--dim)' }}>No calls logged yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {calls.map(c => (
-                <div key={c.id} style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden' }}>
+                <div key={c.id} style={{ background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden' }}>
                   <button
                     onClick={() => setExpandedCallId(expandedCallId === c.id ? null : c.id)}
-                    style={{ width: '100%', textAlign: 'left', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                    style={{ width: '100%', textAlign: 'left', padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: 'white' }}>{fmtDate(c.call_at)}</span>
-                      <span style={{ fontSize: 11, color: '#7BAED4' }}>{fmtDuration(c.duration_seconds)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--dim)' }}>{fmtDuration(c.duration_seconds)}</span>
                       {expandedCallId === c.id ? <ChevronUp size={14} color="#4A7FBB" /> : <ChevronDown size={14} color="#4A7FBB" />}
                     </div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
@@ -263,18 +263,18 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
                         </span>
                       ))}
                     </div>
-                    {c.summary && <div style={{ fontSize: 12, color: '#7BAED4', marginTop: 6, lineHeight: 1.5 }}>{c.summary}</div>}
+                    {c.summary && <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 6, lineHeight: 1.5 }}>{c.summary}</div>}
                   </button>
                   {expandedCallId === c.id && (
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: 14, background: '#061322' }}>
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: 14, background: 'var(--bg)' }}>
                       {c.transcript ? (
-                        <pre style={{ fontSize: 12, color: '#7BAED4', fontFamily: 'inherit', margin: 0, whiteSpace: 'pre-wrap' as const, lineHeight: 1.7, marginBottom: 10 }}>{c.transcript}</pre>
+                        <pre style={{ fontSize: 12, color: 'var(--dim)', fontFamily: 'inherit', margin: 0, whiteSpace: 'pre-wrap' as const, lineHeight: 1.7, marginBottom: 10 }}>{c.transcript}</pre>
                       ) : (
-                        <div style={{ fontSize: 12, color: '#4A7FBB', marginBottom: 10, fontStyle: 'italic' }}>No transcript captured for this call.</div>
+                        <div style={{ fontSize: 12, color: 'var(--faint)', marginBottom: 10, fontStyle: 'italic' }}>No transcript captured for this call.</div>
                       )}
                       <button
                         onClick={() => setNotes(n => `${n}${n ? '\n\n' : ''}[${fmtDate(c.call_at)}] ${c.summary ?? c.outcome ?? 'Call note'}`)}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', background: 'rgba(74,159,232,0.1)', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.25)', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', background: 'rgba(74,159,232,0.1)', color: '#4A9FE8', border: '1px solid rgba(74,159,232,0.25)', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                       >
                         <StickyNote size={11} /> Add note from this call
                       </button>
@@ -291,16 +291,16 @@ export default function ContactDetailClient({ contact: initial, calls, industry,
 }
 
 const detailInput: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', background: '#071829', border: '1px solid rgba(255,255,255,0.1)',
-  color: 'white', borderRadius: 9, fontFamily: 'Outfit, sans-serif', fontSize: 14, outline: 'none',
+  width: '100%', padding: '10px 12px', background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.1)',
+  color: 'white', borderRadius: 9, fontFamily: 'inherit', fontSize: 14, outline: 'none',
 }
 const primaryBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
-  background: '#E8622A', color: 'white', border: 'none', fontFamily: 'Outfit, sans-serif',
+  background: 'var(--orange)', color: 'white', border: 'none', fontFamily: 'inherit',
   fontSize: 13, fontWeight: 700, cursor: 'pointer',
 }
 const ghostBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
-  background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.1)',
-  fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+  background: 'transparent', color: 'var(--dim)', border: '1px solid rgba(255,255,255,0.1)',
+  fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer',
 }

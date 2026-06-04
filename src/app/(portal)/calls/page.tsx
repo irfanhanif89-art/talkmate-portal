@@ -1,8 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import CallMessagesSection from '@/components/portal/call-messages-section'
+import { FilterTabs } from '@/components/portal/ui-v2/tabs'
+import { CallListRow } from '@/components/portal/ui-v2/call-row'
+import { AiScoreBadge } from '@/components/portal/ui-v2/ai-score-badge'
+import { Tag, type TagVariant } from '@/components/portal/ui-v2/tag'
+import { Panel } from '@/components/portal/ui-v2/panel'
+import { Waveform } from '@/components/portal/ui-v2/waveform'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CallFlag {
   type: string
@@ -36,6 +45,8 @@ interface Call {
   owner_alerted: boolean | null
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const FLAG_LABELS: Record<string, string> = {
   short_call: 'Short call',
   vip_not_transferred: 'VIP not transferred',
@@ -47,31 +58,45 @@ const FLAG_LABELS: Record<string, string> = {
   no_resolution: 'No resolution',
 }
 
-function flagColor(type: string): { bg: string; fg: string } {
+/** Map flag type → flag-ok / flag-warn / flag-bad semantic class */
+function flagClass(type: string): 'flag-ok' | 'flag-warn' | 'flag-bad' {
   switch (type) {
     case 'vip_not_transferred':
     case 'agent_error':
-      return { bg: 'rgba(239,68,68,0.14)', fg: '#EF4444' }
+      return 'flag-bad'
     case 'agent_promise':
     case 'missed_lead':
     case 'caller_frustrated':
-      return { bg: 'rgba(245,158,11,0.14)', fg: '#F59E0B' }
+      return 'flag-warn'
     case 'warm_lead':
-      return { bg: 'rgba(74,159,232,0.14)', fg: '#4A9FE8' }
+      return 'flag-ok'
     default:
-      return { bg: 'rgba(255,255,255,0.08)', fg: '#7BAED4' }
+      return 'flag-warn'
   }
 }
 
-function intelligenceDot(status: Call['intelligence_status']): { color: string; tooltip: string } | null {
-  switch (status) {
-    case 'resolved': return { color: '#22C55E', tooltip: 'Resolved — no action needed' }
-    case 'review':   return { color: '#F59E0B', tooltip: 'Worth reviewing' }
-    case 'critical': return { color: '#EF4444', tooltip: 'Needs your attention' }
-    case 'pending':  return { color: 'rgba(255,255,255,0.25)', tooltip: 'Analysing…' }
-    case 'error':    return { color: 'rgba(255,255,255,0.15)', tooltip: 'Scoring failed (will retry)' }
-    default: return null
-  }
+/** Map outcome string → TagVariant */
+function outcomeToVariant(outcome: string, transferred: boolean): TagVariant {
+  const o = (outcome || '').toLowerCase()
+  if (transferred) return 'transfer'
+  if (o === 'missed' || !o) return 'missed'
+  if (o.includes('book')) return 'book'
+  if (o.includes('quote')) return 'quote'
+  if (o.includes('emergency') || o.includes('escalat')) return 'emergency'
+  if (o.includes('faq') || o.includes('question')) return 'question'
+  return 'book' // default to resolved-ish
+}
+
+/** Map outcome → human label */
+function outcomeLabel(outcome: string, transferred: boolean): string {
+  if (transferred) return 'Transferred'
+  const o = (outcome || '').toLowerCase()
+  if (o === 'missed' || !o) return 'Missed'
+  if (o.includes('book')) return 'Booking'
+  if (o.includes('quote')) return 'Quote'
+  if (o.includes('emergency') || o.includes('escalat')) return 'Emergency'
+  if (o.includes('faq') || o.includes('question')) return 'Question'
+  return 'Resolved'
 }
 
 function fmt(s: number) {
@@ -90,18 +115,98 @@ function timeAgo(date: string) {
   return d === 1 ? 'yesterday' : `${d}d ago`
 }
 
-function outcomeBadge(outcome: string) {
-  const o = (outcome || '').toLowerCase()
-  if (o === 'missed' || !o) return { bg: 'rgba(239,68,68,0.12)', color: '#EF4444', label: 'Missed' }
-  if (o.includes('transfer')) return { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', label: 'Transferred' }
-  if (o === 'faq') return { bg: 'rgba(74,159,232,0.12)', color: '#4A9FE8', label: 'FAQ' }
-  return { bg: 'rgba(34,197,94,0.12)', color: '#22C55E', label: 'Resolved' }
+function callTime(date: string) {
+  return new Date(date).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
-function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void }) {
-  const badge = outcomeBadge(call.outcome)
+function callerInitials(name: string | null, number: string): string {
+  if (name) {
+    const parts = name.trim().split(' ')
+    return parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+      : name.slice(0, 2).toUpperCase()
+  }
+  return number.slice(-2)
+}
+
+// ─── Filter tab types ─────────────────────────────────────────────────────────
+
+type TabValue = 'All' | 'Bookings' | 'Quotes' | 'Questions' | 'Escalated' | 'Missed'
+
+function filterCall(call: Call, tab: TabValue): boolean {
+  const v = outcomeToVariant(call.outcome, call.transferred)
+  switch (tab) {
+    case 'All':        return true
+    case 'Bookings':   return v === 'book'
+    case 'Quotes':     return v === 'quote'
+    case 'Questions':  return v === 'question'
+    case 'Escalated':  return v === 'emergency' || call.intelligence_status === 'critical' || call.intelligence_status === 'review'
+    case 'Missed':     return v === 'missed'
+  }
+}
+
+// ─── Transcript parser (same logic as before) ─────────────────────────────────
+
+function parseTranscript(transcript: string | null): Array<{ role: string; content: string }> {
+  if (!transcript) return []
+  try {
+    const parsed = JSON.parse(transcript)
+    if (Array.isArray(parsed)) {
+      return parsed.map((m: { role?: string; content?: string; message?: string }) => ({
+        role: m.role || 'unknown',
+        content: m.content || m.message || '',
+      }))
+    }
+  } catch {
+    // Plain text — split into lines
+    return transcript.split('\n').filter(Boolean).map(line => {
+      const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('assistant:') || line.toLowerCase().startsWith('aaron:')
+      return { role: isAI ? 'assistant' : 'user', content: line.replace(/^(ai|assistant|aaron|user|caller):\s*/i, '') }
+    })
+  }
+  return []
+}
+
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
+
+function DetailPanel({ call }: { call: Call }) {
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [flagging, setFlagging] = useState<number | null>(null)
   const [flagged, setFlagged] = useState<Set<number>>(new Set())
+
+  // Reset audio state when call changes
+  useEffect(() => {
+    setPlaying(false)
+    setProgress(0)
+    setCurrentTime(0)
+    setDuration(0)
+  }, [call.id])
+
+  const handleTimeUpdate = useCallback(() => {
+    const el = audioRef.current
+    if (!el) return
+    setCurrentTime(el.currentTime)
+    setDuration(el.duration || 0)
+    setProgress(el.duration ? el.currentTime / el.duration : 0)
+  }, [])
+
+  const handleScrub = useCallback((frac: number) => {
+    const el = audioRef.current
+    if (!el || !el.duration) return
+    el.currentTime = frac * el.duration
+    setProgress(frac)
+  }, [])
+
+  const togglePlay = useCallback(() => {
+    const el = audioRef.current
+    if (!el) return
+    if (playing) { el.pause(); setPlaying(false) }
+    else { el.play(); setPlaying(true) }
+  }, [playing])
 
   async function flagWrong(idx: number) {
     setFlagging(idx)
@@ -117,386 +222,542 @@ function TranscriptModal({ call, onClose }: { call: Call; onClose: () => void })
     }
   }
 
-  // Parse transcript — could be plain string or JSON array of {role, message} objects
-  let messages: Array<{ role: string; content: string }> = []
-  if (call.transcript) {
-    try {
-      const parsed = JSON.parse(call.transcript)
-      if (Array.isArray(parsed)) {
-        messages = parsed.map((m: { role?: string; content?: string; message?: string }) => ({
-          role: m.role || 'unknown',
-          content: m.content || m.message || ''
-        }))
-      }
-    } catch {
-      // Plain text transcript — split into lines
-      messages = call.transcript.split('\n').filter(Boolean).map(line => {
-        const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('assistant:') || line.toLowerCase().startsWith('aaron:')
-        return { role: isAI ? 'assistant' : 'user', content: line.replace(/^(ai|assistant|aaron|user|caller):\s*/i, '') }
-      })
-    }
+  const variant = outcomeToVariant(call.outcome, call.transferred)
+  const label = outcomeLabel(call.outcome, call.transferred)
+  const initials = callerInitials(call.caller_name, call.caller_number || '??')
+  const messages = parseTranscript(call.transcript)
+
+  // Filter out admin-only flags (sms_mismatch) before rendering
+  const clientFlags = (call.intelligence_flags ?? []).filter(f => f.type !== 'sms_mismatch')
+  const showIntelPanel = typeof call.intelligence_score === 'number' || clientFlags.length > 0 || (call.intelligence_actions?.length ?? 0) > 0 || call.owner_alerted
+
+  function fmtTime(s: number) {
+    if (!isFinite(s) || s <= 0) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={onClose}>
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, width: '100%', maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
-        onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>
-              📞 {call.caller_name || call.caller_number || 'Unknown caller'}
-            </div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#4A7FBB' }}>
-              <span>{new Date(call.created_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-              <span>·</span>
-              <span>{fmt(call.duration_seconds)}</span>
-              <span>·</span>
-              <span style={{ color: badge.color, fontWeight: 600 }}>{badge.label}</span>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="flex gap-4 items-start px-[26px] py-[18px] border-b border-line flex-shrink-0">
+        {/* Avatar */}
+        <div className="w-[50px] h-[50px] rounded-[14px] flex-shrink-0 flex items-center justify-center text-[18px] font-extrabold"
+          style={{ background: 'linear-gradient(135deg,#2a4a6a,#1a3350)', color: '#7fb0d5' }}>
+          {initials}
         </div>
 
-        {/* Summary — prefer Intelligence summary when present */}
-        {(call.intelligence_summary || call.summary) && (
-          <div style={{ padding: '16px 24px', background: 'rgba(74,159,232,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 6 }}>
-              {call.intelligence_summary ? 'Agent Summary' : 'AI Summary'}
-            </div>
-            <p style={{ fontSize: 14, color: '#7BAED4', lineHeight: 1.6 }}>{call.intelligence_summary ?? call.summary}</p>
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="text-[19px] font-extrabold tracking-tight leading-tight">
+            {call.caller_name || call.caller_number || 'Unknown caller'}
           </div>
-        )}
+          <div className="flex items-center gap-2.5 flex-wrap mt-1 text-[12.5px] text-dim">
+            {call.caller_name && (
+              <>
+                <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+                </svg>
+                <span>{call.caller_number}</span>
+                <span className="text-faint">·</span>
+              </>
+            )}
+            <span>{new Date(call.created_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+            <span className="text-faint">·</span>
+            <span>{fmt(call.duration_seconds)}</span>
+          </div>
+        </div>
 
-        {/* Agent Analysis — Session 18 Call Intelligence.
-            Session 19: filter out admin-only flags (sms_mismatch) before
-            rendering so clients never see SMS verification commentary. */}
-        {(() => {
-          const clientFlags = (call.intelligence_flags ?? []).filter(f => f.type !== 'sms_mismatch')
-          const showPanel = clientFlags.length > 0 || (call.intelligence_actions?.length ?? 0) > 0 || call.owner_alerted
-          if (!showPanel) return null
-          return (
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(245,158,11,0.04)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#F59E0B' }}>Agent Analysis</div>
-              {typeof call.intelligence_score === 'number' && (
-                <div style={{ fontSize: 12, color: '#7BAED4' }}>Score: <span style={{ color: 'white', fontWeight: 700 }}>{call.intelligence_score}/10</span></div>
-              )}
+        {/* Outcome card */}
+        <div className="flex-shrink-0">
+          <div className={[
+            'rounded-[11px] border px-[15px] py-[11px] min-w-[130px] text-center',
+            variant === 'book'      ? 'bg-green-soft border-green/30'   :
+            variant === 'missed'   ? 'bg-[rgba(240,98,90,.1)] border-red/30'  :
+            variant === 'transfer' ? 'bg-[rgba(242,181,60,.1)] border-gold/30' :
+            variant === 'quote'    ? 'bg-[rgba(238,106,44,.1)] border-orange/30' :
+            variant === 'emergency'? 'bg-[rgba(240,98,90,.1)] border-red/30' :
+                                     'bg-[rgba(91,155,217,.1)] border-blue/30',
+          ].join(' ')}>
+            <div className={[
+              'text-[13px] font-bold',
+              variant === 'book'      ? 'text-green'  :
+              variant === 'missed'    ? 'text-red'    :
+              variant === 'transfer'  ? 'text-gold'   :
+              variant === 'quote'     ? 'text-orange' :
+              variant === 'emergency' ? 'text-red'    :
+                                        'text-blue',
+            ].join(' ')}>
+              {variant === 'book' ? '✓ ' : ''}{label}
             </div>
+            <div className="text-[12px] text-dim mt-0.5">
+              {new Date(call.created_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+            </div>
+          </div>
+        </div>
+      </div>
 
-            {clientFlags.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+      {/* Intelligence panel */}
+      {showIntelPanel && (
+        <div className="flex-shrink-0 flex gap-4 items-center px-[26px] py-[14px] border-b border-line">
+          {/* AI Score */}
+          <span className="text-[11px] font-bold tracking-[.08em] uppercase text-faint mr-1">AI Score</span>
+          {typeof call.intelligence_score === 'number' ? (
+            <div className="flex items-baseline gap-1">
+              <span className={[
+                'text-[24px] font-extrabold tracking-tight tnum',
+                call.intelligence_score >= 8 ? 'text-green' : call.intelligence_score >= 6 ? 'text-gold' : 'text-red',
+              ].join(' ')}>{call.intelligence_score}</span>
+              <span className="text-[13px] text-faint">/ 10</span>
+            </div>
+          ) : (
+            <span className="text-[13px] text-faint">—</span>
+          )}
+
+          {clientFlags.length > 0 && (
+            <>
+              <div className="w-px h-7 bg-line-strong flex-shrink-0" />
+              {/* Flags */}
+              <div className="flex gap-[7px] flex-wrap">
                 {clientFlags.map((f, i) => {
-                  const c = flagColor(f.type)
-                  const label = FLAG_LABELS[f.type] ?? f.type.replace(/_/g, ' ')
+                  const fc = flagClass(f.type)
+                  const flabel = FLAG_LABELS[f.type] ?? f.type.replace(/_/g, ' ')
+                  const cls = fc === 'flag-ok'
+                    ? 'bg-green-soft text-green'
+                    : fc === 'flag-bad'
+                    ? 'bg-[rgba(240,98,90,.14)] text-red'
+                    : 'bg-[rgba(242,181,60,.14)] text-gold'
                   return (
-                    <span key={i} title={f.detail ?? ''} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 99, background: c.bg, color: c.fg }}>
-                      {label}
+                    <span key={i} title={f.detail ?? ''} className={`inline-flex items-center gap-1 text-[11.5px] font-semibold px-[10px] py-1 rounded-[7px] ${cls}`}>
+                      {fc === 'flag-ok' && (
+                        <svg className="w-[11px] h-[11px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      )}
+                      {fc === 'flag-warn' && (
+                        <svg className="w-[11px] h-[11px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      )}
+                      {fc === 'flag-bad' && (
+                        <svg className="w-[11px] h-[11px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      )}
+                      {flabel}
                     </span>
                   )
                 })}
               </div>
-            )}
-
-            {clientFlags.length > 0 && clientFlags.some(f => f.detail) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                {clientFlags.filter(f => f.detail).map((f, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#7BAED4', lineHeight: 1.5 }}>
-                    <span style={{ color: '#4A7FBB', fontWeight: 600 }}>{FLAG_LABELS[f.type] ?? f.type}:</span> {f.detail}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!!call.intelligence_actions?.length && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: call.owner_alerted ? 12 : 0 }}>
-                {call.intelligence_actions.map((a, i) => {
-                  if (a.type === 'callback_suggested' && a.phone) {
-                    return (
-                      <a key={i} href={`tel:${a.phone}`}
-                        style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, background: '#E8622A', color: 'white', textDecoration: 'none' }}>
-                        Call back {a.phone}
-                      </a>
-                    )
-                  }
-                  if (a.type === 'review_transcript') {
-                    return (
-                      <span key={i} style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, background: 'rgba(74,159,232,0.18)', color: '#4A9FE8' }}>
-                        Review transcript below
-                      </span>
-                    )
-                  }
-                  return null
-                })}
-              </div>
-            )}
-
-            {call.owner_alerted && (
-              <div style={{ fontSize: 12, color: '#22C55E', padding: '6px 10px', background: 'rgba(34,197,94,0.08)', borderRadius: 8, display: 'inline-block' }}>
-                ✓ Owner was notified via SMS
-              </div>
-            )}
-          </div>
-          )
-        })()}
-
-        {/* Session 19 — Messages sent after this call. Self-fetches; renders
-            nothing when there are no client-visible messages. */}
-        <CallMessagesSection callId={call.id} />
-
-        {/* Recording */}
-        {call.recording_url && (
-          <div style={{ padding: '12px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 8 }}>Recording</div>
-            <audio controls style={{ width: '100%', height: 36 }} src={call.recording_url} />
-          </div>
-        )}
-
-        {/* Transcript */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#4A7FBB', marginBottom: 16 }}>
-            {messages.length > 0 ? 'Transcript' : 'No transcript available'}
-          </div>
-          {messages.length === 0 && !call.transcript && (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: '#4A7FBB', fontSize: 14 }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-              <p>Transcript not available for this call.</p>
-              <p style={{ fontSize: 12, marginTop: 6 }}>Transcripts are saved automatically for all new calls.</p>
-            </div>
+            </>
           )}
-          {messages.length > 0 && messages.map((msg, i) => {
-            const isAI = msg.role === 'assistant' || msg.role === 'bot'
-            const isFlagged = flagged.has(i)
-            return (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, flexDirection: isAI ? 'row' : 'row-reverse', alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: isAI ? '#E8622A' : 'rgba(74,159,232,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0, color: 'white', fontWeight: 700 }}>
-                  {isAI ? 'AI' : '👤'}
-                </div>
-                <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ padding: '10px 14px', borderRadius: isAI ? '4px 14px 14px 14px' : '14px 4px 14px 14px', background: isAI ? 'rgba(232,98,42,0.1)' : 'rgba(74,159,232,0.1)', border: `1px solid ${isAI ? 'rgba(232,98,42,0.2)' : 'rgba(74,159,232,0.2)'}` }}>
-                    <p style={{ fontSize: 14, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.content}</p>
-                  </div>
-                  {isAI && (
-                    <button
-                      onClick={() => !isFlagged && flagWrong(i)}
-                      disabled={isFlagged || flagging === i}
-                      style={{
-                        background: 'transparent', border: 'none', color: isFlagged ? '#22C55E' : 'rgba(255,255,255,0.4)',
-                        cursor: isFlagged ? 'default' : 'pointer', fontSize: 11, padding: 0, textAlign: 'left',
-                        fontFamily: 'Outfit, sans-serif',
-                      }}
-                    >
-                      {isFlagged ? '✓ Flagged for retraining' : flagging === i ? 'Flagging…' : '⚠ This response was wrong'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
+
+          {/* Estimated revenue — placeholder; real value not yet linked to jobs table */}
+          <div className="ml-auto text-right flex-shrink-0">
+            <div className="text-[11px] text-faint">est. job value</div>
+            <div className="text-[20px] font-extrabold text-orange tracking-tight tnum">—</div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary / intelligence summary */}
+      {(call.intelligence_summary || call.summary) && (
+        <div className="flex-shrink-0 px-[26px] py-[12px] border-b border-line bg-[rgba(74,159,232,.04)]">
+          <div className="text-[11px] font-bold uppercase tracking-[.08em] text-blue mb-1.5">
+            {call.intelligence_summary ? 'Agent Summary' : 'AI Summary'}
+          </div>
+          <p className="text-[13.5px] text-dim leading-relaxed">{call.intelligence_summary ?? call.summary}</p>
+        </div>
+      )}
+
+      {/* Actions + owner alert */}
+      {((call.intelligence_actions?.length ?? 0) > 0 || call.owner_alerted) && (
+        <div className="flex-shrink-0 px-[26px] py-[12px] border-b border-line flex flex-wrap gap-2 items-center">
+          {call.intelligence_actions?.map((a, i) => {
+            if (a.type === 'callback_suggested' && a.phone) {
+              return (
+                <a key={i} href={`tel:${a.phone}`} className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-orange text-white no-underline">
+                  Call back {a.phone}
+                </a>
+              )
+            }
+            if (a.type === 'review_transcript') {
+              return (
+                <span key={i} className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-[rgba(74,159,232,.18)] text-blue">
+                  Review transcript below
+                </span>
+              )
+            }
+            return null
           })}
-          {/* If transcript is plain text with no parsing */}
-          {messages.length === 0 && call.transcript && (
-            <pre style={{ fontSize: 13, color: '#7BAED4', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'Outfit, sans-serif' }}>{call.transcript}</pre>
+          {call.owner_alerted && (
+            <span className="text-[12px] text-green px-2.5 py-1 bg-green-soft rounded-lg">✓ Owner notified via SMS</span>
           )}
         </div>
+      )}
+
+      {/* Messages section (Session 19) */}
+      <CallMessagesSection callId={call.id} />
+
+      {/* Transcript */}
+      <div className="flex-1 overflow-y-auto px-[26px] py-[18px] flex flex-col gap-[11px] [scrollbar-width:none]">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className="text-3xl mb-3">📋</div>
+            <p className="text-[14px] text-dim">Transcript not available for this call.</p>
+            <p className="text-[12px] text-faint mt-1">Transcripts are saved automatically for all new calls.</p>
+          </div>
+        )}
+        {messages.map((msg, i) => {
+          const isAI = msg.role === 'assistant' || msg.role === 'bot'
+          const isFlagged = flagged.has(i)
+          return (
+            <div key={i} className="flex flex-col">
+              <span className={[
+                'block max-w-[70%] px-[14px] py-[10px] rounded-[13px] text-[13px] leading-[1.55]',
+                isAI
+                  ? 'bg-[rgba(238,106,44,.1)] border border-[rgba(238,106,44,.2)] rounded-bl-[4px] mr-auto'
+                  : 'bg-card-2 border border-line rounded-br-[4px] ml-auto text-dim',
+              ].join(' ')}>
+                <span className={[
+                  'block text-[10px] font-bold tracking-[.05em] uppercase opacity-70 mb-0.5',
+                  isAI ? 'text-orange' : 'text-dim',
+                ].join(' ')}>
+                  {isAI ? 'Ava' : 'Caller'}
+                </span>
+                {msg.content}
+              </span>
+              {isAI && (
+                <button
+                  onClick={() => !isFlagged && flagWrong(i)}
+                  disabled={isFlagged || flagging === i}
+                  className="mt-1 text-[11px] bg-transparent border-none cursor-pointer text-left pl-[2px] disabled:cursor-default"
+                  style={{ color: isFlagged ? 'var(--green)' : 'rgba(255,255,255,.35)', fontFamily: 'inherit' }}
+                >
+                  {isFlagged ? '✓ Flagged for retraining' : flagging === i ? 'Flagging…' : '⚠ This response was wrong'}
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {/* Plain-text fallback */}
+        {messages.length === 0 && call.transcript && (
+          <pre className="text-[13px] text-dim leading-[1.8] whitespace-pre-wrap" style={{ fontFamily: 'inherit' }}>
+            {call.transcript}
+          </pre>
+        )}
       </div>
+
+      {/* Audio player */}
+      {call.recording_url && (
+        <div className="flex-shrink-0 flex items-center gap-[13px] px-[26px] py-[14px] border-t border-line">
+          {/* Hidden HTML5 audio element */}
+          <audio
+            ref={audioRef}
+            src={call.recording_url}
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleTimeUpdate}
+            onEnded={() => setPlaying(false)}
+            className="hidden"
+          />
+
+          {/* Round play button */}
+          <button
+            onClick={togglePlay}
+            className="w-[42px] h-[42px] rounded-full flex-shrink-0 flex items-center justify-center border-0 cursor-pointer transition-all hover:brightness-110"
+            style={{
+              background: 'linear-gradient(135deg,#f4843f,#e85f24)',
+              boxShadow: '0 6px 18px rgba(238,106,44,.45)',
+            }}
+            aria-label={playing ? 'Pause recording' : 'Play recording'}
+          >
+            {playing ? (
+              <svg className="w-[17px] h-[17px] text-white" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+            ) : (
+              <svg className="w-[17px] h-[17px] text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Waveform scrubber */}
+          <div className="flex-1">
+            <Waveform progress={progress} onScrub={handleScrub} bars={80} />
+          </div>
+
+          {/* Time display */}
+          <span className="mono text-[12px] text-faint whitespace-nowrap">
+            {fmtTime(currentTime)} / {duration > 0 ? fmtTime(duration) : fmt(call.duration_seconds)}
+          </span>
+
+          {/* Download */}
+          <a
+            href={call.recording_url}
+            download
+            className="text-[12px] font-semibold text-dim px-3 py-1.5 bg-card border border-line rounded-lg hover:bg-card-2 transition-colors no-underline"
+          >
+            Download
+          </a>
+        </div>
+      )}
     </div>
   )
 }
 
-const OUTCOMES = ['All', 'Flagged', 'Critical', 'Resolved', 'Transferred', 'Missed']
+// ─── Empty-state ──────────────────────────────────────────────────────────────
+
+function EmptyState({ filter, businessPhone }: { filter: TabValue; businessPhone: string }) {
+  const [copied, setCopied] = useState(false)
+
+  if (filter === 'Escalated') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-16 text-center px-6">
+        <div className="text-4xl mb-3">✅</div>
+        <h3 className="text-[16px] font-semibold mb-2">No escalated calls</h3>
+        <p className="text-[13px] text-dim max-w-[320px]">Your agent is handling everything well.</p>
+      </div>
+    )
+  }
+
+  if (filter === 'Missed') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-16 text-center px-6">
+        <div className="text-4xl mb-3">✅</div>
+        <h3 className="text-[16px] font-semibold mb-2">No missed calls</h3>
+        <p className="text-[13px] text-dim max-w-[320px]">Every call has been answered.</p>
+      </div>
+    )
+  }
+
+  if (filter !== 'All') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-16 text-center px-6">
+        <p className="text-[13px] text-dim">No calls match this filter.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full py-16 text-center px-6">
+      <svg className="mb-4" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+      </svg>
+      <h3 className="text-[16px] font-semibold mb-2">Your agent is live and ready</h3>
+      <p className="text-[13px] text-dim mb-5 max-w-[320px]">Make a test call to your TalkMate number to see your first call appear here.</p>
+      <ButtonV2
+        onClick={async () => {
+          const num = businessPhone || '+61 1800 TALK'
+          await navigator.clipboard.writeText(num)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+        }}
+      >
+        {copied ? 'Copied! ✓' : 'Copy your TalkMate number'}
+      </ButtonV2>
+    </div>
+  )
+}
+
+// ─── No-selection placeholder ─────────────────────────────────────────────────
+
+function NoSelection() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center px-8">
+      <svg className="mb-4 opacity-30" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+      </svg>
+      <p className="text-[13px] text-faint">Select a call to view details</p>
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CallsPage() {
   const supabase = createClient()
   const [calls, setCalls] = useState<Call[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('All')
+  const [tab, setTab] = useState<TabValue>('All')
   const [search, setSearch] = useState('')
   const [selectedCall, setSelectedCall] = useState<Call | null>(null)
-  const [businessId, setBusinessId] = useState('')
   const [businessPhone, setBusinessPhone] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [expandedCallId, setExpandedCallId] = useState<string | null>(null)
 
+  // ── Data fetching (preserved exactly) ───────────────────────────────────────
   useEffect(() => {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
-      // The column on `businesses` is `phone_number`, not `phone`. Asking
-      // for a non-existent column makes Supabase return `null` data and
-      // the `.single()` errors — `biz` is null, this function early-returns,
-      // and the page hangs on "Loading calls..." indefinitely. (The
-      // sidebar count is computed separately in the portal layout, which
-      // is why it shows the right number while this page hangs.)
       const { data: biz } = await supabase
         .from('businesses')
         .select('id, phone_number')
         .eq('owner_user_id', user.id)
         .single()
       if (!biz) { setLoading(false); return }
-      setBusinessId(biz.id)
       setBusinessPhone((biz as { phone_number?: string | null }).phone_number ?? '')
-      const { data } = await supabase.from('calls').select('*').eq('business_id', biz.id).order('created_at', { ascending: false }).limit(100)
+      const { data } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('business_id', biz.id)
+        .order('created_at', { ascending: false })
+        .limit(100)
       setCalls(data || [])
       setLoading(false)
     }
     load()
   }, [])
 
+  // ── Filtering ────────────────────────────────────────────────────────────────
   const filtered = calls.filter(c => {
-    if (filter === 'Flagged' && c.intelligence_status !== 'review' && c.intelligence_status !== 'critical') return false
-    if (filter === 'Critical' && c.intelligence_status !== 'critical') return false
-    if (filter === 'Resolved' && (c.transferred || !c.outcome || c.outcome === 'Missed')) return false
-    if (filter === 'Transferred' && !c.transferred) return false
-    if (filter === 'Missed' && c.outcome !== 'Missed') return false
+    if (!filterCall(c, tab)) return false
     if (search && !c.caller_number?.includes(search) && !(c.caller_name || '').toLowerCase().includes(search.toLowerCase())) return false
     return true
   })
 
-  const inp = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10, padding: '10px 14px', fontFamily: 'Outfit,sans-serif', fontSize: 14, outline: 'none' } as React.CSSProperties
+  // ── Tab counts (from real data) ───────────────────────────────────────────
+  const tabDefs: { value: TabValue; label: string; count: number }[] = [
+    { value: 'All',       label: 'All',       count: calls.filter(c => filterCall(c, 'All')).length },
+    { value: 'Bookings',  label: 'Bookings',  count: calls.filter(c => filterCall(c, 'Bookings')).length },
+    { value: 'Quotes',    label: 'Quotes',    count: calls.filter(c => filterCall(c, 'Quotes')).length },
+    { value: 'Questions', label: 'Questions', count: calls.filter(c => filterCall(c, 'Questions')).length },
+    { value: 'Escalated', label: 'Escalated', count: calls.filter(c => filterCall(c, 'Escalated')).length },
+    { value: 'Missed',    label: 'Missed',    count: calls.filter(c => filterCall(c, 'Missed')).length },
+  ]
+
+  // ── CSV export ────────────────────────────────────────────────────────────
+  function exportCSV() {
+    const rows = [
+      ['Caller', 'Number', 'Date', 'Duration', 'Outcome', 'Score', 'Transferred'],
+      ...filtered.map(c => [
+        c.caller_name ?? '',
+        c.caller_number ?? '',
+        new Date(c.created_at).toLocaleString('en-AU'),
+        fmt(c.duration_seconds),
+        outcomeLabel(c.outcome, c.transferred),
+        c.intelligence_score?.toString() ?? '',
+        c.transferred ? 'Yes' : 'No',
+      ])
+    ]
+    const csv = rows.map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'calls.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <div style={{ padding: 32, maxWidth: 1000, margin: '0 auto' }}>
-      {selectedCall && <TranscriptModal call={selectedCall} onClose={() => setSelectedCall(null)} />}
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Top bar */}
+      <header className="flex-shrink-0 flex items-center gap-[18px] px-7 h-[68px] border-b border-line">
+        <h1 className="text-[20px] font-extrabold tracking-tight">Calls</h1>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-[7px] bg-green-soft border border-green/30 rounded-full px-3 py-[6px] text-[12.5px] font-bold text-green">
+            <span className="relative flex w-[7px] h-[7px]">
+              <span className="absolute inset-0 rounded-full bg-green animate-[tm-pulse_1.8s_ease-out_infinite]" />
+              <span className="w-[7px] h-[7px] rounded-full bg-green relative" />
+            </span>
+            Live
+          </div>
+        </div>
+      </header>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>Call Log</h1>
-          <p style={{ fontSize: 13, color: '#4A7FBB' }}>{calls.length} total calls · Click any call to view transcript</p>
+      {/* Filter bar */}
+      <div className="flex-shrink-0 flex items-center gap-2.5 px-7 h-[58px] border-b border-line">
+        <FilterTabs<TabValue>
+          tabs={tabDefs}
+          value={tab}
+          onChange={setTab}
+        />
+
+        {/* Search */}
+        <div className="flex items-center gap-2 bg-card border border-line rounded-[9px] px-3 py-[7px] text-faint text-[13px] w-[210px] ml-1.5">
+          <svg className="w-[14px] h-[14px] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search caller or keyword…"
+            className="bg-transparent border-none outline-none text-text placeholder:text-faint w-full text-[13px]"
+            style={{ fontFamily: 'inherit' }}
+          />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e' }} />
-          <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>Live</span>
+
+        {/* Date — visual only for now */}
+        <div className="flex items-center gap-[7px] bg-card border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] text-dim cursor-pointer whitespace-nowrap ml-auto">
+          <svg className="w-[14px] h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+          {new Date().toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
         </div>
+
+        {/* Callbacks (folded from sidebar) */}
+        <a
+          href="/callbacks"
+          className="flex items-center gap-1.5 bg-card border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] text-dim no-underline whitespace-nowrap hover:bg-card-2 transition-colors"
+        >
+          <svg className="w-[14px] h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.8" />
+          </svg>
+          Callbacks
+        </a>
+
+        {/* Export CSV */}
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 bg-card border border-line rounded-[9px] px-3 py-[7px] text-[12.5px] text-dim cursor-pointer whitespace-nowrap hover:bg-card-2 transition-colors"
+          style={{ fontFamily: 'inherit' }}
+        >
+          <svg className="w-[14px] h-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Export CSV
+        </button>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by number or name..." style={{ ...inp, width: 260 }} />
-        <div style={{ display: 'flex', gap: 6 }}>
-          {OUTCOMES.map(o => (
-            <button key={o} onClick={() => setFilter(o)} style={{ padding: '9px 16px', borderRadius: 10, border: 'none', fontFamily: 'Outfit,sans-serif', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: filter === o ? '#E8622A' : 'rgba(255,255,255,0.06)', color: filter === o ? 'white' : '#4A7FBB' }}>{o}</button>
-          ))}
-        </div>
-      </div>
+      {/* Body — split grid */}
+      <div className="flex-1 overflow-hidden grid" style={{ gridTemplateColumns: 'clamp(300px,430px,38%) 1fr' }}>
 
-      {/* Table */}
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 60px 90px 80px 100px 110px 36px', gap: 0, padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {['Caller', 'Date & Time', 'Status', 'Duration', 'Revenue', 'Outcome', 'Transferred', ''].map(h => (
-            <div key={h} style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: '#4A7FBB' }}>{h}</div>
-          ))}
-        </div>
+        {/* LEFT — call list */}
+        <div className="border-r border-line overflow-y-auto [scrollbar-width:none]">
+          {loading && (
+            <div className="flex items-center justify-center py-16 text-[14px] text-dim">Loading calls…</div>
+          )}
 
-        {loading && (
-          <div style={{ textAlign: 'center', padding: '48px 0', color: '#4A7FBB', fontSize: 14 }}>Loading calls...</div>
-        )}
+          {!loading && filtered.length === 0 && (
+            <EmptyState filter={tab} businessPhone={businessPhone} />
+          )}
 
-        {!loading && filtered.length === 0 && (filter === 'Flagged' || filter === 'Critical') && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>
-              {filter === 'Critical' ? 'No critical calls' : 'No flagged calls'}
-            </h3>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: 0, maxWidth: 360 }}>Your agent is handling everything well.</p>
-          </div>
-        )}
+          {!loading && filtered.map(call => {
+            const score = call.intelligence_score
+            const variant = outcomeToVariant(call.outcome, call.transferred)
+            const label = outcomeLabel(call.outcome, call.transferred)
+            const preview = call.intelligence_summary ?? call.summary ??
+              (call.transcript ? call.transcript.slice(0, 80) : 'No transcript available')
 
-        {!loading && filtered.length === 0 && filter !== 'Flagged' && filter !== 'Critical' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E8622A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 16 }}>
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 15a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 4.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 11a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-            </svg>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'white', margin: '0 0 8px' }}>Your agent is live and ready</h3>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', margin: '0 0 20px', maxWidth: 360 }}>Make a test call to your TalkMate number to see your first call appear here.</p>
-            <button
-              onClick={async () => {
-                const num = businessPhone || '+61 1800 TALK'
-                await navigator.clipboard.writeText(num)
-                setCopied(true)
-                setTimeout(() => setCopied(false), 2000)
-              }}
-              style={{ background: '#E8622A', color: 'white', border: 'none', padding: '12px 24px', borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}
-            >
-              {copied ? 'Copied! ✓' : 'Copy your TalkMate number'}
-            </button>
-          </div>
-        )}
-
-        {filtered.map((call, i) => {
-          const badge = outcomeBadge(call.outcome)
-          const isExpanded = expandedCallId === call.id
-          const dot = intelligenceDot(call.intelligence_status)
-          return (
-            <div key={call.id}>
-              <div
-                style={{ display: 'grid', gridTemplateColumns: '1fr 140px 60px 90px 80px 100px 110px 36px', gap: 0, padding: '14px 20px', borderBottom: (!isExpanded && i < filtered.length - 1) ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            return (
+              <CallListRow
+                key={call.id}
+                who={call.caller_name || call.caller_number || 'Unknown'}
+                tag={{ variant, label }}
+                preview={preview}
+                time={timeAgo(call.created_at)}
+                // Only pass a score when one actually exists — never show 0/10 for null scores
+                score={typeof score === 'number' ? score : -1}
+                duration={fmt(call.duration_seconds)}
+                selected={selectedCall?.id === call.id}
                 onClick={() => setSelectedCall(call)}
-              >
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 2 }}>{call.caller_name || call.caller_number || 'Unknown'}</div>
-                  {call.caller_name && <div style={{ fontSize: 12, color: '#4A7FBB' }}>{call.caller_number}</div>}
-                </div>
-                <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>
-                  <div>
-                    <div>{new Date(call.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
-                    <div style={{ fontSize: 12, color: '#4A7FBB' }}>{timeAgo(call.created_at)}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  {dot ? (
-                    <div title={dot.tooltip} style={{ width: 10, height: 10, borderRadius: '50%', background: dot.color, boxShadow: `0 0 0 3px ${dot.color}22` }} />
-                  ) : (
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)' }}>—</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 13, color: '#7BAED4', display: 'flex', alignItems: 'center' }}>{fmt(call.duration_seconds)}</div>
-                {/* Revenue column — TODO: link to jobs table when call_id FK is available */}
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center' }}>—</div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: badge.bg, color: badge.color, whiteSpace: 'nowrap' as const }}>{badge.label}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: call.transferred ? '#F59E0B' : '#4A7FBB' }}>
-                  {call.transferred ? '✅ Yes' : '—'}
-                </div>
-                {/* Inline expand chevron */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <button
-                    onClick={e => { e.stopPropagation(); setExpandedCallId(isExpanded ? null : call.id) }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', padding: '4px', display: 'flex', alignItems: 'center' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      {isExpanded ? <polyline points="18,15 12,9 6,15"/> : <polyline points="6,9 12,15 18,9"/>}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {/* Inline transcript preview */}
-              {isExpanded && (
-                <div style={{ padding: '0 20px 14px', borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '12px 14px' }}>
-                    <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', lineHeight: 1.65, margin: '0 0 8px' }}>
-                      {call.transcript
-                        ? call.transcript.slice(0, 200) + (call.transcript.length > 200 ? '...' : '')
-                        : 'Transcript not available for this call.'}
-                    </p>
-                    {call.transcript && (
-                      <span
-                        onClick={e => { e.stopPropagation(); setSelectedCall(call) }}
-                        style={{ fontSize: 12, color: '#4A9FE8', cursor: 'pointer' }}
-                      >
-                        View full transcript →
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+              />
+            )
+          })}
+        </div>
+
+        {/* RIGHT — detail pane */}
+        <div className="overflow-hidden">
+          {selectedCall ? (
+            <DetailPanel key={selectedCall.id} call={selectedCall} />
+          ) : (
+            <NoSelection />
+          )}
+        </div>
       </div>
     </div>
   )

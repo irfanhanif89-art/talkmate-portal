@@ -87,19 +87,19 @@ export default function PipelineKanbanClient({ stages, contacts: initialContacts
 
   return (
     <div style={{ padding: 28, color: '#F2F6FB' }}>
-      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#7BAED4', textDecoration: 'none', marginBottom: 18 }}>
+      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--dim)', textDecoration: 'none', marginBottom: 18 }}>
         <ArrowLeft size={14} /> All contacts
       </Link>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 4 }}>Your Pipeline</h1>
-          <p style={{ fontSize: 13, color: '#7BAED4' }}>{totalInPipeline} contact{totalInPipeline === 1 ? '' : 's'} in pipeline · drag cards between columns to update.</p>
+          <p style={{ fontSize: 13, color: 'var(--dim)' }}>{totalInPipeline} contact{totalInPipeline === 1 ? '' : 's'} in pipeline · drag cards between columns to update.</p>
         </div>
         <button
           disabled
           title="Stage management coming in a follow-up"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', color: '#7BAED4', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '9px 14px', fontSize: 13, fontFamily: 'Outfit, sans-serif', cursor: 'not-allowed', opacity: 0.6 }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', color: 'var(--dim)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, padding: '9px 14px', fontSize: 13, fontFamily: 'inherit', cursor: 'not-allowed', opacity: 0.6 }}
         >
           <Settings size={13} /> Manage stages
         </button>
@@ -118,7 +118,7 @@ export default function PipelineKanbanClient({ stages, contacts: initialContacts
               onDrop={e => onDrop(e, stage.id)}
               style={{
                 flexShrink: 0, width: 280,
-                background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14,
+                background: 'var(--card)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14,
                 display: 'flex', flexDirection: 'column',
               }}
             >
@@ -127,7 +127,7 @@ export default function PipelineKanbanClient({ stages, contacts: initialContacts
                   <span style={{ width: 9, height: 9, borderRadius: '50%', background: stage.color }} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>{stage.stage_name}</span>
                 </div>
-                <div style={{ fontSize: 11, color: '#7BAED4' }}>{items.length} contact{items.length === 1 ? '' : 's'}</div>
+                <div style={{ fontSize: 11, color: 'var(--dim)' }}>{items.length} contact{items.length === 1 ? '' : 's'}</div>
               </div>
 
               <div style={{ flex: 1, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 80 }}>
@@ -147,7 +147,7 @@ export default function PipelineKanbanClient({ stages, contacts: initialContacts
                       onDragEnd={onDragEnd}
                       onClick={() => router.push(`/contacts/${c.contact_id}`)}
                       style={{
-                        background: '#071829', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10,
+                        background: 'var(--card-2)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10,
                         padding: 12, cursor: 'grab',
                         opacity: draggedId === c.contact_id ? 0.4 : 1,
                         transition: 'opacity 0.15s',
@@ -162,7 +162,7 @@ export default function PipelineKanbanClient({ stages, contacts: initialContacts
                         </span>
                       </div>
                       {property && (
-                        <div style={{ fontSize: 11, color: '#7BAED4', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                        <div style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
                           🏠 {property}
                         </div>
                       )}

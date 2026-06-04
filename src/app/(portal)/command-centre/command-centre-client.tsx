@@ -61,7 +61,7 @@ export default function CommandCentreClient(props: Props) {
       <div style={{ padding: 32, maxWidth: 880, margin: '0 auto' }}>
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Assistant</div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: 0 }}>TalkMate Command Centre</h1>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text)', margin: 0 }}>TalkMate Command Centre</h1>
         </div>
 
         <div style={{
@@ -127,8 +127,8 @@ export default function CommandCentreClient(props: Props) {
       <div style={{ padding: 32, maxWidth: 720, margin: '0 auto' }}>
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Assistant</div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: 0 }}>Set up Command Centre</h1>
-          <p style={{ fontSize: 13, color: '#7BAED4', marginTop: 6 }}>Connect your Telegram bot in two minutes.</p>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text)', margin: 0 }}>Set up Command Centre</h1>
+          <p style={{ fontSize: 13, color: 'var(--dim)', marginTop: 6 }}>Connect your Telegram bot in two minutes.</p>
         </div>
 
         <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14, padding: 22 }}>
@@ -179,7 +179,7 @@ export default function CommandCentreClient(props: Props) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Assistant</div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', margin: '4px 0 0' }}>Command Centre</h1>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text)', margin: '4px 0 0' }}>Command Centre</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#22C55E' }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E' }} />

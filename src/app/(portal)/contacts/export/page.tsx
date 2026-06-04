@@ -27,24 +27,24 @@ export default function ContactsExportPage() {
 
   return (
     <div style={{ padding: 28, color: '#F2F6FB', maxWidth: 720 }}>
-      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#7BAED4', textDecoration: 'none', marginBottom: 18 }}>
+      <Link href="/contacts" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--dim)', textDecoration: 'none', marginBottom: 18 }}>
         <ArrowLeft size={14} /> All contacts
       </Link>
       <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'white', marginBottom: 6 }}>Export contacts</h1>
-      <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 24 }}>
+      <p style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 24 }}>
         Download every contact, with name, phone, email, tags, call counts, first/last seen, notes, and industry data fields.
       </p>
 
-      <div style={{ background: '#0A1E38', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28, textAlign: 'center' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 16, padding: 28, textAlign: 'center' }}>
         <Download size={36} color="#E8622A" style={{ marginBottom: 14 }} />
         <div style={{ fontSize: 15, fontWeight: 700, color: 'white', marginBottom: 8 }}>One-click CSV export</div>
-        <div style={{ fontSize: 13, color: '#7BAED4', marginBottom: 22, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: 'var(--dim)', marginBottom: 22, lineHeight: 1.6 }}>
           The file works in Excel, Numbers, Google Sheets, or any CRM.
         </div>
         <button
           onClick={exportCsv}
           disabled={busy}
-          style={{ background: '#E8622A', color: 'white', border: 'none', borderRadius: 10, padding: '12px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit, sans-serif' }}
+          style={{ background: 'var(--orange)', color: 'white', border: 'none', borderRadius: 10, padding: '12px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
         >
           {busy ? 'Building file…' : 'Export all contacts as CSV'}
         </button>

@@ -7,10 +7,10 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import TrainView, { type KbEntryDTO, type SyncStatus } from './train-view'
+import TrainView, { type KbEntryDTO, type SyncStatus, type ResponseStyle, type OpeningHours } from './train-view'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Train TalkMate · TalkMate' }
+export const metadata = { title: 'AI Receptionist · TalkMate' }
 
 export default async function TrainPage() {
   const supabase = await createClient()
@@ -19,11 +19,22 @@ export default async function TrainPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, vapi_agent_id, kb_sync_status, kb_last_synced_at')
+    .select('id, name, vapi_agent_id, kb_sync_status, kb_last_synced_at, voice, greeting, agent_name, opening_hours, notifications_config')
     .eq('owner_user_id', user.id)
     .limit(1)
     .maybeSingle()
   if (!business) redirect('/dashboard')
+
+  // Agent config lives across the top-level columns and notifications_config
+  // (the latter is what the admin onboarding flow writes). Read from both,
+  // preferring the config blob for the AI-specific fields — mirrors Settings.
+  const cfg = ((business.notifications_config ?? {}) as Record<string, unknown>)
+  const topHours = (business.opening_hours ?? null) as OpeningHours | null
+  const cfgHours = (cfg.opening_hours ?? null) as OpeningHours | null
+  const openingHours = (topHours && Object.keys(topHours).length > 0 ? topHours : cfgHours) ?? undefined
+  const toneVal = typeof cfg.tone === 'number' ? cfg.tone : 65
+  const responseStyle = (typeof cfg.response_style === 'string' ? cfg.response_style : 'balanced') as ResponseStyle
+  const forwardTo = (cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || ''
 
   const { data: entries } = await supabase
     .from('knowledge_base_entries')
@@ -52,6 +63,14 @@ export default async function TrainPage() {
       initialEntries={dtos}
       initialSyncStatus={((business.kb_sync_status as string | null) ?? 'synced') as SyncStatus}
       initialLastSyncedAt={(business.kb_last_synced_at as string | null) ?? null}
+      initialAgentName={(cfg.agent_name as string) || (business.agent_name as string | null) || ''}
+      initialGreeting={(cfg.agent_answer_phrase as string) || (business.greeting as string | null) || 'Thank you for calling. How can I help you today?'}
+      initialVoice={(business.voice as string | null) || 'sarah'}
+      initialTone={toneVal}
+      initialResponseStyle={responseStyle}
+      initialEscalation={(cfg.escalation_rules as string) || ''}
+      forwardTo={forwardTo}
+      initialOpeningHours={openingHours}
     />
   )
 }

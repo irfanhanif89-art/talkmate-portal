@@ -37,33 +37,30 @@ export default async function SmsActivityPage() {
   if (cap === 0) {
     // Starter plan landing — informational upsell only. No SMS data shown.
     return (
-      <div style={{ padding: 32, maxWidth: 720, margin: '0 auto', color: '#F2F6FB' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', marginBottom: 8 }}>SMS Activity</h1>
-        <p style={{ fontSize: 14, color: '#7BAED4', marginBottom: 28 }}>Messages sent to your customers by TalkMate.</p>
+      <div className="mx-auto max-w-[720px] p-8">
+        <h1 className="mb-2 text-[1.5rem] font-[800] text-text">SMS Activity</h1>
+        <p className="mb-7 text-[14px] text-dim">Messages sent to your customers by TalkMate.</p>
 
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(232,98,42,0.10) 0%, rgba(21,101,192,0.10) 100%)',
-          border: '1px solid rgba(232,98,42,0.25)',
-          borderRadius: 16, padding: 28,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#E8622A', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>SMS not included on Starter</div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white', marginBottom: 10 }}>Unlock automated SMS for your callers</h2>
-          <p style={{ fontSize: 14, color: '#7BAED4', lineHeight: 1.6, marginBottom: 20 }}>
+        <div className="rounded-[16px] border border-[rgba(232,98,42,0.25)] bg-[linear-gradient(135deg,rgba(232,98,42,0.10)_0%,rgba(21,101,192,0.10)_100%)] p-7">
+          <div className="mb-2.5 text-[11px] font-[700] uppercase tracking-[0.1em] text-orange">
+            SMS not included on Starter
+          </div>
+          <h2 className="mb-2.5 text-[20px] font-[800] text-text">Unlock automated SMS for your callers</h2>
+          <p className="mb-5 text-[14px] leading-[1.6] text-dim">
             Growth and Pro plans include automatic booking confirmations,
             reminders, and missed-call follow-ups sent straight from your
             TalkMate number. No setup required.
           </p>
-          <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'grid', gap: 10 }}>
-            <li style={{ fontSize: 13, color: '#C8D8EA' }}>✓ Booking confirmations after every call</li>
-            <li style={{ fontSize: 13, color: '#C8D8EA' }}>✓ 24h and 2h reminders before each job</li>
-            <li style={{ fontSize: 13, color: '#C8D8EA' }}>✓ Automatic follow-up on missed calls</li>
-            <li style={{ fontSize: 13, color: '#C8D8EA' }}>✓ 200 messages on Growth, 500 on Pro</li>
+          <ul className="mb-6 grid list-none gap-2.5 p-0">
+            <li className="text-[13px] text-text">✓ Booking confirmations after every call</li>
+            <li className="text-[13px] text-text">✓ 24h and 2h reminders before each job</li>
+            <li className="text-[13px] text-text">✓ Automatic follow-up on missed calls</li>
+            <li className="text-[13px] text-text">✓ 200 messages on Growth, 500 on Pro</li>
           </ul>
-          <Link href="/billing" style={{
-            display: 'inline-block', background: '#E8622A', color: 'white',
-            padding: '12px 24px', borderRadius: 10, fontSize: 14, fontWeight: 600,
-            textDecoration: 'none',
-          }}>
+          <Link
+            href="/billing"
+            className="inline-block rounded-[10px] bg-[linear-gradient(135deg,#f58a42,#e86526)] px-6 py-3 text-[14px] font-[600] text-white no-underline shadow-[0_4px_14px_rgba(238,106,44,.35)] hover:brightness-110"
+          >
             Upgrade to Growth →
           </Link>
         </div>
@@ -104,6 +101,7 @@ export default async function SmsActivityPage() {
       rows={rows}
       used={business.sms_used_this_month ?? 0}
       cap={cap}
+      businessId={business.id}
     />
   )
 }

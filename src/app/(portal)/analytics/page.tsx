@@ -3,207 +3,322 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useBusinessType } from '@/context/business-type-context'
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { KpiCard } from '@/components/portal/ui-v2/kpi-card'
+import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
+import { FilterTabs } from '@/components/portal/ui-v2/tabs'
+import { LineVolumeChart, OutcomeBars, Heatmap } from '@/components/portal/ui-v2/charts'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
 
 type Range = '7d' | '30d' | '90d'
 
-const COLORS = ['#E8622A', '#4A9FE8', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899']
+const RANGE_TABS = [
+  { value: '7d' as Range, label: '7D' },
+  { value: '30d' as Range, label: '30D' },
+  { value: '90d' as Range, label: '90D' },
+]
+
+// Outcome colour mapping using CSS token vars
+const OUTCOME_COLORS: Record<string, string> = {
+  'Missed': 'var(--red)',
+  'Escalated': 'var(--gold)',
+  'Transferred': 'var(--gold)',
+  'Unknown': 'var(--faint)',
+}
+function outcomeColor(name: string, idx: number): string {
+  if (OUTCOME_COLORS[name]) return OUTCOME_COLORS[name]
+  // First outcome gets orange, second blue, rest faint
+  if (idx === 0) return 'var(--orange)'
+  if (idx === 1) return 'var(--blue)'
+  return 'var(--faint)'
+}
+
+// Heatmap covers 7am–7pm (hours 7..18 inclusive = 12 slots)
+const HEATMAP_HOURS = Array.from({ length: 12 }, (_, i) => {
+  const h = i + 7
+  return h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`
+})
+const HEATMAP_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// Map JS getDay() (0=Sun) to Mon-first index
+function dayIndex(jsDay: number): number {
+  return jsDay === 0 ? 6 : jsDay - 1
+}
 
 export default function AnalyticsPage() {
   const { config, businessId } = useBusinessType()
   const supabase = createClient()
   const [range, setRange] = useState<Range>('30d')
-  const [calls, setCalls] = useState<Array<{ created_at: string; outcome: string; transferred: boolean; duration_seconds: number; caller_number: string }>>([])
+  const [calls, setCalls] = useState<Array<{
+    created_at: string
+    outcome: string
+    transferred: boolean
+    duration_seconds: number
+    caller_number: string
+  }>>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { fetchData() }, [range, businessId])
+  useEffect(() => { fetchData() }, [range, businessId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchData() {
     setLoading(true)
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 90
     const from = new Date(); from.setDate(from.getDate() - days)
-    const { data } = await supabase.from('calls').select('created_at, outcome, transferred, duration_seconds, caller_number')
-      .eq('business_id', businessId).gte('created_at', from.toISOString()).order('created_at')
-    setCalls(data ?? []); setLoading(false)
+    const { data } = await supabase
+      .from('calls')
+      .select('created_at, outcome, transferred, duration_seconds, caller_number')
+      .eq('business_id', businessId)
+      .gte('created_at', from.toISOString())
+      .order('created_at')
+    setCalls(data ?? [])
+    setLoading(false)
   }
 
-  // Volume by day
+  // ── Volume by day ──────────────────────────────────────────────────────────
   const days = range === '7d' ? 7 : range === '30d' ? 30 : 90
   const dayMap: Record<string, number> = {}
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i)
     dayMap[d.toISOString().split('T')[0]] = 0
   }
-  calls.forEach(c => { const d = c.created_at.split('T')[0]; if (dayMap[d] !== undefined) dayMap[d]++ })
-  const volumeData = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
+  calls.forEach(c => {
+    const d = c.created_at.split('T')[0]
+    if (dayMap[d] !== undefined) dayMap[d]++
+  })
+  // LineVolumeChart expects { label, value }
+  const volumeData = Object.entries(dayMap).map(([date, count]) => ({
+    label: new Date(date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+    value: count,
+  }))
 
-  // Outcome breakdown
+  // ── Outcome breakdown ──────────────────────────────────────────────────────
   const outcomeCounts: Record<string, number> = {}
-  calls.forEach(c => { outcomeCounts[c.outcome || 'Unknown'] = (outcomeCounts[c.outcome || 'Unknown'] || 0) + 1 })
-  const outcomeData = Object.entries(outcomeCounts).map(([name, value]) => ({ name, value }))
+  calls.forEach(c => {
+    const key = c.outcome || 'Unknown'
+    outcomeCounts[key] = (outcomeCounts[key] || 0) + 1
+  })
+  const total = calls.length
+  const outcomeRows = Object.entries(outcomeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count], idx) => ({
+      label: name,
+      pct: total ? Math.round((count / total) * 100) : 0,
+      color: outcomeColor(name, idx),
+    }))
 
-  // Heatmap (hours × days of week)
-  const heatmap: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
+  // ── Peak hours heatmap (7am–7pm, Mon–Sun) ─────────────────────────────────
+  // heatRaw[monFirstDayIdx][hourIdx 0..11] where hourIdx 0 = 7am
+  const heatRaw: number[][] = Array.from({ length: 7 }, () => Array(12).fill(0))
   calls.forEach(c => {
     const d = new Date(c.created_at)
-    heatmap[d.getDay()][d.getHours()]++
+    const h = d.getHours()
+    if (h < 7 || h >= 19) return // outside 7am–7pm window
+    const di = dayIndex(d.getDay())
+    const hi = h - 7
+    heatRaw[di][hi]++
   })
-  const maxHeat = Math.max(1, ...heatmap.flat())
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const maxHeat = Math.max(1, ...heatRaw.flat())
+  // Normalise to 0..1
+  const heatValues = heatRaw.map(row => row.map(v => v / maxHeat))
 
-  // Top callers
+  // ── Top callers ────────────────────────────────────────────────────────────
   const callerMap: Record<string, number> = {}
-  calls.forEach(c => { if (c.caller_number) callerMap[c.caller_number] = (callerMap[c.caller_number] || 0) + 1 })
-  const topCallers = Object.entries(callerMap).sort((a, b) => b[1] - a[1]).slice(0, 10)
+  calls.forEach(c => {
+    if (c.caller_number) callerMap[c.caller_number] = (callerMap[c.caller_number] || 0) + 1
+  })
+  const topCallers = Object.entries(callerMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
 
-  // KPIs
+  // ── KPI computations ───────────────────────────────────────────────────────
   const totalCalls = calls.length
   const answered = calls.filter(c => c.outcome && c.outcome !== 'Missed').length
-  const answerRate = totalCalls ? Math.round(answered / totalCalls * 100) : 0
-  const primaryCount = calls.filter(c => c.outcome === config.callOutcomeTypes[0]).length
-  const avgDuration = calls.length ? Math.round(calls.reduce((a, c) => a + (c.duration_seconds || 0), 0) / calls.length) : 0
+  const answerRate = totalCalls ? Math.round((answered / totalCalls) * 100) : 0
+  const transferred = calls.filter(c => c.transferred).length
+  const aiResolution = totalCalls ? Math.round(((totalCalls - transferred) / totalCalls) * 100) : 0
+  const avgDuration = calls.length
+    ? Math.round(calls.reduce((a, c) => a + (c.duration_seconds || 0), 0) / calls.length)
+    : 0
+  const avgDurationFmt = avgDuration >= 60
+    ? `${Math.floor(avgDuration / 60)}:${String(avgDuration % 60).padStart(2, '0')}`
+    : `0:${String(avgDuration).padStart(2, '0')}`
+  const primaryCount = calls.filter(c => c.outcome === config.callOutcomeTypes?.[0]).length
 
-  const tooltipStyle = { background: '#071829', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white' }
+  // Date span label
+  const now = new Date()
+  const from = new Date(); from.setDate(now.getDate() - days)
+  const spanLabel = `${from.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })} – ${now.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
+
+  function handleExport() {
+    // Export analytics as CSV (real data)
+    const rows = [
+      ['Date', 'Outcome', 'Transferred', 'Duration (s)', 'Caller Number'],
+      ...calls.map(c => [
+        c.created_at,
+        c.outcome ?? '',
+        String(c.transferred),
+        String(c.duration_seconds ?? 0),
+        c.caller_number ?? '',
+      ]),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics-${range}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Analytics</h1>
-        <div className="flex gap-2">
-          {(['7d', '30d', '90d'] as Range[]).map(r => (
-            <button key={r} onClick={() => setRange(r)} className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-              style={{ background: range === r ? '#E8622A' : 'rgba(255,255,255,0.06)', color: range === r ? 'white' : '#4A7FBB' }}>
-              {r === '7d' ? '7 Days' : r === '30d' ? '30 Days' : '90 Days'}
-            </button>
-          ))}
+    <div className="flex flex-col min-h-full">
+      {/* Top bar */}
+      <header className="flex items-center gap-4 border-b border-line px-7 h-[68px] flex-shrink-0">
+        <h1 className="text-[20px] font-extrabold tracking-[-0.4px] text-text">Analytics</h1>
+        <div className="ml-auto">
+          <ButtonV2 variant="secondary" onClick={handleExport} className="flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export report
+          </ButtonV2>
         </div>
+      </header>
+
+      {/* Date range bar */}
+      <div className="flex items-center gap-3 border-b border-line px-7 h-[54px] flex-shrink-0">
+        <FilterTabs
+          tabs={RANGE_TABS}
+          value={range}
+          onChange={setRange}
+        />
+        <span className="text-[13px] text-dim ml-1">{spanLabel}</span>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: 'Total Calls', value: totalCalls },
-          { label: config.callOutcomeTypes[0], value: primaryCount },
-          { label: 'Answer Rate', value: `${answerRate}%` },
-          { label: 'Avg Duration', value: avgDuration >= 60 ? `${Math.floor(avgDuration/60)}m ${avgDuration%60}s` : `${avgDuration}s` },
-        ].map(k => (
-          <div key={k.label} className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#4A7FBB' }}>{k.label}</p>
-            <p className="text-3xl font-bold text-white">{loading ? '—' : k.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Volume chart */}
-        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)', position: 'relative' }}>
-          <h2 className="text-sm font-semibold text-white mb-4">Call Volume</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={volumeData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="date" tick={{ fill: '#4A7FBB', fontSize: 10 }}
-                tickFormatter={d => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} interval={Math.floor(days / 6)} />
-              <YAxis tick={{ fill: '#4A7FBB', fontSize: 10 }} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Line type="monotone" dataKey="count" stroke="#E8622A" strokeWidth={2} dot={false} name="Calls" />
-            </LineChart>
-          </ResponsiveContainer>
-          {!loading && volumeData.every(d => d.count === 0) && (
-            <div style={{ position: 'absolute', inset: '40px 0 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(7,24,41,0.75)', borderRadius: 8 }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10, textAlign: 'center' }}>Call data will appear here after your first call.</p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Your agent is live — make a test call to get started.</p>
-            </div>
-          )}
+      {/* Content */}
+      <div className="flex-1 overflow-auto px-7 pt-5 pb-6">
+        {/* KPI row — 5 cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[14px] mb-[18px]">
+          <KpiCard
+            label="Total Calls"
+            value={loading ? '—' : totalCalls}
+          />
+          <KpiCard
+            label="Answer Rate"
+            value={loading ? '—' : `${answerRate}%`}
+            accent={answerRate >= 90 ? 'green' : undefined}
+          />
+          <KpiCard
+            label="Avg Duration"
+            value={loading ? '—' : avgDurationFmt}
+          />
+          <KpiCard
+            label="AI Resolution"
+            value={loading ? '—' : `${aiResolution}%`}
+            accent={aiResolution >= 80 ? 'green' : undefined}
+          />
+          <KpiCard
+            label={config.callOutcomeTypes?.[0] ?? 'Primary Outcome'}
+            value={loading ? '—' : primaryCount}
+            accent="orange"
+          />
         </div>
 
-        {/* Outcome breakdown */}
-        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)', position: 'relative' }}>
-          <h2 className="text-sm font-semibold text-white mb-4">Outcome Breakdown</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={outcomeData.length ? outcomeData : [{ name: '—', value: 0 }]} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: '#4A7FBB', fontSize: 10 }} />
-              <YAxis dataKey="name" type="category" tick={{ fill: '#7BAED4', fontSize: 11 }} width={120} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="value" fill="#E8622A" radius={4} />
-            </BarChart>
-          </ResponsiveContainer>
-          {!loading && outcomeData.every(d => d.value === 0) && (
-            <div style={{ position: 'absolute', inset: '40px 0 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(7,24,41,0.75)', borderRadius: 8 }}>
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10, textAlign: 'center' }}>Call data will appear here after your first call.</p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>Your agent is live — make a test call to get started.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Outcome pie */}
-        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="text-sm font-semibold text-white mb-4">Outcome Distribution</h2>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={outcomeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                labelLine={{ stroke: '#4A7FBB' }}>
-                {outcomeData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={tooltipStyle} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Busiest hours heatmap */}
-        <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-          <h2 className="text-sm font-semibold text-white mb-4">Busiest Hours</h2>
-          <div className="overflow-x-auto">
-            <div className="flex gap-0.5">
-              <div className="flex flex-col gap-0.5 mr-1">
-                <div className="w-8 h-4" />
-                {dayNames.map(d => <div key={d} className="w-8 h-4 text-xs flex items-center" style={{ color: '#4A7FBB' }}>{d}</div>)}
+        {/* Main grid: call volume + top callers */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4 mb-4">
+          {/* Call volume */}
+          <Panel>
+            <PanelHeader
+              title={`Call volume — ${days} days`}
+              meta={
+                <span className="flex items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-[11.5px] text-dim">
+                    <i className="inline-block w-2 h-2 rounded-[2px]" style={{ background: 'rgba(91,155,217,0.7)' }} />
+                    Handled
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[11.5px] text-dim">
+                    <i className="inline-block w-2 h-2 rounded-[2px]" style={{ background: 'var(--orange)' }} />
+                    Peak
+                  </span>
+                </span>
+              }
+            />
+            {!loading && volumeData.every(d => d.value === 0) ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                <p className="mt-3 text-[12px] text-faint">Call data will appear here after your first call.</p>
+                <p className="mt-1 text-[11px]" style={{ color: 'var(--faint)', opacity: 0.6 }}>Your agent is live — make a test call to get started.</p>
               </div>
-              {Array.from({ length: 24 }, (_, h) => (
-                <div key={h} className="flex flex-col gap-0.5">
-                  <div className="w-5 h-4 text-xs text-center" style={{ color: '#4A7FBB', fontSize: 9 }}>{h}</div>
-                  {heatmap.map((row, d) => {
-                    const intensity = row[h] / maxHeat
-                    return (
-                      <div key={d} title={`${dayNames[d]} ${h}:00 — ${row[h]} calls`}
-                        className="w-5 h-4 rounded-sm"
-                        style={{ background: intensity > 0 ? `rgba(232,98,42,${0.1 + intensity * 0.9})` : 'rgba(255,255,255,0.04)' }} />
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+            ) : (
+              <LineVolumeChart data={volumeData} height={170} />
+            )}
+          </Panel>
 
-      {/* Top callers */}
-      <div className="p-5 rounded-xl border" style={{ background: '#0A1E38', borderColor: 'rgba(255,255,255,0.06)' }}>
-        <h2 className="text-sm font-semibold text-white mb-4">Top Callers</h2>
-        {topCallers.length === 0 ? (
-          <p className="text-sm text-center py-4" style={{ color: '#4A7FBB' }}>No call data yet</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr>{['Rank', 'Phone Number', 'Calls'].map(h => (
-                <th key={h} className="pb-2 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: '#4A7FBB' }}>{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {topCallers.map(([phone, count], i) => (
-                <tr key={phone} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                  <td className="py-2.5" style={{ color: '#4A7FBB' }}>#{i + 1}</td>
-                  <td className="py-2.5 font-medium text-white">{phone}</td>
-                  <td className="py-2.5" style={{ color: '#E8622A' }}>{count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+          {/* Top callers */}
+          <Panel>
+            <PanelHeader title="Top callers" meta={spanLabel.split(' – ')[1]} />
+            {topCallers.length === 0 ? (
+              <p className="text-[12px] text-dim text-center py-6">No call data yet</p>
+            ) : (
+              <div className="flex flex-col">
+                {topCallers.map(([phone, count], i) => {
+                  // Build initials from phone digits for avatar
+                  const initials = phone.slice(-2)
+                  return (
+                    <div
+                      key={phone}
+                      className="flex items-center gap-[10px] py-2 border-b border-line last:border-0"
+                    >
+                      {/* Avatar */}
+                      <div
+                        className="w-[30px] h-[30px] rounded-[8px] flex items-center justify-center text-[12px] font-bold flex-shrink-0 text-dim"
+                        style={{ background: 'linear-gradient(135deg,#2a4a6a,#1a3350)' }}
+                      >
+                        {initials}
+                      </div>
+                      {/* Phone number */}
+                      <span className="flex-1 min-w-0 text-[13px] font-bold text-text truncate">
+                        {phone}
+                      </span>
+                      {/* Call count */}
+                      <span className="text-[12px] font-bold text-orange flex-shrink-0">
+                        {count} {count === 1 ? 'call' : 'calls'}
+                      </span>
+                      {/* Rank badge */}
+                      <span className="text-[11px] text-faint flex-shrink-0 w-5 text-right">
+                        #{i + 1}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* Bottom grid: outcomes + heatmap */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Call outcomes */}
+          <Panel>
+            <PanelHeader title="Call outcomes" meta={`${days} days`} />
+            {outcomeRows.length === 0 ? (
+              <p className="text-[12px] text-dim text-center py-6">No outcome data yet</p>
+            ) : (
+              <OutcomeBars rows={outcomeRows} />
+            )}
+          </Panel>
+
+          {/* Peak hours heatmap */}
+          <Panel className="lg:col-span-2">
+            <PanelHeader title="Peak hours heatmap" meta="Mon–Sun · 7am–7pm" />
+            <Heatmap
+              days={HEATMAP_DAY_LABELS}
+              hours={HEATMAP_HOURS}
+              values={heatValues}
+            />
+          </Panel>
+        </div>
       </div>
     </div>
   )

@@ -2,21 +2,19 @@
 
 // ServiceM8 integration card — Session 3B. Self-contained: fetches its own
 // status on mount and manages connect / disconnect / default-status. Lives in
-// the Settings > Integrations tab. Works for the owner (cookie auth); pass
+// the Settings > Automation tab. Works for the owner (cookie auth); pass
 // adminClientId for the admin-as-client view.
+// Styling uses design-system tokens so it adapts to dark/light.
 
 import { useCallback, useEffect, useState } from 'react'
+import { Panel } from '@/components/portal/ui-v2/panel'
+import { ButtonV2 } from '@/components/portal/ui-v2/button'
 
-const ORANGE = '#E8622A'
-const cardStyle: React.CSSProperties = {
-  background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14,
-  padding: 24, marginBottom: 16,
-}
-const lbl: React.CSSProperties = { fontSize: 12, color: '#4A7FBB', fontWeight: 600, display: 'block', marginBottom: 6 }
-const inp: React.CSSProperties = {
-  background: '#071829', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: 10,
-  padding: '11px 14px', width: '100%', fontFamily: 'Outfit,sans-serif', fontSize: 14,
-}
+const fieldCls =
+  'w-full rounded-[10px] border border-[var(--line-strong)] bg-card-2 px-3.5 py-[11px] ' +
+  'text-[14px] text-text font-sans outline-none transition-colors ' +
+  'focus:border-orange focus:shadow-[0_0_0_3px_rgba(238,106,44,.15)]'
+const labelCls = 'block text-[13px] font-bold text-dim mb-[7px]'
 const STATUSES = ['Quote', 'Work Order', 'In Progress']
 
 function withAdmin(path: string, adminClientId?: string | null): string {
@@ -89,76 +87,60 @@ export default function ServiceM8Card({ adminClientId }: { adminClientId?: strin
   }
 
   if (loading) {
-    return <div style={cardStyle}><div style={{ color: '#4A7FBB', fontSize: 14 }}>Loading ServiceM8...</div></div>
+    return <Panel><div className="text-[14px] text-dim">Loading ServiceM8…</div></Panel>
   }
 
   return (
-    <div style={cardStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', margin: 0 }}>ServiceM8</h3>
+    <Panel>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h3 className="text-[16px] font-bold text-text">ServiceM8</h3>
         {enabled && (
-          <span style={{
-            fontSize: 12, fontWeight: 700, color: '#22C55E', background: 'rgba(34,197,94,0.12)',
-            padding: '4px 10px', borderRadius: 999,
-          }}>Connected</span>
+          <span className="rounded-full bg-green/10 px-2.5 py-1 text-[12px] font-bold text-green">Connected</span>
         )}
       </div>
-      <p style={{ fontSize: 13, color: '#4A7FBB', marginTop: 0, marginBottom: 20 }}>
+      <p className="mb-5 text-[13px] text-dim">
         When TalkMate books a job, it automatically creates the job in ServiceM8. No double entry.
       </p>
 
       {!enabled ? (
         <>
-          <div style={{ marginBottom: 12 }}>
-            <label style={lbl}>ServiceM8 API key</label>
-            <div style={{ display: 'flex', gap: 8 }}>
+          <div className="mb-3">
+            <label className={labelCls}>ServiceM8 API key</label>
+            <div className="flex gap-2">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="Paste your API key"
-                style={inp}
+                className={fieldCls}
               />
               <button
                 type="button"
                 onClick={() => setShowKey((s) => !s)}
-                style={{
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#C8D8EA',
-                  borderRadius: 10, padding: '0 14px', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit,sans-serif',
-                }}
+                className="shrink-0 rounded-[10px] border border-line-strong px-3.5 text-[13px] text-dim transition hover:text-text"
               >{showKey ? 'Hide' : 'Show'}</button>
             </div>
           </div>
-          <button
-            type="button"
-            disabled={busy || !apiKey.trim()}
-            onClick={connect}
-            style={{
-              background: ORANGE, color: 'white', border: 'none', padding: '12px 28px', borderRadius: 10,
-              fontFamily: 'Outfit,sans-serif', fontWeight: 600, fontSize: 15,
-              cursor: busy || !apiKey.trim() ? 'default' : 'pointer', opacity: busy || !apiKey.trim() ? 0.6 : 1,
-            }}
-          >{busy ? 'Connecting...' : 'Connect'}</button>
+          <ButtonV2 disabled={busy || !apiKey.trim()} onClick={connect} className="px-7 py-3 text-[15px]">
+            {busy ? 'Connecting…' : 'Connect'}
+          </ButtonV2>
 
           <button
             type="button"
             onClick={() => setShowHelp((s) => !s)}
-            style={{
-              display: 'block', marginTop: 14, background: 'none', border: 'none', color: '#4A9FE8',
-              cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit,sans-serif', padding: 0,
-            }}
+            className="mt-3.5 block text-[13px] text-blue"
           >Where do I find my API key?</button>
           {showHelp && (
-            <div style={{ marginTop: 10 }}>
+            <div className="mt-2.5 space-y-1.5">
               {[
                 'Log into your ServiceM8 account',
                 'Go to Settings then API Keys',
                 'Create a new key with Jobs read and write permission',
                 'Copy and paste it here',
               ].map((step, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                  <span style={{ color: ORANGE, fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
-                  <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>{step}</span>
+                <div key={i} className="flex gap-2">
+                  <span className="shrink-0 font-bold text-orange">{i + 1}.</span>
+                  <span className="text-[14px] text-dim">{step}</span>
                 </div>
               ))}
             </div>
@@ -166,29 +148,29 @@ export default function ServiceM8Card({ adminClientId }: { adminClientId?: strin
         </>
       ) : (
         <>
-          <div style={{ marginBottom: 16 }}>
-            <label style={lbl}>Default job status</label>
-            <select value={defaultStatus} onChange={(e) => saveStatus(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+          <div className="mb-4">
+            <label className={labelCls}>Default job status</label>
+            <select value={defaultStatus} onChange={(e) => saveStatus(e.target.value)} className={fieldCls + ' cursor-pointer'}>
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div style={{ fontSize: 13, color: '#C8D8EA', marginBottom: 16 }}>
-            Jobs pushed this month: <strong style={{ color: 'white' }}>{jobsThisMonth}</strong>
+          <div className="mb-4 text-[13px] text-dim">
+            Jobs pushed this month: <strong className="text-text">{jobsThisMonth}</strong>
           </div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            <a href="/settings/servicem8-log" style={{ color: '#4A9FE8', fontSize: 13, textDecoration: 'none' }}>View push log</a>
+          <div className="flex items-center gap-4">
+            <a href="/settings/servicem8-log" className="text-[13px] text-blue no-underline">View push log</a>
             <button
               type="button"
               disabled={busy}
               onClick={disconnect}
-              style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 13, fontFamily: 'Outfit,sans-serif', padding: 0 }}
+              className="text-[13px] text-red disabled:opacity-50"
             >Disconnect</button>
           </div>
         </>
       )}
 
-      {msg && <div style={{ marginTop: 12, fontSize: 13, color: '#22C55E' }}>{msg}</div>}
-      {err && <div style={{ marginTop: 12, fontSize: 13, color: '#EF4444' }}>{err}</div>}
-    </div>
+      {msg && <div className="mt-3 text-[13px] text-green">{msg}</div>}
+      {err && <div className="mt-3 text-[13px] text-red">{err}</div>}
+    </Panel>
   )
 }
