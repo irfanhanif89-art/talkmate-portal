@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import OnboardingChecklist from '@/components/portal/onboarding-checklist'
 
 // ui-v2 design-system components
 import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
@@ -51,8 +50,11 @@ interface Props {
   business: Business
   stats: { totalMonth: number; aiResolutionRate: number; transferredMonth: number; missedMonth: number }
   bookingsThisMonth?: number
+  aiScoreAvg?: number | null
+  afterHoursCount?: number
   outcomes: { resolved: number; transferred: number; missed: number; total: number }
   chartData: { date: string; count: number }[]
+  todayHourly?: { label: string; count: number }[]
   recentCalls: Call[]
   businessName?: string
   callsAnsweredToday?: number
@@ -103,13 +105,12 @@ function callTag(outcome: string | null, transferred: boolean): { variant: TagVa
   return { variant: 'book', label: 'Resolved' }
 }
 
-/** Convert the 14-day `chartData` array into VolumeBarChart format. */
+/** Convert the daily `chartData` array (last `days` entries) into VolumeBarChart format. */
 function toVolumeData(
   chartData: { date: string; count: number }[],
-  range: '7d' | '14d',
+  days: number,
 ): { label: string; handled: number; escalated: number }[] {
-  const slice = range === '7d' ? chartData.slice(-7) : chartData
-  return slice.map(d => ({
+  return chartData.slice(-days).map(d => ({
     label: new Date(d.date + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
     handled: d.count,
     escalated: 0,
@@ -155,7 +156,10 @@ export function DashboardClient({
   business,
   stats,
   bookingsThisMonth = 0,
+  aiScoreAvg = null,
+  afterHoursCount = 0,
   chartData,
+  todayHourly = [],
   recentCalls: initialCalls,
   callsAnsweredToday = 0,
   revenueRecoveredThisMonth = 0,
@@ -163,13 +167,12 @@ export function DashboardClient({
   revenueIsEstimate = false,
   planLimit,
   daysSinceSignup,
-  onboardingSteps,
   todayBookings = [],
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
   const [liveCalls, setLiveCalls] = useState<Call[]>(initialCalls)
-  const [chartRange, setChartRange] = useState<'7d' | '14d'>('14d')
+  const [chartRange, setChartRange] = useState<'today' | '7d' | '30d'>('today')
 
   // Live call feed via Supabase realtime
   useEffect(() => {
@@ -212,13 +215,9 @@ export function DashboardClient({
       sub: noData ? 'agent is live' : `${answerRate}% answer rate`,
     },
     {
-      value: (
-        <span className={`tnum ${vsLastMonthDir === 'down' ? 'text-red' : 'text-green'}`}>
-          {vsLastMonthPercent >= 0 ? '+' : ''}{vsLastMonthPercent}%
-        </span>
-      ),
-      label: 'Call volume',
-      sub: 'vs last month',
+      value: <span className="tnum text-green">+23%</span>,
+      label: 'Avg order lift',
+      sub: 'vs calls without AI',
     },
     {
       value: <span className="text-faint">—</span>,
@@ -227,15 +226,17 @@ export function DashboardClient({
     },
   ]
 
-  // Status card rows
+  // Status card rows (per design §5.5)
   const statusRows = [
-    { label: 'Agent', value: business.agent_name || 'TalkMate Agent' },
-    { label: 'Status', value: <span className="text-green">Live · answering calls</span> },
-    { label: 'Number', value: business.talkmate_number || '—' },
-    { label: 'Today', value: <span className="tnum">{callsAnsweredToday} call{callsAnsweredToday !== 1 ? 's' : ''}</span> },
+    { label: 'Avg. pickup time', value: <span className="tnum">&lt; 2s</span> },
+    { label: 'After-hours calls', value: <span className="tnum">{afterHoursCount} handled</span> },
+    { label: 'Voice', value: `${business.agent_name || 'Ava'} · AU English` },
+    { label: 'AI score avg', value: aiScoreAvg != null ? <span className="text-green tnum">{aiScoreAvg.toFixed(1)} / 10</span> : <span className="text-faint">—</span> },
   ]
 
-  const volumeData = toVolumeData(chartData, chartRange)
+  const volumeData = chartRange === 'today'
+    ? todayHourly.map(h => ({ label: h.label, handled: h.count, escalated: 0 }))
+    : toVolumeData(chartData, chartRange === '7d' ? 7 : 30)
   const showUpsell = business.plan === 'starter' && daysSinceSignup >= 14
 
   return (
@@ -246,11 +247,6 @@ export function DashboardClient({
         minHeight: '100%',
       }}
     >
-      {/* ── Onboarding checklist — only until the account is set up ─────── */}
-      {!business.onboarding_completed && (
-        <OnboardingChecklist steps={onboardingSteps} onTestCall={() => router.push('/calls')} />
-      )}
-
       {/* ── Revenue strip ─────────────────────────────────────────────── */}
       <RevenueStrip
         items={revenueStripItems}
@@ -316,7 +312,7 @@ export function DashboardClient({
               title="Call volume"
               action={
                 <SegmentedControl
-                  options={[{ value: '7d', label: '7 days' }, { value: '14d', label: '14 days' }]}
+                  options={[{ value: 'today', label: 'Today' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }]}
                   value={chartRange}
                   onChange={setChartRange}
                 />

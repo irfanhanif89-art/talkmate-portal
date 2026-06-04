@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Bell, ChevronDown, LogOut, Menu, Settings as SettingsIcon, User as UserIcon, Sparkles } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu, Settings as SettingsIcon, User as UserIcon } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
 
 const PAGE_TITLES: Record<string, string> = {
@@ -173,37 +173,9 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
         {/* Theme toggle */}
         <ThemeToggle />
 
-        {/* Changelog / What's new */}
+        {/* Notifications bell (also opens What's New) */}
         <button
           onClick={onOpenChangelog}
-          aria-label="What's new"
-          style={{
-            position: 'relative',
-            background: 'var(--card)',
-            border: '1px solid var(--line)',
-            color: 'var(--dim)',
-            borderRadius: 10,
-            width: 36,
-            height: 36,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={17} />
-          {unseenChangelog > 0 && (
-            <span style={{
-              position: 'absolute', top: 8, right: 9, width: 7, height: 7,
-              background: 'var(--orange)', borderRadius: '50%',
-              border: '2px solid var(--card)',
-            }} />
-          )}
-        </button>
-
-        {/* Notifications bell */}
-        <button
           aria-label="Notifications"
           style={{
             position: 'relative',
@@ -221,11 +193,13 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
           }}
         >
           <Bell size={17} />
-          <span style={{
-            position: 'absolute', top: 8, right: 9, width: 7, height: 7,
-            background: 'var(--orange)', borderRadius: '50%',
-            border: '2px solid var(--card)',
-          }} />
+          {unseenChangelog > 0 && (
+            <span style={{
+              position: 'absolute', top: 8, right: 9, width: 7, height: 7,
+              background: 'var(--orange)', borderRadius: '50%',
+              border: '2px solid var(--card)',
+            }} />
+          )}
         </button>
 
         {/* Avatar + dropdown */}

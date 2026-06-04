@@ -28,7 +28,7 @@ export default async function DashboardPage() {
 
   const { data: monthCalls } = await supabase
     .from('calls')
-    .select('id, outcome, transferred, duration_seconds, created_at, caller_number, intelligence_status')
+    .select('id, outcome, transferred, duration_seconds, created_at, caller_number, intelligence_status, intelligence_score')
     .eq('business_id', business.id)
     .gte('created_at', startOfMonth.toISOString())
 
@@ -46,6 +46,12 @@ export default async function DashboardPage() {
   const resolvedByAI = all.filter(c => c.outcome && c.outcome !== 'Missed' && !c.transferred).length
   const aiResolutionRate = totalMonth > 0 ? Math.round((resolvedByAI / totalMonth) * 100) : 0
   const bookingsThisMonth = all.filter(c => (c.outcome ?? '').toLowerCase().includes('book')).length
+  // Receptionist-on-duty panel metrics
+  const scored = all.filter(c => typeof c.intelligence_score === 'number')
+  const aiScoreAvg = scored.length
+    ? Math.round((scored.reduce((s, c) => s + (c.intelligence_score as number), 0) / scored.length) * 10) / 10
+    : null
+  const afterHoursCount = all.filter(c => { const h = new Date(c.created_at).getHours(); return h < 8 || h >= 18 }).length
 
   // Calls answered today
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -84,20 +90,31 @@ export default async function DashboardPage() {
   const lastMonth = lastMonthCalls?.length ?? 0
   const vsLastMonthPercent = Math.round(((totalMonth - lastMonth) / Math.max(lastMonth, 1)) * 100)
 
-  // 14-day chart data
+  // 30-day chart data
   const dayMap: Record<string, number> = {}
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 29; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i)
     dayMap[d.toISOString().split('T')[0]] = 0
   }
-  const fourteenAgo = new Date(); fourteenAgo.setDate(fourteenAgo.getDate() - 14)
+  const thirtyAgo = new Date(); thirtyAgo.setDate(thirtyAgo.getDate() - 30)
   const { data: chartCalls } = await supabase
-    .from('calls').select('created_at').eq('business_id', business.id).gte('created_at', fourteenAgo.toISOString())
+    .from('calls').select('created_at').eq('business_id', business.id).gte('created_at', thirtyAgo.toISOString())
   chartCalls?.forEach(c => {
     const day = c.created_at.split('T')[0]
     if (dayMap[day] !== undefined) dayMap[day]++
   })
   const chartData = Object.entries(dayMap).map(([date, count]) => ({ date, count }))
+
+  // Today hourly (7am–6pm) for the "Today" chart view
+  const hourLabels = ['7a', '8a', '9a', '10a', '11a', '12p', '1p', '2p', '3p', '4p', '5p', '6p']
+  const todayHourly = hourLabels.map((label, idx) => {
+    const hour = idx + 7 // 7..18
+    const count = all.filter(c => {
+      const d = new Date(c.created_at)
+      return d >= todayStart && d <= todayEnd && d.getHours() === hour
+    }).length
+    return { label, count }
+  })
 
   // Recent calls
   const { data: recentCalls } = await supabase
@@ -251,8 +268,11 @@ export default async function DashboardPage() {
       crmHealthHasContacts={crmHealthHasContacts}
       stats={{ totalMonth, aiResolutionRate, transferredMonth, missedMonth }}
       bookingsThisMonth={bookingsThisMonth}
+      aiScoreAvg={aiScoreAvg}
+      afterHoursCount={afterHoursCount}
       outcomes={{ resolved: resolvedByAI, transferred: transferredMonth, missed: missedMonth, total: totalMonth }}
       chartData={chartData}
+      todayHourly={todayHourly}
       recentCalls={recentCalls ?? []}
       businessName={userFirstName}
       callsAnsweredToday={callsAnsweredToday}
