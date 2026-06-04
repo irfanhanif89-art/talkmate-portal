@@ -114,6 +114,19 @@ structure instead of rebuilding to the design. Fixes:
   Service Area, Jobs, Team, VIP Callers, Callbacks, Refer & Earn, Profile, Security, White Label, Help, admin items.
 - "Avg order lift +23%" is a fixed benchmark (per the design); "Avg pickup time < 2s" is representative.
 
+## 🗂️ Orphaned features folded into logical homes 2026-06-04 (commit 8d73a83)
+Per Irfan: nothing deleted; the features whose sidebar links were removed by the audit are now reachable from
+logical homes (verified live):
+- **Avatar menu (topbar):** Profile (/profile), Security (/settings/security), Refer & Earn (/refer-and-earn).
+- **Sidebar (conditional, under CONFIGURE):** White Label (/account/white-label) — only for white-label partners.
+- **Customers page header:** VIP Callers (/vip-callers), Pipeline (/contacts/pipeline).
+- **Calls page header:** Callbacks (/callbacks). (Quotes already a Calls filter tab.)
+- **Bookings page header:** Jobs (/appointments).
+- **Settings tabs (already):** Team, Service Area. **Admin:** separate admin sidebar at /admin.
+Also aligned topbar PAGE_TITLES to the new nav labels (Customers/Engage/Services/AI Receptionist).
+Remaining from the audit: **#21/#22** = unify /train + settings-AI + /settings/routing into one /receptionist
+tabbed page (Voice/Greeting/FAQ/Escalation/Hours) — larger build, not yet done; nav points to /train.
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
