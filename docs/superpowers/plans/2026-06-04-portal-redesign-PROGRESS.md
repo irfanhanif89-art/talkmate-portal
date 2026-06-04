@@ -93,6 +93,27 @@ text #15202c), sprint hero (pale/readable in light; dark/readable in dark). Buil
 the bg theme-adaptive or force fixed-light text. Audit must check text CONTRAST on every accent/hero surface in
 BOTH themes, not just "does the page load."
 
+## 📋 CLAUDE DESIGN AUDIT applied 2026-06-04 (commits 251c59c, 4517254)
+Source: `Downloads/TalkMate Portal - Design Audit.md`. The build had layered the design onto the OLD page
+structure instead of rebuilding to the design. Fixes:
+- **Sidebar fully rebuilt** to the design's 10-item nav: Dashboard/Calls/Bookings/Customers/Analytics/Engage →
+  CONFIGURE: Services/AI Receptionist/Billing/Settings. Removed Inbox/Quotes/Train/Chatbot/Call Routing/etc.
+  Group labels fixed (no OVERVIEW; YOUR AGENT→CONFIGURE). Footer stripped to avatar + name + plan tier only.
+- **Dashboard rebuilt** to the mockup: removed onboarding banner + ROI hero + body header + popups + refer strip
+  + outcomes/quick-actions; revenue strip = Revenue recovered/Answered today/Avg order lift +23%/Google rating;
+  chart toggle Today/7d/30d (added server 30-day + today-hourly data); Receptionist rows = Avg pickup time/
+  After-hours calls/Voice/AI score avg; greeting+search moved to topbar; removed header sparkle.
+- Done items (audit checklist): 1-14, 16-20 ✅. #15 (booking row line+subtitle) in BookingRow — verify w/ data.
+  #23 toggle pill close. **#21/#22 NOT done** = unify /train + /settings AI + /settings/routing into ONE
+  /receptionist tabbed page (Voice/Greeting/FAQ/Escalation/Hours) — a larger build; nav currently points to /train.
+
+### Decisions/caveats (flagged to Irfan)
+- Kept REAL routes (relabelled): Customers→/contacts, Engage→/sms-activity, Services→/catalog, AI Receptionist→/train.
+- Dispatch/Command Centre kept as conditional items (only when the business has them) to not break paid access.
+- Features dropped from the sidebar (still exist as routes/Settings sub-pages): Quotes, Scheduler, Pipeline,
+  Service Area, Jobs, Team, VIP Callers, Callbacks, Refer & Earn, Profile, Security, White Label, Help, admin items.
+- "Avg order lift +23%" is a fixed benchmark (per the design); "Avg pickup time < 2s" is representative.
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
