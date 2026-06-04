@@ -65,6 +65,14 @@ export interface AdminBusiness {
   winback_enabled?: boolean | null
   review_requests_enabled?: boolean | null
   unread_sms?: number
+  // Session 4A — onboarding intelligence columns (migration 074).
+  // agent_name here is the businesses.agent_name COLUMN (the editable display
+  // name), distinct from notifications_config.agent_name used in Agent Setup.
+  agent_name?: string | null
+  integration_mode?: 'overflow' | 'after_hours' | 'full_time' | null
+  go_live_gate_passed?: boolean | null
+  // Server-computed go-live readiness percent (null when no checklist row).
+  readiness_percent?: number | null
 }
 
 export interface PartnerOption {

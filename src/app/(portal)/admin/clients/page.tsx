@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { computeRoiForBusinessList } from '@/lib/roi'
+import { fetchReadinessByBusiness } from '@/lib/onboarding-admin'
 import AdminClientsView from './admin-clients-view'
 
 export const metadata: Metadata = { title: 'Client Management' }
@@ -40,7 +41,8 @@ export default async function AdminClientsPage() {
       golive_verified, golive_verified_at,
       billing_cycle, setup_fee_waived, setup_fee_amount,
       sales_rep_id,
-      kb_sync_status, winback_enabled, review_requests_enabled
+      kb_sync_status, winback_enabled, review_requests_enabled,
+      agent_name, integration_mode, go_live_gate_passed
     `)
     .eq('is_demo', false)
     .order('created_at', { ascending: false })
@@ -74,12 +76,22 @@ export default async function AdminClientsPage() {
     unreadByBusiness[r.business_id] = (unreadByBusiness[r.business_id] ?? 0) + (r.unread_count ?? 0)
   }
 
+  // Session 4A — go-live readiness percent per business, batched in a single
+  // query (no per-row fetch) so the list can show a "Readiness"-style "Mode"
+  // chip + readiness without N+1.
+  const readinessByBusiness = await fetchReadinessByBusiness(
+    admin,
+    (businessesRaw ?? []).map(b => (b as { id: string }).id),
+  )
+
   const businesses = (businessesRaw ?? []).map(b => {
     const rid = (b as { sales_rep_id: string | null }).sales_rep_id
+    const bid = (b as { id: string }).id
     return {
       ...b,
       sales_rep_name: rid ? (repNameById[rid] ?? null) : null,
-      unread_sms: unreadByBusiness[(b as { id: string }).id] ?? 0,
+      unread_sms: unreadByBusiness[bid] ?? 0,
+      readiness_percent: readinessByBusiness[bid]?.completionPercent ?? null,
     }
   })
 

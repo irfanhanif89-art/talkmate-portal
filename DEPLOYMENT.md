@@ -324,6 +324,50 @@ None required. Existing `GOOGLE_MAPS_SERVER_KEY` + `NEXT_PUBLIC_GOOGLE_PLACES_AP
 
 ---
 
+## Session 4A v2 — Round 1: Onboarding Intelligence + Trust (2026-06-04)
+
+### Branch
+`feature/session-4a-onboarding-trust` (worktree `_worktrees/session-4a`, off `feature/session-3-final`).
+
+### Status
+- `npm run build` green (exit 0, 203 pages). `npx tsc --noEmit` 0 errors. `safe-fetch.test.ts` passes.
+- Migration `074_onboarding_intelligence.sql` applied + verified on PREVIEW (`rgifivtzmjvanzqwgadq`): 12 new businesses cols, `go_live_checklist` + `call_flow_questions` tables, 2 active/trial clients backfilled as passed, `owner_name` set on 0 rows (no wrong backfill). NOT yet on prod.
+- **Round 2 NOT started. GM Towing (Vapi 25443e10) + Spectrum untouched.** No live agent prompt changed. No Vapi PATCH, no KB sync to live agents anywhere in Round 1.
+
+### Phase 0 findings (resolved)
+- Business-row timing: the existing wizard creates the `businesses` row; pre-wizard routes resolve via `resolveBusinessId()`. If a user hits `/onboarding/start` before a row exists, routes 404 `business_not_found` (handled by UI error state). Acceptable for Round 1.
+- `performKbSync` no-ops when `vapi_agent_id` is null, so KB inserts during onboarding never touch a live agent.
+
+### Architectural deviations (full permissions, documented)
+1. **Pre-wizard flow instead of splicing the 12-step Stripe wizard.** `/onboarding` is a 1478-line Stripe/legal flow with scattered `currentStep === N` checks and is being concurrently restyled by `feature/portal-ui-redesign`. Splicing numbered steps would break it and conflict at merge. Step 0 chooser + Step 0B review + agent identity + integration live in a NEW standalone `/onboarding/start` that writes confirmed data then hands off to `/onboarding`. The 12-step wizard is UNTOUCHED. Consequence: auto-populated fields + KB ARE persisted, but inline "Auto-filled" badges inside the legacy wizard steps were not added (follow-up if desired).
+2. **Separate `onboarding-gate.ts` instead of extending `golive-checks.ts`.** `golive-checks.ts` (Session 20) is the heavyweight ADMIN operational readiness module (28 checks, live Vapi calls, `client_golive_checklist`). The brief's gate is a lightweight CLIENT onboarding gate (5 step-completions, new `go_live_checklist`). Different concerns; combining them would be wrong, not DRY. New module is clearly named/commented.
+
+### Safety measures
+- SSRF guard (`src/lib/safe-fetch.ts`, unit-tested) on the auto-populate website fetch: blocks non-http(s), private/loopback/link-local/CGNAT/metadata IPv4+IPv6 ranges, re-validates each redirect hop, 5s timeout, body cap.
+- auto-populate + suggest-kb WRITE NOTHING (suggestions only). Persistence only via `/api/onboarding/apply` after the owner confirms in Step 0B (>=5 KB entries required).
+- No `owner_name` backfill (v1 SPLIT_PART bug removed).
+- Announcement is copy-only (no bulk send) — Spam Act 2003; SMS template includes "Reply STOP to opt out".
+- Go-live gate kept separate from the Stripe/Payment step.
+
+### Shipped (Round 1)
+- Migration 074. Libs: `safe-fetch.ts` (+test), `onboarding-intel.ts`, `onboarding-gate.ts`, `onboarding-admin.ts`.
+- Routes: `/api/onboarding/{auto-populate,suggest-kb,apply,go-live-status,announcement,call-flow}`, `/api/admin/clients/[id]/apply-intake-questions`, extended `/api/admin/clients/[id]` PATCH (agent_name, no Vapi sync).
+- UI: `/onboarding/start` (pre-wizard), `/onboarding/announcement`, Call Flow tab on `/train` (sync disabled), admin parity (queue readiness, client-detail gate panel + agent-name + mode chip, clients-list Mode column).
+
+### Manual steps (in-house)
+- Google Maps Places API confirmed ENABLED on `GOOGLE_MAPS_SERVER_KEY` (Irfan, 2026-06-04).
+- Before prod: apply migration 074 to prod (`mdsfdaefsxwrakgkyflr`) after Round 1 review + merge.
+
+### NOT done (by design)
+- Round 2 (owner-name injection, transfer fallback) — needs the prompt-safety harness first.
+- Deferred: conversational voice assistant, live-call indicator, public scraper demo.
+- Website (talkmate-website) tiles — pending.
+
+### Phase 3 browser audit
+See the browser audit report appended at deploy time.
+
+---
+
 **Build version:** Master Brief v1.0 + CRM Sessions 1-3 + Session 4 (Admin client management) + Session 5 (Industry service fields) + Session 6 (Trial mode + auto agent brief) + Session 8 (Self-serve signup) + Session 9 (Receptionist features) + Session 10 (Dispatcher system) + Hotfix 025 (Duplicate-owner DB guard) + Session 12 (Services fix + TalkMate Command) + Session 12b (Vapi webhook receiver fix) + Session 11 (Security foundations) + Session 13 (Admin portal parity + Sync Agent expansion) + Session 14 (Distance quoting engine + scheduler foundation) + Session 15 (Accounts, VIP bypass, native scheduler, Twilio SMS, waitlist, public holidays) + Session 16 (Locked preview pattern + scheduler route display) + Session 17B (Audit fixes -- create_booking sync, Make.com retirement, check_caller logging, dead handler removal) + Session 18 (Call Intelligence -- AI-scored call quality, alerts, SMS recovery) + Session 19 (SMS visibility + AI SMS verification) + Session 20 (Admin Go-Live Verification Checklist) + Hotfix 035 (sms_used_this_month counter not incrementing) + Session 21 (Sales HQ — rep portal, CRM pipeline, commissions, contract signing, admin sales team management) + Session 22 (Pricing overhaul — setup fees, annual billing, commission bonus, website + portal + Sales HQ)
 **Repo:** [irfanhanif89-art/talkmate-portal](https://github.com/irfanhanif89-art/talkmate-portal)
 **Target environment:** Vercel + Supabase (Sydney region recommended)
