@@ -28,7 +28,7 @@ import {
   templateMissedLeadRecovery,
   type SmsType,
 } from '@/lib/sms'
-import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue, sendAgentHealthAlert } from '@/lib/notifications'
+import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue, sendAgentHealthAlert, sendAdminTelegram } from '@/lib/notifications'
 import { scanTranscript, TRANSCRIPT_PATTERN_LABELS } from '@/lib/transcript-scanner'
 
 interface CallRow {
@@ -360,6 +360,62 @@ export async function scoreCallAsync(
       .eq('vapi_call_id', vapiCallId)
 
     await logAttempt(supabase, vapiCallId, businessId, 'success', null, result, attempt)
+
+    // 5b. Session 4B — transcript gaps + frustration review queue. Runs in
+    //     the existing scoring pass (no separate analyser, no fire-and-forget).
+    //     Never throws; a failure here must not affect scoring/recovery.
+    try {
+      // Frustration → review queue. Reuse the existing caller_frustrated flag;
+      // the signals themselves are already persisted in intelligence_flags.
+      if (result.flags.some(f => f.type === 'caller_frustrated')) {
+        await supabase
+          .from('calls')
+          .update({ needs_review: true, needs_review_at: new Date().toISOString() })
+          .eq('id', call.id)
+      }
+
+      // Gaps → transcript_gaps, deduped against the same question (case-
+      // insensitive) for this business in the last 7 days.
+      if (result.gaps.length > 0) {
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        const { data: recentGaps } = await supabase
+          .from('transcript_gaps')
+          .select('question')
+          .eq('business_id', business.id)
+          .gte('detected_at', since)
+        const seen = new Set((recentGaps ?? []).map(r => String(r.question).trim().toLowerCase()))
+        const fresh = result.gaps.filter(g => !seen.has(g.question.trim().toLowerCase()))
+        if (fresh.length > 0) {
+          await supabase.from('transcript_gaps').insert(
+            fresh.map(g => ({
+              business_id: business.id,
+              call_id: call.id,
+              industry: business.industry ?? null,
+              question: g.question,
+              context: g.context || null,
+            })),
+          )
+
+          // Alert admin once when this insert pushes today's pending count to
+          // >=3 (the crossing insert only — avoids repeat pings same day).
+          const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0)
+          const { count: pendingToday } = await supabase
+            .from('transcript_gaps')
+            .select('id', { count: 'exact', head: true })
+            .eq('business_id', business.id)
+            .eq('status', 'pending')
+            .gte('detected_at', dayStart.toISOString())
+          const total = pendingToday ?? 0
+          if (total >= 3 && total - fresh.length < 3) {
+            sendAdminTelegram(
+              `⚠️ ${business.name ?? 'A client'} agent could not answer ${total} questions today. Review in portal /insights.`,
+            ).catch(err => console.error('[score-call-async] gap alert error', (err as Error).message))
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[score-call-async] gap/frustration step failed', { vapiCallId, error: (e as Error).message })
+    }
 
     // 6. Caller recovery SMS — runs after scoring/alerting so the call
     //    row already reflects the intelligence outcome.

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import SalesShell from '@/components/sales/sales-shell'
+import NoticeBanner from '@/components/ui/notice-banner'
 import { getSalesSessionUser, getSalesRepByUserId, type SalesRepRow } from '@/lib/sales-auth'
 
 // Set ADMIN_EMAIL in Vercel environment variables
@@ -56,5 +57,10 @@ export default async function SalesLayout({ children }: { children: React.ReactN
     )
   }
 
-  return <SalesShell rep={rep as SalesRepRow}>{children}</SalesShell>
+  return (
+    <SalesShell rep={rep as SalesRepRow}>
+      <NoticeBanner />
+      {children}
+    </SalesShell>
+  )
 }

@@ -23,7 +23,7 @@ export default async function ChatbotSessionsPage() {
     .limit(1)
     .maybeSingle()
   if (!business) redirect('/dashboard')
-  if ((business.plan as string | null) === 'starter') redirect('/chatbot')
+  if ((business.plan as string | null) === 'starter') redirect('/chatbot?notice=chatbot_requires_growth')
 
   return <SessionsView />
 }

@@ -8,6 +8,7 @@ import PortalShell from '@/components/portal/portal-shell'
 import ImpersonationBanner from '@/components/portal/impersonation-banner'
 import TrialBanner, { TrialExpiredOverlay } from '@/components/portal/trial-banner'
 import PendingPaymentBanner from '@/components/portal/pending-payment-banner'
+import NoticeBanner from '@/components/ui/notice-banner'
 
 // Set ADMIN_EMAIL in Vercel environment variables
 const ADMIN_EMAILS = ['hello@talkmate.com.au', process.env.ADMIN_EMAIL].filter(Boolean) as string[]
@@ -192,6 +193,7 @@ export default async function PortalLayout({ children }: { children: React.React
         </Suspense>
         <TrialBanner />
         <PendingPaymentBanner />
+        <NoticeBanner />
         {children}
         <TrialExpiredOverlay />
       </PortalShell>

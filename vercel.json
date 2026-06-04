@@ -29,6 +29,8 @@
     { "path": "/api/cron/process-followups", "schedule": "50 * * * *"   },
     { "path": "/api/cron/dispatch-timeout",  "schedule": "*/5 * * * *"  },
     { "path": "/api/cron/kb-sync",           "schedule": "*/5 * * * *"  },
-    { "path": "/api/cron/review-follow-up",  "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/review-follow-up",  "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/sales-transcript-digest",    "schedule": "0 22 * * 0" },
+    { "path": "/api/cron/monthly-performance-report", "schedule": "0 23 1 * *" }
   ]
 }
