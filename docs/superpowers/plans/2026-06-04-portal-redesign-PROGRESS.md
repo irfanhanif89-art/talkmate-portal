@@ -42,6 +42,31 @@ redesign work now happens in an **isolated git worktree**:
 | 23 | Sales Pipeline (kanban) | ✅ | d4df77a — LeadsBoard restyled, drawer/modal/filters preserved |
 | 24 | Cleanup + final verification | ✅ | 4e76deb — empty AI scores hidden, legacy hexes→tokens; final build 195/195 + tsc clean. PR NOT opened (awaiting Irfan audit) |
 
+## 🔎 LIVE BROWSER AUDIT COMPLETE 2026-06-04 (dark + light, preview Supabase)
+Ran the worktree dev server (port 3100) against the preview DB, logged in as a real business owner
+(`test-roadside@preview.local`, pw reset for audit) + a temp sales rep (since removed). Audited all 12 screens.
+
+**CRITICAL bug found & fixed:** `ThemeProvider` used `value={{dark:''}}` (empty class) → next-themes called
+`classList.remove('')` → **runtime crash on EVERY page** (build/SSG didn't catch it; only the live browser did).
+Fixed to `dark:'tm-dark'` (committed `45993dc`). This alone justified the browser audit.
+
+**Other issues found in the audit + all FIXED (commit `45993dc`):**
+1. Mobile hamburger showed at desktop (inline `display:flex` overrode `lg:hidden`) → fixed.
+2. `PAGE_TITLES` missing 14 routes (topbar showed "TalkMate") → added.
+3. `Heatmap` mapped fragments without React `key` (console error) → fixed.
+4. Train "Live preview" panel hardcoded dark → broken in light mode → tokenized.
+5. Settings form overflowed right edge (Save button clipped) → constrained (`min-w-0`/`max-w-3xl`/responsive grid).
+6. Sales `NotificationBell` panel hardcoded dark → tokenized. (sales-shell/nav already token-based.)
+**Data-gap fixed:** Dashboard "Today's bookings" now wired to real `bookings` data via `BookingRow` (was a placeholder).
+
+**Verified live after fixes (light mode):** dashboard, calls, bookings, analytics (0 console errors), sms-activity,
+catalog, train, contacts, billing, settings, sales dashboard, sales pipeline. Dark mode verified on dashboard.
+Final `npm run build` 195/195 ✓ + `tsc` clean ✓.
+
+**Minor cosmetic items left (low priority, noted for Irfan):** preserved components not in redesign scope still
+render dark in light mode — `CommissionPolicyModal`, billing `PlanComparison` cards; sales-leads header buttons
+slightly clip at right edge (same pattern as settings, minor). Audit screenshots saved to `WEBSITE BUILD/rd-*.png`.
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
