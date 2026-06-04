@@ -13,6 +13,7 @@ import { UpsellBanner } from '@/components/portal/ui-v2/upsell-banner'
 import { StatusCard } from '@/components/portal/ui-v2/status-card'
 import { CallRow } from '@/components/portal/ui-v2/call-row'
 import FeaturePrompts from '@/components/portal/feature-prompts'
+import UpgradePrompt from '@/components/portal/upgrade-prompt'
 import { BookingRow } from '@/components/portal/ui-v2/booking-row'
 import { VolumeBarChart } from '@/components/portal/ui-v2/charts'
 import type { TagVariant } from '@/components/portal/ui-v2/tag'
@@ -254,8 +255,9 @@ export function DashboardClient({
         cta={{ title: 'See full report', subtitle: 'Analytics →', onClick: () => router.push('/analytics') }}
       />
 
-      {/* ── Feature-discovery prompts (Session 4B) ────────────────────── */}
+      {/* ── Feature-discovery + upgrade prompts (Session 4B) ──────────── */}
       <FeaturePrompts />
+      <UpgradePrompt />
 
       {/* ── 4 KPI cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
