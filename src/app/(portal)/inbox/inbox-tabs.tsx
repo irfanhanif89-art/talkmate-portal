@@ -9,7 +9,7 @@ import EmailInbox from './email-inbox'
 
 const ORANGE = '#E8622A'
 
-export default function InboxTabs({ businessId, children }: { businessId: string; children: React.ReactNode }) {
+export default function InboxTabs({ businessId, adminClientId, children }: { businessId: string; adminClientId?: string | null; children: React.ReactNode }) {
   const [tab, setTab] = useState<'sms' | 'email'>('sms')
 
   const tabBtn = (key: 'sms' | 'email', label: string): React.CSSProperties => ({
@@ -30,7 +30,7 @@ export default function InboxTabs({ businessId, children }: { businessId: string
       <div style={{ display: tab === 'sms' ? 'block' : 'none' }}>{children}</div>
       {tab === 'email' && (
         <div style={{ padding: '20px 32px' }}>
-          <EmailInbox businessId={businessId} />
+          <EmailInbox businessId={businessId} adminClientId={adminClientId} />
         </div>
       )}
     </div>

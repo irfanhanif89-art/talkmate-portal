@@ -22,7 +22,13 @@ function fmt(iso: string | null): string {
   try { return new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) } catch { return '' }
 }
 
-export default function EmailInbox({ businessId }: { businessId: string }) {
+function withAdmin(path: string, adminClientId?: string | null): string {
+  if (!adminClientId) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}adminClientId=${encodeURIComponent(adminClientId)}`
+}
+
+export default function EmailInbox({ businessId, adminClientId }: { businessId: string; adminClientId?: string | null }) {
   void businessId
   const [narrow, setNarrow] = useState(false)
   useEffect(() => {
@@ -44,7 +50,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
 
   const loadThreads = useCallback(async () => {
     try {
-      const res = await fetch('/api/email/threads')
+      const res = await fetch(withAdmin('/api/email/threads', adminClientId))
       const j = await res.json()
       if (j.ok) setThreads(j.threads)
     } catch { /* ignore */ }
@@ -56,7 +62,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
   const openThread = useCallback(async (id: string) => {
     setSelected(id); setLoadingThread(true); setErr(null); setDraftBody(''); setDraftId(null); setReply('')
     try {
-      const res = await fetch(`/api/email/threads/${id}`)
+      const res = await fetch(withAdmin(`/api/email/threads/${id}`, adminClientId))
       const j = await res.json()
       if (j.ok) {
         setMessages(j.messages)
@@ -72,7 +78,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
     if (!selected) return
     setBusy(true); setErr(null)
     try {
-      const res = await fetch('/api/email/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: selected }) })
+      const res = await fetch(withAdmin('/api/email/draft', adminClientId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: selected }) })
       const j = await res.json()
       if (!res.ok || !j.ok) { setErr(j.error || 'Could not generate a draft.'); setBusy(false); return }
       setDraftId(j.draftId); setDraftBody(j.draftBody ?? '')
@@ -84,7 +90,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
     if (!draftId) return
     setBusy(true); setErr(null)
     try {
-      const res = await fetch('/api/email/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: draftId, body: draftBody }) })
+      const res = await fetch(withAdmin('/api/email/send', adminClientId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: draftId, body: draftBody }) })
       const j = await res.json()
       if (!res.ok || !j.ok) { setErr(j.error || 'Could not send.'); setBusy(false); return }
       setDraftId(null); setDraftBody('')
@@ -103,7 +109,7 @@ export default function EmailInbox({ businessId }: { businessId: string }) {
     if (!selected || !reply.trim()) return
     setBusy(true); setErr(null)
     try {
-      const res = await fetch('/api/email/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: selected, body: reply.trim() }) })
+      const res = await fetch(withAdmin('/api/email/send', adminClientId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: selected, body: reply.trim() }) })
       const j = await res.json()
       if (!res.ok || !j.ok) { setErr(j.error || 'Could not send.'); setBusy(false); return }
       setReply('')
