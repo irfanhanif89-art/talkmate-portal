@@ -145,6 +145,37 @@ Result: build **203/203** ✓, tsc clean ✓, branch 0-behind/40-ahead of dev. D
 - Email Inbox (`/inbox`), ServiceM8 log, and other Session 3/4A surfaces are dark-only and not yet in the new design.
 - Sidebar still drops "Inbox" (per audit) while Email Inbox now ships at /inbox — decide where Email lives.
 
+## ✅ JOB 1 + JOB 2 COMPLETE 2026-06-04 (commits 30a23e6, 2cbfd9f) — verified live, both themes
+
+**JOB 1 — AI Receptionist hub (audit #21/#22) — `30a23e6`.** Rebuilt `/train` into ONE tabbed page per
+`receptionist.html`: **Voice & Personality · Greeting Script (+ Call Flow) · FAQ Knowledge · Escalation Rules ·
+Call Hours**, with a live-preview rail (first bubble reflects the greeting). New files: `train/types.ts`,
+`faq-knowledge-tab.tsx` (KB editor extracted + tokenized), `call-flow-tab.tsx` (Session 4A editor extracted +
+tokenized); `industry-template-card.tsx` restyled off hardcoded hexes; `.tm-slider` added to globals.css.
+Save patterns mirror Settings: `businesses.{voice,greeting,agent_name,opening_hours}` + `notifications_config`
+({agent_name, agent_answer_phrase, escalation_rules, tone, response_style, opening_hours}); "Save & go live"
+writes + calls `/api/vapi/sync`. `opening_hours` read from top-level col OR `notifications_config.opening_hours`,
+written to BOTH (matches admin onboarding). **Admin-on-behalf** (`adminClientId`) renders ONLY FAQ Knowledge +
+Call Flow (the tabs with an admin-override API) — preserves today's admin capability; admin page unchanged.
+Verified live in BOTH themes across all 5 tabs; **save round-trip persisted** (response_style thorough→reload);
+0 console errors (only the expected `/api/vapi/sync` 500 in preview — DB write runs first and is handled).
+
+**JOB 2 — restyle dark Session 3/4A surfaces + fold Email into Engage — `2cbfd9f`.**
+- Tokenized `ServiceM8Card`, `EmailResponderCard` (ui-v2 Panel/Switch/ButtonV2), `EmailInbox`, `servicem8-log`.
+- **Email folded into Engage** (Irfan's call): `/sms-activity` now has an **SMS | Email** switch — SMS = the
+  redesigned outbound log, Email = the restyled `EmailInbox`. Engage is the single SMS+Email home.
+- Legacy two-way `/inbox` (the 609-line SMS `InboxView` + gate) LEFT dark — out-of-scope per the scope caveat
+  (Session 1 legacy, de-emphasised from nav). Its Email tab inherits the `EmailInbox` restyle.
+- Verified live in BOTH themes (Automation cards, Engage SMS+Email, push log); 0 console errors.
+
+Both: `npm run build` **203/203** ✓ + `tsc` clean ✓. Pushed + PR opened to `dev` per Irfan.
+
+### Still on the legacy/dark backlog (NOT done — flagged to Irfan)
+- The legacy two-way `/inbox` SMS `InboxView` (609 lines) + its plan-gate + `inbox-tabs.tsx` remain dark-only.
+- Whole-portal light-mode parity for the other non-redesigned pages (admin/*, dispatch, command-centre, etc.).
+- Settings still has an "AI Voice Agent" tab redundant with the hub (kept intentionally — it also hosts
+  services/pricing/area/divert/sync-agent which the hub doesn't; removing it needs a new home for those).
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
