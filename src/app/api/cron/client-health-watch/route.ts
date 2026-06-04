@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { verifyCron } from '@/lib/cron-auth'
 import { createSystemAlert } from '@/lib/alerts'
 import { sendAdminTelegram } from '@/lib/notifications'
-import { CLIENT_HEALTH_CONFIG, evaluateClientHealth, type CallRow } from '@/lib/client-health'
+import { CLIENT_HEALTH_CONFIG, evaluateClientHealth, evaluateAccountSignals, type CallRow } from '@/lib/client-health'
 
 // ─── Per-client health watcher ──────────────────────────────────────
 // Churn-risk early warning. Distinct from:
@@ -30,10 +30,11 @@ export async function GET(req: Request) {
 
   const windowStart = new Date(Date.now() - CLIENT_HEALTH_CONFIG.WINDOW_DAYS * 24 * 60 * 60 * 1000)
   const dedupStart = new Date(Date.now() - CLIENT_HEALTH_CONFIG.DEDUP_DAYS * 24 * 60 * 60 * 1000)
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
 
   const { data: businesses } = await supabase
     .from('businesses')
-    .select('id, name, account_status')
+    .select('id, name, account_status, owner_user_id, created_at, winback_enabled, review_requests_enabled, google_review_url')
     .eq('account_status', 'active')
     .not('is_demo', 'is', true) // skip demo/test businesses
 
@@ -49,15 +50,53 @@ export async function GET(req: Request) {
       .gte('created_at', windowStart.toISOString())
 
     const rows = (calls ?? []) as CallRow[]
-    if (rows.length < CLIENT_HEALTH_CONFIG.MIN_CALLS) {
+
+    // Session 4B — account-level signals, evaluated regardless of call volume
+    // so a quiet client (zero calls) can still surface as a churn risk.
+    let daysSinceLogin: number | null = null
+    if (b.owner_user_id) {
+      try {
+        const { data: u } = await supabase.auth.admin.getUserById(b.owner_user_id as string)
+        const last = u?.user?.last_sign_in_at
+        if (last) daysSinceLogin = Math.floor((Date.now() - Date.parse(last)) / 86_400_000)
+      } catch { /* ignore auth lookup failure */ }
+    }
+    const [{ count: kbCount }, { count: pendingGaps }] = await Promise.all([
+      supabase.from('knowledge_base_entries').select('id', { count: 'exact', head: true }).eq('business_id', b.id),
+      supabase.from('transcript_gaps').select('id', { count: 'exact', head: true })
+        .eq('business_id', b.id).eq('status', 'pending').lt('detected_at', threeDaysAgo.toISOString()),
+    ])
+    const accountAgeDays = b.created_at ? Math.floor((Date.now() - Date.parse(b.created_at as string)) / 86_400_000) : 0
+    const accountSig = evaluateAccountSignals({
+      daysSinceLogin,
+      kbCount: kbCount ?? 0,
+      callsLast7d: rows.length,
+      accountAgeDays,
+      winbackEnabled: !!b.winback_enabled,
+      reviewRequestsEnabled: !!b.review_requests_enabled,
+      hasGoogleReviewUrl: !!b.google_review_url,
+      pendingGapsOver3d: pendingGaps ?? 0,
+    })
+
+    const callResult = rows.length >= CLIENT_HEALTH_CONFIG.MIN_CALLS ? evaluateClientHealth(rows) : null
+    const callBreached = callResult?.breached ?? false
+    const accountBreached = accountSig.riskScore >= 60
+
+    if (rows.length < CLIENT_HEALTH_CONFIG.MIN_CALLS && !accountBreached) {
       stats.skipped_low_volume++
       continue
     }
-
-    const result = evaluateClientHealth(rows)
-    if (!result.breached) {
+    if (!callBreached && !accountBreached) {
       stats.healthy++
       continue
+    }
+
+    const result = {
+      total: rows.length,
+      reasons: [...(callResult?.reasons ?? []), ...accountSig.reasons],
+      repeatShortNumbers: callResult?.repeatShortNumbers ?? [],
+      severity: (callResult?.severity ?? (accountSig.riskScore >= 80 ? 'critical' : 'warning')) as 'warning' | 'critical',
+      metrics: { ...(callResult?.metrics ?? { window_calls: rows.length }), risk_score: accountSig.riskScore, health_score: accountSig.healthScore },
     }
 
     // Dedup — already alerted on this client in the dedup window?

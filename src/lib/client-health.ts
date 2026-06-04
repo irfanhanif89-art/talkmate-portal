@@ -40,6 +40,53 @@ export interface HealthResult {
   }
 }
 
+// Session 4B — account-level churn signals that the call-quality eval above
+// can't see (a quiet client with zero calls never trips the call gate). Pure
+// scoring; the cron supplies the inputs. health = 100 - riskScore; the cron
+// alerts when riskScore is high (>= 60 by default).
+export interface AccountSignalInput {
+  daysSinceLogin: number | null
+  kbCount: number
+  callsLast7d: number
+  accountAgeDays: number
+  winbackEnabled: boolean
+  reviewRequestsEnabled: boolean
+  hasGoogleReviewUrl: boolean
+  pendingGapsOver3d: number
+}
+
+export interface AccountSignalResult {
+  riskScore: number
+  healthScore: number
+  reasons: string[]
+}
+
+export function evaluateAccountSignals(i: AccountSignalInput): AccountSignalResult {
+  let risk = 0
+  const reasons: string[] = []
+
+  if (i.daysSinceLogin != null && i.daysSinceLogin > 14) {
+    risk += 20; reasons.push(`No portal login in ${i.daysSinceLogin} days`)
+  }
+  if (i.kbCount < 5) {
+    risk += 15; reasons.push(`Only ${i.kbCount} knowledge base entries`)
+  }
+  if (!i.winbackEnabled) {
+    risk += 10; reasons.push('Win-back disabled')
+  }
+  if (!i.reviewRequestsEnabled && i.hasGoogleReviewUrl) {
+    risk += 10; reasons.push('Review requests off despite a Google review link')
+  }
+  if (i.callsLast7d === 0 && i.accountAgeDays > 30) {
+    risk += 25; reasons.push('No calls in the last 7 days (established client gone quiet)')
+  }
+  if (i.pendingGapsOver3d >= 3) {
+    risk += 10; reasons.push(`${i.pendingGapsOver3d} unanswered questions pending 3+ days`)
+  }
+
+  return { riskScore: risk, healthScore: Math.max(0, 100 - risk), reasons }
+}
+
 export function evaluateClientHealth(calls: CallRow[]): HealthResult {
   const C = CLIENT_HEALTH_CONFIG
   const total = calls.length
