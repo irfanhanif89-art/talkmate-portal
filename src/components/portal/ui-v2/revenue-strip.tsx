@@ -37,7 +37,7 @@ export function RevenueStrip({ items, cta, className }: RevenueStripProps) {
           className={cn(
             'flex flex-1 flex-col gap-[3px] px-5',
             i === 0 && 'pl-0',
-            i < items.length - 1 && 'border-r border-[rgba(255,255,255,.07)]'
+            i < items.length - 1 && 'border-r border-line'
           )}
         >
           <div
@@ -46,11 +46,11 @@ export function RevenueStrip({ items, cta, className }: RevenueStripProps) {
           >
             {item.value}
           </div>
-          <div className="mt-[2px] text-[10px] uppercase tracking-[.08em] text-[rgba(255,255,255,.4)]">
+          <div className="mt-[2px] text-[10px] uppercase tracking-[.08em] text-dim">
             {item.label}
           </div>
           {item.sub && (
-            <div className="text-[10.5px] text-[rgba(255,255,255,.3)]">
+            <div className="text-[10.5px] text-faint">
               {item.sub}
             </div>
           )}
@@ -71,7 +71,7 @@ export function RevenueStrip({ items, cta, className }: RevenueStripProps) {
             <span className="block text-[11px] font-[700] text-orange">
               {cta.title}
             </span>
-            <span className="mt-[1px] block text-[10px] text-[rgba(255,255,255,.35)]">
+            <span className="mt-[1px] block text-[10px] text-faint">
               {cta.subtitle}
             </span>
           </button>

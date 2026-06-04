@@ -45,6 +45,7 @@ export default async function DashboardPage() {
   ).length
   const resolvedByAI = all.filter(c => c.outcome && c.outcome !== 'Missed' && !c.transferred).length
   const aiResolutionRate = totalMonth > 0 ? Math.round((resolvedByAI / totalMonth) * 100) : 0
+  const bookingsThisMonth = all.filter(c => (c.outcome ?? '').toLowerCase().includes('book')).length
 
   // Calls answered today
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -249,6 +250,7 @@ export default async function DashboardPage() {
       crmHealthPct={crmHealthPct}
       crmHealthHasContacts={crmHealthHasContacts}
       stats={{ totalMonth, aiResolutionRate, transferredMonth, missedMonth }}
+      bookingsThisMonth={bookingsThisMonth}
       outcomes={{ resolved: resolvedByAI, transferred: transferredMonth, missed: missedMonth, total: totalMonth }}
       chartData={chartData}
       recentCalls={recentCalls ?? []}

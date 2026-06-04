@@ -67,6 +67,12 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
 
   const todayStr = new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
 
+  // On the dashboard, show a greeting + search box (matches the design); other pages show the page title.
+  const isDashboard = pathname === '/dashboard'
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const firstName = (userName || '').trim().split(/\s+/)[0]
+
   async function logout() {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -101,10 +107,33 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
           <Menu size={22} />
         </button>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{title}</div>
-          <div className="hidden md:block" style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 2 }}>{todayStr}</div>
+          {isDashboard ? (
+            <>
+              <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.4px' }}>
+                {greeting}{firstName ? `, ${firstName}` : ''}
+              </div>
+              <div className="hidden md:block" style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 2 }}>{todayStr} · your receptionist is live</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', lineHeight: 1.1, letterSpacing: '-0.4px' }}>{title}</div>
+              <div className="hidden md:block" style={{ fontSize: 12.5, color: 'var(--dim)', marginTop: 2 }}>{todayStr}</div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Search (dashboard only, desktop) — routes to Calls where search lives */}
+      {isDashboard && (
+        <button
+          onClick={() => router.push('/calls')}
+          className="hidden lg:flex"
+          style={{ alignItems: 'center', gap: 9, flex: 1, maxWidth: 280, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: '8px 12px', color: 'var(--faint)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+          Search calls, customers…
+        </button>
+      )}
 
       {/* Right cluster: live pill → theme toggle → icon buttons → avatar */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
