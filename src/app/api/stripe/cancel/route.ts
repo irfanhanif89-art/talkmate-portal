@@ -52,6 +52,12 @@ export async function POST(req: Request) {
     cancellation_requested_at: new Date().toISOString(),
   }).eq('business_id', business.id)
 
+  // Session 4B — also surface the reason on the business row for the admin
+  // client-detail view (additive; does not change the cancel behaviour).
+  await admin.from('businesses')
+    .update({ cancellation_reason: reason || null })
+    .eq('id', business.id)
+
   // Fire-and-forget Make webhook so the cancellation confirmation email
   // goes out through the normal email-trigger pipeline.
   postEmailTrigger({
