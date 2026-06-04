@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Sparkles, Plus, Pencil, Trash2, Save, X, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import IndustryTemplateCard from './industry-template-card'
 
 export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'error'
 
@@ -259,6 +260,9 @@ export default function TrainView(props: Props) {
           </p>
         </div>
       </div>
+
+      {/* Industry template card — Session 3A. Shows only when the KB is essentially empty. */}
+      {entries.length < 3 && <IndustryTemplateCard adminClientId={props.adminClientId} />}
 
       {/* Sync status bar */}
       <div style={{

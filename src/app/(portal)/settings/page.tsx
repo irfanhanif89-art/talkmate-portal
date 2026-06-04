@@ -8,6 +8,8 @@ import DivertInstructions from '@/components/portal/divert-instructions'
 import ServicesEditor, { type Service } from '@/components/portal/services-editor'
 import SyncAgentButton from '@/components/portal/sync-agent-button'
 import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-settings'
+import ServiceM8Card from './servicem8-card'
+import EmailResponderCard from './email-responder-card'
 
 type TabKey = 'business' | 'ai' | 'automation' | 'notifications' | 'team' | 'integrations'
 
@@ -542,6 +544,9 @@ export default function SettingsPage() {
             Win back missed callers and ask happy customers for a Google review — automatically.
           </p>
 
+          {/* AI Email Responder — Session 3C */}
+          <EmailResponderCard />
+
           {/* Missed Call Win-back card */}
           <div style={{ background: '#071829', borderRadius: 14, padding: 20, marginBottom: 16, border: '1px solid rgba(255,255,255,0.04)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 14 }}>
@@ -777,6 +782,9 @@ export default function SettingsPage() {
       {/* Integrations */}
       {tab === 'integrations' && (
         <div>
+          {/* ServiceM8 — Session 3B */}
+          <ServiceM8Card />
+
           {/* WhatsApp Card */}
           <div style={{ background: '#071829', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24, marginBottom: 16 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>Connect WhatsApp Business</h3>

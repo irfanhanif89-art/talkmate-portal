@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (eventType === 'end-of-call-report' || eventType === 'call.ended' || eventType === 'call-end') {
-      await handleEndOfCall(supabase, business, msg, call, vapiCallId)
+      await handleEndOfCall(supabase, business, msg, call, vapiCallId, new URL(request.url).origin)
     } else if (eventType === 'call.started' || eventType === 'call-start') {
       await handleCallStart(supabase, business.id, call, vapiCallId)
     } else if (eventType === 'transfer-initiated' || eventType === 'call.transferred') {
@@ -178,6 +178,10 @@ interface BusinessRow {
   escalation_number: string | null
   talkmate_number: string | null
   name: string | null
+  // Session 3B — present so the call.ended handler can decide whether to
+  // fire the ServiceM8 push without an extra round-trip. Optional so the
+  // fallback path and older callers compile unchanged.
+  servicem8_enabled?: boolean | null
 }
 
 async function findBusinessByAssistant(
@@ -187,7 +191,7 @@ async function findBusinessByAssistant(
   // Primary lookup: vapi_agent_id column (set during onboarding).
   const { data: primary } = await supabase
     .from('businesses')
-    .select('id, business_type, escalation_number, talkmate_number, name')
+    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled')
     .eq('vapi_agent_id', assistantId)
     .maybeSingle()
   if (primary) return primary as BusinessRow
@@ -197,7 +201,7 @@ async function findBusinessByAssistant(
   // when the primary missed.
   const { data: fallback } = await supabase
     .from('businesses')
-    .select('id, business_type, escalation_number, talkmate_number, name, notifications_config')
+    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled, notifications_config')
     .filter('notifications_config->>vapi_assistant_id', 'eq', assistantId)
     .maybeSingle()
   if (fallback) return {
@@ -206,6 +210,7 @@ async function findBusinessByAssistant(
     escalation_number: (fallback.escalation_number as string | null) ?? null,
     talkmate_number: (fallback.talkmate_number as string | null) ?? null,
     name: (fallback.name as string | null) ?? null,
+    servicem8_enabled: (fallback.servicem8_enabled as boolean | null) ?? null,
   }
 
   return null
@@ -236,6 +241,7 @@ async function handleEndOfCall(
   msg: VapiMessage,
   call: VapiCall,
   vapiCallId: string,
+  requestOrigin: string,
 ) {
   const phone = call.customer?.number ?? null
   const callerName = call.customer?.name ?? null
@@ -418,6 +424,27 @@ async function handleEndOfCall(
         extractedData: extracted,
       }),
     }).catch(() => { /* fire-and-forget */ })
+  }
+
+  // ── Session 3B — ServiceM8 job push (built dark, fully isolated) ─────────
+  // Fire-and-forget to our own internal route, which enforces the global kill
+  // switch + per-business enable + idempotency (calls.servicem8_pushed) before
+  // creating anything. Wrapped so a failure here can NEVER affect the live
+  // call.ended handler. Uses the request origin (not a hardcoded prod URL) so
+  // preview deploys call their own route.
+  try {
+    if (business.servicem8_enabled) {
+      void fetch(`${requestOrigin}/api/servicem8/push-job`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.CRON_SECRET ?? ''}`,
+        },
+        body: JSON.stringify({ callId: callRowId, businessId: business.id, contactId }),
+      }).catch(err => console.error('[servicem8-push] fire-and-forget failed:', (err as Error).message))
+    }
+  } catch (err) {
+    console.error('[servicem8-push] non-fatal trigger error, webhook continues:', (err as Error).message)
   }
 }
 
