@@ -76,6 +76,23 @@ All four re-verified live (billing, sales dashboard modal, sales pipeline). Buil
 Remaining un-migrated light-mode surfaces are only OTHER (non-redesigned) portal pages/shared components — the
 documented out-of-scope follow-up, not part of these 12 screens.
 
+## 🔧 SECOND AUDIT PASS 2026-06-04 (Irfan spotted broken billing hero) — commit `6753e5d`
+**Root cause found:** three "hero" surfaces had a HARDCODED dark gradient background but used THEMED text
+tokens (`text-text`/`text-dim`/`text-faint`). In dark mode: dark bg + light text = fine. In LIGHT mode: the
+same dark bg + DARK text = unreadable (looked broken/incomplete). My first audit waved these through as
+"intentional dark heroes" without checking text contrast in light mode — a real miss.
+- Billing **plan hero**, dashboard **StatusCard** ("Receptionist on duty"), sales **sprint hero**.
+**Fix:** made the gradients theme-adaptive via shared CSS classes in globals.css (`.tm-hero`/`.tm-hero-blue`/
+`.tm-status`): DARK gradient in dark mode (unchanged from original), PALE gradient in light mode. Themed text
+then reads correctly on both. This matches the handoff's own `.plan-hero` light-variant intent (design-spec §2).
+**Also fixed** invisible-in-light-mode elements: SMS quota meter track + sprint progress track (`rgba(255,255,255,*)`
+→ `bg-line-strong`), dashboard neutral trend arrow + KPI neutral ctx (`text-white/30` → `text-faint`).
+**Verified live in BOTH themes:** billing hero (pale/readable in light), StatusCard (programmatic: bg pale teal,
+text #15202c), sprint hero (pale/readable in light; dark/readable in dark). Build 195/195 ✓ + tsc clean ✓.
+**Lesson for any remaining light-mode work:** never put themed text on a hardcoded-dark background — either make
+the bg theme-adaptive or force fixed-light text. Audit must check text CONTRAST on every accent/hero surface in
+BOTH themes, not just "does the page load."
+
 ## ✅ ALL 24 TASKS COMPLETE 2026-06-04
 Whole plan built: Phase 0 theme foundation + Phase 1 ui-v2 library + Phase 2 client shell + Phase 3 all 10
 client screens + Phase 4 sales shell & 2 screens + Phase 5 cleanup. **27 commits** on `feature/portal-ui-redesign`.
