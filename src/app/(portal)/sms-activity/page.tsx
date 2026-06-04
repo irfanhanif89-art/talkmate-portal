@@ -101,6 +101,7 @@ export default async function SmsActivityPage() {
       rows={rows}
       used={business.sms_used_this_month ?? 0}
       cap={cap}
+      businessId={business.id}
     />
   )
 }

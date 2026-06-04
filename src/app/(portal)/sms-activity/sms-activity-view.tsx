@@ -10,6 +10,7 @@ import {
 import { StatsBar } from '@/components/portal/ui-v2/stats-bar'
 import { Panel, PanelHeader } from '@/components/portal/ui-v2/panel'
 import { ButtonV2 } from '@/components/portal/ui-v2/button'
+import EmailInbox from '../inbox/email-inbox'
 
 export interface SmsActivityRow {
   id: string
@@ -110,12 +111,15 @@ const SMS_TEMPLATES = [
 ]
 
 export default function SmsActivityView({
-  rows, used, cap,
+  rows, used, cap, businessId,
 }: {
   rows: SmsActivityRow[]
   used: number
   cap: number
+  businessId: string
 }) {
+  // Engage hosts both comms surfaces: the outbound SMS log + the Email inbox.
+  const [mode, setMode] = useState<'sms' | 'email'>('sms')
   const months = useMemo(() => {
     const set = new Set(rows.map(r => monthKey(r.sent_at)))
     const current = monthKey(new Date().toISOString())
@@ -187,6 +191,29 @@ export default function SmsActivityView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* SMS / Email switch — Engage hosts both comms surfaces */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-line bg-bg px-6 pb-3 pt-4">
+        {(['sms', 'email'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={[
+              'rounded-[9px] px-4 py-2 text-[13px] font-bold transition',
+              mode === m ? 'bg-orange text-white' : 'bg-card text-dim hover:text-text',
+            ].join(' ')}
+          >
+            {m === 'sms' ? 'SMS' : 'Email'}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'email' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <EmailInbox businessId={businessId} />
+        </div>
+      ) : (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Stats bar */}
       <StatsBar
         stats={statsBarItems}
@@ -432,6 +459,8 @@ export default function SmsActivityView({
           </div>
         </div>
       </div>
+      </div>
+      )}
     </div>
   )
 }
