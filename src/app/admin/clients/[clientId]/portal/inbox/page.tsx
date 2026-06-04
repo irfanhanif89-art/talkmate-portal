@@ -4,6 +4,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import InboxView, { type ConversationListItem } from '@/app/(portal)/inbox/inbox-view'
+import InboxTabs from '@/app/(portal)/inbox/inbox-tabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,12 +67,14 @@ export default async function AdminInboxPage({
   const hasTwilioNumber = Boolean(business.twilio_phone_number ?? business.talkmate_number)
 
   return (
-    <InboxView
-      businessId={clientId}
-      businessName={(business.name as string | null) ?? 'Client'}
-      hasTwilioNumber={hasTwilioNumber}
-      initialConversations={conversations}
-      adminClientId={clientId}
-    />
+    <InboxTabs businessId={clientId} adminClientId={clientId}>
+      <InboxView
+        businessId={clientId}
+        businessName={(business.name as string | null) ?? 'Client'}
+        hasTwilioNumber={hasTwilioNumber}
+        initialConversations={conversations}
+        adminClientId={clientId}
+      />
+    </InboxTabs>
   )
 }

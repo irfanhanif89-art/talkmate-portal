@@ -11,6 +11,8 @@ import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-se
 import { Switch } from '@/components/portal/ui-v2/switch'
 import { ButtonV2 } from '@/components/portal/ui-v2/button'
 import { Panel } from '@/components/portal/ui-v2/panel'
+import ServiceM8Card from './servicem8-card'
+import EmailResponderCard from './email-responder-card'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -672,6 +674,12 @@ export default function SettingsPage() {
                   <span className="text-[28px] font-[800] text-green">{automationStats.reviews}</span>
                 </Panel>
               </div>
+
+              {/* AI Email Responder — Session 3C */}
+              <EmailResponderCard />
+
+              {/* ServiceM8 Job Push — Session 3B */}
+              <ServiceM8Card />
 
               {/* Win-back card */}
               <Panel>

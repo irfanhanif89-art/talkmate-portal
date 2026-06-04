@@ -1,0 +1,61 @@
+-- Migration 071b: Seed Industry Packs (Session 3A)
+-- 51 rows total: Towing 11, Plumbing 10, Electrical 10, Cleaning 10, HVAC 10.
+-- Idempotent via ON CONFLICT on the (industry, category, question) unique index from 071.
+
+BEGIN;
+
+INSERT INTO industry_packs (industry, category, question, answer, sort_order) VALUES
+('towing','faq',$q$How quickly can you get to me?$q$,$a$We aim to have a truck with you within 30 to 45 minutes depending on your location and current demand. Our dispatcher will confirm a more precise ETA when you book.$a$,1),
+('towing','faq',$q$Do you tow all types of vehicles?$q$,$a$Yes, we tow cars, utes, vans, motorbikes, and light trucks. For heavy vehicles or machinery, ask us and we will confirm whether we can assist.$a$,2),
+('towing','faq',$q$What areas do you cover?$q$,$a$We cover the full local area. If you are unsure whether we service your location, give us your suburb and we will confirm straight away.$a$,3),
+('towing','faq',$q$Do you operate 24 hours?$q$,$a$Yes, we are available 24 hours a day, 7 days a week including public holidays.$a$,4),
+('towing','faq',$q$How do I pay?$q$,$a$We accept cash, card, and bank transfer. Payment is taken on completion of the job.$a$,5),
+('towing','faq',$q$Can you tow to any location?$q$,$a$Yes, we can tow your vehicle to any address you choose including a mechanic, your home, or a storage facility.$a$,6),
+('towing','service',$q$Breakdown towing$q$,$a$Emergency towing for broken down vehicles anywhere in our service area. Available 24/7.$a$,1),
+('towing','service',$q$Accident recovery$q$,$a$Post-accident vehicle recovery and towing to your chosen repairer. We work with all major insurers.$a$,2),
+('towing','service',$q$Flat tyre assistance$q$,$a$If you have a spare we can change your tyre on the spot. If not, we will tow you to the nearest tyre shop.$a$,3),
+('towing','service',$q$Dead battery jumpstart$q$,$a$We carry portable battery packs. We will get you started or tow you if the battery needs replacing.$a$,4),
+('towing','service',$q$Lockout assistance$q$,$a$Locked your keys inside? We can help with lockout assistance for most vehicle types.$a$,5),
+('plumbing','faq',$q$Do you charge a callout fee?$q$,$a$Yes, we charge a standard callout fee which covers travel and the first 30 minutes on site. This will be confirmed when you book.$a$,1),
+('plumbing','faq',$q$Are you licensed and insured?$q$,$a$Yes, all our plumbers are fully licensed with the relevant state authority and we carry full public liability insurance.$a$,2),
+('plumbing','faq',$q$Do you do emergency plumbing?$q$,$a$Yes, we offer 24/7 emergency plumbing for burst pipes, serious leaks, blocked drains, and hot water failures.$a$,3),
+('plumbing','faq',$q$Can you give me a quote over the phone?$q$,$a$For most standard jobs we can give you a rough estimate over the phone. For more complex work we prefer to inspect first and provide a written quote.$a$,4),
+('plumbing','faq',$q$How long will the job take?$q$,$a$Most standard plumbing jobs take between one and three hours. We will give you a better estimate once we understand the scope of work.$a$,5),
+('plumbing','service',$q$Blocked drains$q$,$a$We use high-pressure water jetting and CCTV cameras to clear and diagnose blocked drains quickly.$a$,1),
+('plumbing','service',$q$Hot water systems$q$,$a$Supply, installation, and repair of electric, gas, and solar hot water systems. All major brands.$a$,2),
+('plumbing','service',$q$Leak detection and repair$q$,$a$Non-invasive leak detection using thermal imaging and acoustic equipment. We find it fast and fix it right.$a$,3),
+('plumbing','service',$q$Tap and toilet repairs$q$,$a$Dripping taps, running toilets, cistern repairs, and full tap replacements. Fast and affordable.$a$,4),
+('plumbing','service',$q$Burst pipe emergency$q$,$a$Available 24/7 for burst pipes. We isolate, repair, and restore your water supply as quickly as possible.$a$,5),
+('electrical','faq',$q$Are you a licensed electrician?$q$,$a$Yes, all our electricians are fully licensed and registered with the state electrical safety regulator.$a$,1),
+('electrical','faq',$q$Do you do after-hours electrical work?$q$,$a$Yes, we offer emergency electrical services 24/7 for safety-critical issues like power outages, sparking outlets, or tripped safety switches.$a$,2),
+('electrical','faq',$q$Do you install solar?$q$,$a$Yes, we are Clean Energy Council accredited and install residential and commercial solar systems. Ask us about a free solar assessment.$a$,3),
+('electrical','faq',$q$How much does it cost to replace a power point?$q$,$a$Standard power point replacement starts from around 100 to 150 dollars depending on the type and location. We will confirm pricing before starting any work.$a$,4),
+('electrical','faq',$q$Can you do a safety inspection?$q$,$a$Yes, we offer full residential electrical safety inspections including switchboard assessment, safety switch testing, and visual inspection of all outlets and fittings.$a$,5),
+('electrical','service',$q$Switchboard upgrades$q$,$a$Upgrade your old fuse box to a modern safety switch switchboard. Required for solar, EV chargers, and older homes.$a$,1),
+('electrical','service',$q$EV charger installation$q$,$a$Supply and installation of home EV chargers. We handle all permits and grid connection paperwork.$a$,2),
+('electrical','service',$q$Lighting installation$q$,$a$LED downlight installation, outdoor lighting, sensor lights, and feature lighting. Supply or supply-and-install.$a$,3),
+('electrical','service',$q$Air conditioning installation$q$,$a$We install split systems and ducted air conditioning for all major brands. Fully licensed and insured.$a$,4),
+('electrical','service',$q$Safety switch installation$q$,$a$Mandatory safety switch installation for Queensland and most other states. Protect your home and family.$a$,5),
+('cleaning','faq',$q$Do you supply your own cleaning products?$q$,$a$Yes, we bring all our own professional-grade cleaning products and equipment. You do not need to supply anything.$a$,1),
+('cleaning','faq',$q$Are your cleaners police checked?$q$,$a$Yes, all our cleaners hold current police checks and are fully insured. You can have full peace of mind.$a$,2),
+('cleaning','faq',$q$Do I need to be home during the clean?$q$,$a$No, many of our clients provide a key or access code. We are fully insured and trusted by hundreds of local households.$a$,3),
+('cleaning','faq',$q$What is your cancellation policy?$q$,$a$We ask for at least 24 hours notice to cancel or reschedule. Late cancellations may incur a small fee.$a$,4),
+('cleaning','faq',$q$Do you do one-off cleans or regular service?$q$,$a$Both. We offer one-off spring cleans, end of lease cleans, and regular weekly, fortnightly, or monthly services.$a$,5),
+('cleaning','service',$q$Regular home cleaning$q$,$a$Weekly, fortnightly, or monthly home cleaning. Customised to your home and preferences.$a$,1),
+('cleaning','service',$q$End of lease cleaning$q$,$a$Bond-back guaranteed end of lease cleans. We cover everything your property manager will inspect.$a$,2),
+('cleaning','service',$q$Spring cleaning$q$,$a$Deep one-off clean covering areas that regular cleaning does not reach. Ovens, windows, inside cupboards, and more.$a$,3),
+('cleaning','service',$q$Office and commercial cleaning$q$,$a$Regular office cleaning, after-hours available. Tailored to your space and schedule.$a$,4),
+('cleaning','service',$q$Carpet cleaning$q$,$a$Steam and dry carpet cleaning for homes and offices. We remove stains, odours, and allergens.$a$,5),
+('hvac','faq',$q$Do you service all brands of air conditioner?$q$,$a$Yes, we service and repair all major brands including Daikin, Mitsubishi, Fujitsu, Samsung, LG, and Panasonic.$a$,1),
+('hvac','faq',$q$How often should I service my air conditioner?$q$,$a$We recommend a full service once a year. Regular servicing extends the life of your unit, improves efficiency, and maintains air quality.$a$,2),
+('hvac','faq',$q$My air conditioner is not cooling properly. What could it be?$q$,$a$Common causes include a dirty filter, low refrigerant, a blocked outdoor unit, or a faulty compressor. Book a service and we will diagnose it.$a$,3),
+('hvac','faq',$q$Do you install new air conditioners?$q$,$a$Yes, we supply and install split systems and ducted systems for homes and businesses. We will assess your space and recommend the right size unit.$a$,4),
+('hvac','faq',$q$Do you offer a warranty on repairs?$q$,$a$Yes, all our repair work carries a 90-day labour warranty. Parts carry the manufacturer warranty.$a$,5),
+('hvac','service',$q$Air conditioner service and clean$q$,$a$Full service including filter clean, coil clean, drain flush, refrigerant check, and performance test.$a$,1),
+('hvac','service',$q$Split system installation$q$,$a$Supply and installation of wall-mounted split systems. Sizing assessment included.$a$,2),
+('hvac','service',$q$Ducted system installation$q$,$a$Full ducted reverse cycle air conditioning for homes and offices. Design, supply, and install.$a$,3),
+('hvac','service',$q$Refrigerant regas$q$,$a$Low refrigerant is the most common cause of poor cooling. We test and regas to manufacturer specification.$a$,4),
+('hvac','service',$q$Emergency HVAC repair$q$,$a$Urgent same-day repairs for failed systems during extreme weather. Available 7 days.$a$,5)
+ON CONFLICT (industry, category, question) DO NOTHING;
+
+COMMIT;

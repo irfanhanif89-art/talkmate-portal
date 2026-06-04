@@ -48,10 +48,13 @@ export interface InProgressCard {
 interface Props {
   pendingLeads: PendingLeadCard[]
   pendingBusinesses: InProgressCard[]
+  // Session 4A — go-live readiness percent keyed by business id. null / missing
+  // means no go_live_checklist row yet ("Not started").
+  readinessPercent?: Record<string, number | null>
   adminEmail: string
 }
 
-export default function OnboardingQueueClient({ pendingLeads, pendingBusinesses, adminEmail }: Props) {
+export default function OnboardingQueueClient({ pendingLeads, pendingBusinesses, readinessPercent = {}, adminEmail }: Props) {
   const [resending, setResending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resent, setResent] = useState<Set<string>>(new Set())
@@ -194,6 +197,8 @@ export default function OnboardingQueueClient({ pendingLeads, pendingBusinesses,
                 <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <StatusPill status={b.account_status} />
                   {b.welcome_email_sent && <Pill bg="rgba(34,197,94,0.12)" color="#22c55e">Welcome sent</Pill>}
+                  {/* Session 4A — go-live readiness */}
+                  <ReadinessChip percent={readinessPercent[b.id] ?? null} />
                 </div>
 
                 <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -273,6 +278,16 @@ function StatusPill({ status }: { status: string }) {
   const color = status === 'pending_payment' ? '#f59e0b' : '#7BAED4'
   const label = status === 'pending_payment' ? 'Awaiting payment' : 'Pending setup'
   return <Pill bg={`${color}1A`} color={color}>{label}</Pill>
+}
+
+// Session 4A — go-live checklist completion. null percent = no checklist row
+// yet, shown as a muted "Readiness: Not started".
+function ReadinessChip({ percent }: { percent: number | null }) {
+  if (percent == null) {
+    return <Pill bg="rgba(255,255,255,0.06)" color="#7BAED4">Readiness: Not started</Pill>
+  }
+  const color = percent >= 100 ? '#22c55e' : percent >= 60 ? '#f59e0b' : '#ef4444'
+  return <Pill bg={`${color}1A`} color={color}>Readiness: {percent}%</Pill>
 }
 
 function Pill({ bg, color, children }: { bg: string; color: string; children: React.ReactNode }) {
