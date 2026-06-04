@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Upload, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react'
+import { DEMO_INDUSTRIES } from '@/lib/demo-config'
 
 interface RepOption {
   id: string
@@ -113,7 +114,7 @@ export default function LeadsImportClient({ reps }: Props) {
   const [mapping, setMapping] = useState<Record<number, FieldKey>>({})
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<
-    | { kind: 'ok'; inserted: number; skipped: number; repName: string }
+    | { kind: 'ok'; inserted: number; skipped: number; repName: string; demoIndustryLabel: string | null }
     | { kind: 'err'; message: string }
     | null
   >(null)
@@ -197,6 +198,7 @@ export default function LeadsImportClient({ reps }: Props) {
           inserted: json.inserted,
           skipped: json.skipped ?? 0,
           repName: json.rep_name ?? '',
+          demoIndustryLabel: json.demo_industry_label ?? null,
         })
         setFileName(''); setHeaders([]); setRows([]); setMapping({})
       }
@@ -233,13 +235,22 @@ export default function LeadsImportClient({ reps }: Props) {
             )}
           </div>
           <div>
-            <label style={labelS}>Industry default (optional)</label>
-            <input
+            <label style={labelS}>Industry (sets rep&apos;s demo)</label>
+            <select
               style={inputS}
               value={industryDefault}
               onChange={e => setIndustryDefault(e.target.value)}
-              placeholder="e.g. towing, plumbing"
-            />
+            >
+              <option value="">— Select industry —</option>
+              {DEMO_INDUSTRIES.map(ind => (
+                <option key={ind.key} value={ind.key} disabled={!ind.available}>
+                  {ind.available ? ind.label : `${ind.label} — coming soon`}
+                </option>
+              ))}
+            </select>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
+              Tags these leads and switches this rep&apos;s demo portal + demo agent to this industry.
+            </p>
           </div>
           <div>
             <label style={labelS}>Source</label>
@@ -384,8 +395,13 @@ export default function LeadsImportClient({ reps }: Props) {
           color: '#86efac', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <CheckCircle2 size={18} />
-          Imported <strong>{result.inserted}</strong> leads for <strong>{result.repName}</strong>.
-          {result.skipped > 0 && <span> Skipped {result.skipped}.</span>}
+          <span>
+            Imported <strong>{result.inserted}</strong> leads for <strong>{result.repName}</strong>.
+            {result.skipped > 0 && <span> Skipped {result.skipped}.</span>}
+            {result.demoIndustryLabel && (
+              <span> Demo set to <strong>{result.demoIndustryLabel}</strong> — their demo portal is now live.</span>
+            )}
+          </span>
         </div>
       )}
       {result?.kind === 'err' && (
