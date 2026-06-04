@@ -192,6 +192,25 @@ export default async function DashboardPage() {
     if (existing) needsNps = null
   }
 
+  // Today's bookings (for right-column panel)
+  const todayStartIso = new Date(todayStart).toISOString()
+  const todayEndIso = new Date(todayEnd).toISOString()
+  const { data: todayBookingsRaw } = await supabase
+    .from('bookings')
+    .select('id, caller_name, caller_phone, scheduled_start, scheduled_end, truck_type, description, pickup_address, status')
+    .eq('client_id', business.id)
+    .gte('scheduled_start', todayStartIso)
+    .lte('scheduled_start', todayEndIso)
+    .order('scheduled_start', { ascending: true })
+  const todayBookings = (todayBookingsRaw ?? []).map(b => ({
+    id: b.id as string,
+    caller_name: b.caller_name as string | null,
+    scheduled_start: b.scheduled_start as string | null,
+    truck_type: b.truck_type as string | null,
+    pickup_address: b.pickup_address as string | null,
+    status: b.status as string,
+  }))
+
   // Active partner referral link?
   const { data: partnerRow } = await supabase
     .from('partners').select('referral_link, active_referrals, pending_payout').eq('user_id', user.id).maybeSingle()
@@ -248,6 +267,7 @@ export default async function DashboardPage() {
       onboardingSteps={onboardingSteps}
       needsNps={needsNps}
       partner={partnerRow ?? null}
+      todayBookings={todayBookings}
     />
   )
 }

@@ -7,7 +7,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       attribute="class"
       defaultTheme="dark"
       storageKey="tm-theme"
-      value={{ light: 'tm-light', dark: '' }}
+      value={{ light: 'tm-light', dark: 'tm-dark' }}
       enableSystem={false}
       disableTransitionOnChange
     >

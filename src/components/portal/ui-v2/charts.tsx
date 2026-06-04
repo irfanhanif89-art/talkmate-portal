@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { Fragment, ReactNode } from 'react'
 import {
   ResponsiveContainer,
   BarChart,
@@ -256,10 +256,9 @@ export function Heatmap({ days, hours, values }: HeatmapProps) {
 
       {/* Day rows */}
       {days.map((day, di) => (
-        <>
+        <Fragment key={`row-${di}`}>
           {/* Day label */}
           <div
-            key={`day-${day}`}
             className="flex h-5 items-center"
             style={{ fontSize: 10, color: 'var(--faint)' }}
           >
@@ -282,7 +281,7 @@ export function Heatmap({ days, hours, values }: HeatmapProps) {
               />
             )
           })}
-        </>
+        </Fragment>
       ))}
     </div>
   )

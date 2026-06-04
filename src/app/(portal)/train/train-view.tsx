@@ -585,8 +585,7 @@ export default function TrainView(props: Props) {
 
         {/* RIGHT — Live preview panel */}
         <div
-          className="w-[380px] flex-shrink-0 flex flex-col overflow-hidden bg-[var(--sidebar,#040c17)]"
-          style={{ background: 'rgba(4,12,23,1)' }}
+          className="w-[380px] flex-shrink-0 flex flex-col overflow-hidden bg-card-2"
         >
           <div className="px-6 pt-5 pb-4 border-b border-line flex-shrink-0">
             <div className="flex items-center gap-2 mb-1">

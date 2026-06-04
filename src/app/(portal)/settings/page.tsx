@@ -380,18 +380,18 @@ export default function SettingsPage() {
         </nav>
 
         {/* ── Right form area ───────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-6">
+        <div className="flex-1 min-w-0 overflow-y-auto p-8 space-y-6">
 
           {/* ══ Business Info ══════════════════════════════════════════════════ */}
           {tab === 'business' && (
             <>
-              <div>
+              <div className="max-w-3xl">
                 <h2 className="text-[19px] font-[800] tracking-[-0.3px] text-text">Business Information</h2>
                 <p className="mt-1 text-[13.5px] text-dim">Used by your AI agent when speaking to callers.</p>
               </div>
 
-              <Panel>
-                <div className="grid grid-cols-2 gap-[18px]">
+              <Panel className="max-w-3xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px]">
                   <Field label="Business Name">
                     <input
                       className={fieldCls}

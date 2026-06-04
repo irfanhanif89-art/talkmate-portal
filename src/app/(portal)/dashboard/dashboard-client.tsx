@@ -20,6 +20,7 @@ import { EofyBanner } from '@/components/portal/ui-v2/eofy-banner'
 import { UpsellBanner } from '@/components/portal/ui-v2/upsell-banner'
 import { StatusCard } from '@/components/portal/ui-v2/status-card'
 import { CallRow } from '@/components/portal/ui-v2/call-row'
+import { BookingRow } from '@/components/portal/ui-v2/booking-row'
 import { VolumeBarChart } from '@/components/portal/ui-v2/charts'
 import { Tag } from '@/components/portal/ui-v2/tag'
 import type { TagVariant } from '@/components/portal/ui-v2/tag'
@@ -28,6 +29,15 @@ import { isSaleActive, EOFY_SALE } from '@/lib/eofy-sale'
 import { INDUSTRY_AVG_UPSELL_PER_CALL } from '@/lib/dashboard-defaults'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface TodayBooking {
+  id: string
+  caller_name: string | null
+  scheduled_start: string | null
+  truck_type: string | null
+  pickup_address: string | null
+  status: string
+}
 
 interface Call {
   id: string
@@ -73,6 +83,7 @@ interface Props {
   contactsThisMonth?: number
   crmHealthPct?: number
   crmHealthHasContacts?: boolean
+  todayBookings?: TodayBooking[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -157,6 +168,7 @@ export function DashboardClient({
   partner,
   pendingLegalAcceptances = 0,
   contactsThisMonth = 0,
+  todayBookings = [],
 }: Props) {
   const supabase = createClient()
   const router = useRouter()
@@ -459,29 +471,48 @@ export function DashboardClient({
             rows={statusRows}
           />
 
-          {/* Today's summary panel (Today's bookings placeholder — jobs table
-              only provides revenue totals, not per-job time/customer data.
-              This panel shows today's call summary instead, which is real data.) */}
+          {/* Today's bookings panel */}
           <Panel>
-            <PanelHeader title="Today's activity" />
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
-                <span className="text-dim">Calls handled</span>
-                <b className="tnum font-[700]">{callsAnsweredToday}</b>
+            <PanelHeader
+              title="Today's bookings"
+              meta={`${todayBookings.length} scheduled`}
+              action={
+                <button
+                  onClick={() => router.push('/bookings')}
+                  className="text-[12px] font-semibold text-blue hover:text-text transition-colors cursor-pointer"
+                >
+                  View all →
+                </button>
+              }
+            />
+            {todayBookings.length === 0 ? (
+              <div className="flex h-[80px] items-center justify-center text-[13px] text-dim">
+                No bookings scheduled today
               </div>
-              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
-                <span className="text-dim">Calls this month</span>
-                <b className="tnum font-[700]">{stats.totalMonth}</b>
+            ) : (
+              <div>
+                {todayBookings.map(b => {
+                  const d = b.scheduled_start ? new Date(b.scheduled_start) : null
+                  const timeStr = d ? d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—'
+                  const [timePart, meridiem] = timeStr.includes(' ')
+                    ? timeStr.split(' ')
+                    : [timeStr, '']
+                  const truckLabel = b.truck_type
+                    ? b.truck_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                    : 'Booking'
+                  return (
+                    <BookingRow
+                      key={b.id}
+                      time={timePart}
+                      meridiem={meridiem}
+                      job={truckLabel}
+                      customer={b.caller_name ?? (b.pickup_address ?? 'Unknown')}
+                      value={b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                    />
+                  )
+                })}
               </div>
-              <div className="flex items-center justify-between border-b border-line py-[9px] text-[12.5px]">
-                <span className="text-dim">New contacts</span>
-                <b className="tnum font-[700]">{contactsThisMonth}</b>
-              </div>
-              <div className="flex items-center justify-between py-[9px] text-[12.5px]">
-                <span className="text-dim">AI resolved</span>
-                <b className="tnum font-[700]">{outcomes.resolved}</b>
-              </div>
-            </div>
+            )}
 
             {/* Call outcomes breakdown */}
             <div className="mt-3 border-t border-line pt-3">

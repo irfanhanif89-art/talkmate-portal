@@ -19,6 +19,19 @@ const PAGE_TITLES: Record<string, string> = {
   '/settings': 'Settings',
   '/admin': 'Admin',
   '/onboarding': 'Setup',
+  '/bookings': 'Bookings',
+  '/sms-activity': 'SMS Activity',
+  '/train': 'Train TalkMate',
+  '/contacts': 'Contacts',
+  '/quotes': 'Quotes',
+  '/scheduler': 'Scheduler',
+  '/chatbot': 'Chatbot',
+  '/inbox': 'Inbox',
+  '/team': 'Team',
+  '/vip-callers': 'VIP Callers',
+  '/callbacks': 'Callbacks',
+  '/dispatch': 'Dispatch Board',
+  '/profile': 'My Profile',
 }
 
 interface Props {
@@ -82,8 +95,8 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
         <button
           onClick={onOpenSidebar}
           aria-label="Open menu"
-          className="lg:hidden"
-          style={{ background: 'transparent', border: 'none', color: 'var(--dim)', padding: 6, cursor: 'pointer', display: 'flex' }}
+          className="flex lg:hidden"
+          style={{ background: 'transparent', border: 'none', color: 'var(--dim)', padding: 6, cursor: 'pointer' }}
         >
           <Menu size={22} />
         </button>
