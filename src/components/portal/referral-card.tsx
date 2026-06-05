@@ -10,22 +10,39 @@ export default function ReferralCard({ adminClientId }: { adminClientId?: string
   const [referred, setReferred] = useState(0)
   const [credits, setCredits] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [smsConsent, setSmsConsent] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const r = await fetch(`/api/referral${qs}`)
-        if (!r.ok) return
-        const d = await r.json()
-        if (cancelled) return
-        setLink(d.link ?? '')
-        setReferred(d.referredCount ?? 0)
-        setCredits(d.creditsEarned ?? 0)
+        const [r, c] = await Promise.all([
+          fetch(`/api/referral${qs}`),
+          fetch(`/api/settings/sms-consent${qs}`),
+        ])
+        if (r.ok) {
+          const d = await r.json()
+          if (!cancelled) { setLink(d.link ?? ''); setReferred(d.referredCount ?? 0); setCredits(d.creditsEarned ?? 0) }
+        }
+        if (c.ok) {
+          const d = await c.json()
+          if (!cancelled) setSmsConsent(d.consent === true)
+        }
       } catch { /* silent */ }
     })()
     return () => { cancelled = true }
   }, [qs])
+
+  async function toggleConsent(next: boolean) {
+    setSmsConsent(next)
+    try {
+      await fetch(`/api/settings/sms-consent${qs}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ consent: next }),
+      })
+    } catch { setSmsConsent(!next) }
+  }
 
   async function copy() {
     try {
@@ -52,6 +69,10 @@ export default function ReferralCard({ adminClientId }: { adminClientId?: string
         </button>
       </div>
       <div className="mt-2 text-xs text-muted-foreground">{referred} referred · {credits} credits earned</div>
+      <label className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" checked={smsConsent} onChange={e => toggleConsent(e.target.checked)} className="mt-0.5" />
+        <span>Okay to send me the occasional SMS about referrals and account tips. You can turn this off anytime, and every message includes a STOP option.</span>
+      </label>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { createClient as createSbClient } from '@supabase/supabase-js'
 import { sendSms } from '@/lib/twilio'
 import { sendEmail } from '@/lib/resend'
 import { validatePassword } from '@/lib/password'
+import { sendAdminTelegram } from '@/lib/notifications'
 
 // Self-serve signup route — Session 8. Public, no auth header required.
 // Replaces nothing; sits alongside the older /api/auth/register flow.
@@ -58,6 +59,8 @@ interface SignupRequest {
   // Set true on the second-submit after the user has acknowledged a
   // phone duplicate warning. Email duplicates are still hard-blocked.
   force_phone_duplicate?: boolean
+  // Session 4B — referral code from /refer/[code] -> /register?ref=CODE.
+  ref?: string
 }
 
 function planStripeLink(plan: string, email: string): string | null {
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
   const industry = (body.industry ?? '').trim()
   const plan = (body.plan ?? '').trim().toLowerCase()
   const signupType = (body.signup_type ?? '').trim().toLowerCase()
+  const refCode = (body.ref ?? '').trim().toUpperCase()
 
   // ---- validation ----------------------------------------------------
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -244,6 +248,31 @@ export async function POST(request: Request) {
       { success: false, error: 'Account created, but business record failed. Contact support.' },
       { status: 500 },
     )
+  }
+
+  // ---- Session 4B referral redemption --------------------------------
+  // If the signup carried a valid, unused referral code, link the new
+  // business to the referrer and flag BOTH for a manual account credit.
+  // Credit application is manual (ACCC terms + Stripe billing credit) —
+  // we only fire the alert + record the link here.
+  if (refCode) {
+    try {
+      const { data: rc } = await admin
+        .from('referral_codes')
+        .select('business_id, used_by_business_id')
+        .eq('code', refCode)
+        .maybeSingle()
+      if (rc?.business_id && rc.business_id !== biz.id && !rc.used_by_business_id) {
+        await admin.from('businesses').update({ referred_by: rc.business_id }).eq('id', biz.id)
+        await admin.from('referral_codes').update({ used_by_business_id: biz.id }).eq('code', refCode)
+        const { data: referrer } = await admin.from('businesses').select('name').eq('id', rc.business_id).maybeSingle()
+        sendAdminTelegram(
+          `🎁 Referral signup\nNew: ${businessName}\nReferred by: ${referrer?.name ?? rc.business_id}\nCode: ${refCode}\nApply the agreed account credit to BOTH in Stripe, then set referral_codes.credit_applied=true.`,
+        ).catch(() => {})
+      }
+    } catch (e) {
+      console.error('[signup] referral redemption failed', (e as Error).message)
+    }
   }
 
   // ---- users row + onboarding_responses ------------------------------
