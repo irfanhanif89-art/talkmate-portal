@@ -18,11 +18,16 @@ export default function RegisterPage() {
     if (!form.businessType) { setError('Please select a business type'); return }
     setLoading(true); setError('')
 
+    // Session 4B — forward referral code from /refer/[code] -> /register?ref=CODE.
+    const ref = typeof window !== 'undefined'
+      ? (new URLSearchParams(window.location.search).get('ref') ?? undefined)
+      : undefined
+
     // Call server-side API route (uses service role to bypass RLS)
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, ref }),
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); setLoading(false); return }

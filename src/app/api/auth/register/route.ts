@@ -2,9 +2,11 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { validatePassword } from '@/lib/password'
+import { sendAdminTelegram } from '@/lib/notifications'
 
 export async function POST(request: NextRequest) {
-  const { email, password, fullName, businessName, businessType } = await request.json()
+  const { email, password, fullName, businessName, businessType, ref } = await request.json()
+  const refCode = (typeof ref === 'string' ? ref : '').trim().toUpperCase()
 
   // Session 11 — enforce length + complexity. The client renders the
   // same rules in <PasswordStrength /> so a passing UI bar always
@@ -46,6 +48,27 @@ export async function POST(request: NextRequest) {
   if (bizError || !biz) {
     console.error('[register] Business creation failed:', bizError)
     return NextResponse.json({ error: bizError?.message ?? 'Failed to create business' }, { status: 400 })
+  }
+
+  // Session 4B — referral redemption (manual credit; link only here).
+  if (refCode) {
+    try {
+      const { data: rc } = await admin
+        .from('referral_codes')
+        .select('business_id, used_by_business_id')
+        .eq('code', refCode)
+        .maybeSingle()
+      if (rc?.business_id && rc.business_id !== biz.id && !rc.used_by_business_id) {
+        await admin.from('businesses').update({ referred_by: rc.business_id }).eq('id', biz.id)
+        await admin.from('referral_codes').update({ used_by_business_id: biz.id }).eq('code', refCode)
+        const { data: referrer } = await admin.from('businesses').select('name').eq('id', rc.business_id).maybeSingle()
+        sendAdminTelegram(
+          `🎁 Referral signup\nNew: ${businessName}\nReferred by: ${referrer?.name ?? rc.business_id}\nCode: ${refCode}\nApply the agreed account credit to BOTH in Stripe, then set referral_codes.credit_applied=true.`,
+        ).catch(() => {})
+      }
+    } catch (e) {
+      console.error('[register] referral redemption failed', (e as Error).message)
+    }
   }
 
   const { error: userInsertError } = await admin.from('users').insert({
