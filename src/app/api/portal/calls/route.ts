@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from('calls')
-    .select('id, caller_name, caller_number, started_at, created_at, duration_seconds, outcome, summary, transcript, recording_url, intelligence_score, is_vip_caller, was_abandoned, booking_id')
+    .select('id, caller_name, caller_number, started_at, created_at, duration_seconds, outcome, summary, transcript, recording_url, intelligence_score, intelligence_flags, is_vip_caller, was_abandoned, winback_sent, needs_review, booking_id')
     .eq('business_id', clientId)
     .order('started_at', { ascending: false, nullsFirst: false })
     .limit(limit)

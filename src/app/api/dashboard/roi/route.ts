@@ -15,7 +15,7 @@ const VALID_PERIODS = new Set(['this_month', 'last_month', 'all_time'])
 
 export async function GET(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const periodParam = request.nextUrl.searchParams.get('period') || 'this_month'
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 // estimate rather than a black box.
 export async function PATCH(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   let body: {

@@ -14,7 +14,7 @@ const VALID_STATUS = new Set(['active', 'ended', 'converted'])
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams
   const adminClientId = params.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const pageRaw = parseInt(params.get('page') || '1', 10)
