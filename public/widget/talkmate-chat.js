@@ -334,6 +334,14 @@
     panel.appendChild(thread);
     panel.appendChild(footer);
 
+    // Session 4B — opt-in "Powered by TalkMate" badge (default off).
+    if (this.config && this.config.showPoweredBy) {
+      var badge = document.createElement('div');
+      badge.style.cssText = 'text-align:center;padding:4px 0;font-size:11px;color:#999;';
+      badge.innerHTML = 'Powered by <a href="https://talkmate.com.au" target="_blank" rel="noopener" style="color:#E8622A;text-decoration:none;">TalkMate</a>';
+      panel.appendChild(badge);
+    }
+
     root.appendChild(button);
     root.appendChild(panel);
     document.body.appendChild(root);

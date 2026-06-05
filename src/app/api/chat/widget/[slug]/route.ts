@@ -25,7 +25,7 @@ export async function GET(
   const column = UUID_RE.test(slug) ? 'id' : 'slug'
   const { data: business } = await admin
     .from('businesses')
-    .select('id, name, plan, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after')
+    .select('id, name, plan, chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, chatbot_show_powered_by')
     .eq(column, slug)
     .limit(1)
     .maybeSingle()
@@ -50,5 +50,6 @@ export async function GET(
     agentName: business.chatbot_agent_name ?? 'TalkMate',
     primaryColor: business.chatbot_primary_color ?? '#E8622A',
     collectLeadsAfter: business.chatbot_collect_leads_after ?? 2,
+    showPoweredBy: business.chatbot_show_powered_by ?? false,
   }, { headers })
 }

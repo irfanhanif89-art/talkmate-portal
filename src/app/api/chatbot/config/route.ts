@@ -22,6 +22,7 @@ interface ConfigShape {
   slug: string | null
   plan: string | null
   allowedDomains: string[]
+  showPoweredBy: boolean
 }
 
 function toConfig(row: {
@@ -33,6 +34,7 @@ function toConfig(row: {
   slug: string | null
   plan: string | null
   chatbot_allowed_domains: string[] | null
+  chatbot_show_powered_by: boolean | null
 }): ConfigShape {
   return {
     enabled: row.chatbot_enabled ?? false,
@@ -43,6 +45,7 @@ function toConfig(row: {
     slug: row.slug,
     plan: row.plan,
     allowedDomains: row.chatbot_allowed_domains ?? [],
+    showPoweredBy: row.chatbot_show_powered_by ?? false,
   }
 }
 
@@ -58,7 +61,7 @@ const MAX_DOMAINS = 20
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/
 
 const SELECT_COLS =
-  'chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan, chatbot_allowed_domains'
+  'chatbot_enabled, chatbot_greeting, chatbot_agent_name, chatbot_primary_color, chatbot_collect_leads_after, slug, plan, chatbot_allowed_domains, chatbot_show_powered_by'
 
 export async function GET(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
@@ -92,6 +95,7 @@ export async function PATCH(request: NextRequest) {
     primaryColor?: string
     collectLeadsAfter?: number
     allowedDomains?: string[]
+    showPoweredBy?: boolean
   }
   try { body = await request.json() as typeof body }
   catch { return NextResponse.json({ ok: false, error: 'invalid_json' }, { status: 400 }) }
@@ -162,6 +166,10 @@ export async function PATCH(request: NextRequest) {
     }
     // Empty array clears the allowlist (back to allow-any).
     patch.chatbot_allowed_domains = cleaned.length ? cleaned : null
+  }
+
+  if (typeof body.showPoweredBy === 'boolean') {
+    patch.chatbot_show_powered_by = body.showPoweredBy
   }
 
   if (Object.keys(patch).length === 0) {
