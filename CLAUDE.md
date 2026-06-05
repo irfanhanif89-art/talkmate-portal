@@ -9,8 +9,10 @@
 Before writing a single line of code, in order:
 1. `cd "C:\Users\info\.claude\WEBSITE BUILD\talkmate-portal"`
 2. `cat SYSTEM_MAP.md` — get current migration number, branch state, known gaps
-3. `git status` + `git log --oneline -5` — confirm you are NOT on main
-4. If building a new feature, run `/tm-plan "feature description"` before touching any file
+3. `cat LESSONS.md` — load all known mistakes so they are not repeated this session
+4. `cat DECISIONS.md` — load architectural decisions before proposing any structural change
+5. `git status` + `git log --oneline -5` — confirm you are NOT on main
+6. If building a new feature, run `/tm-plan "feature description"` before touching any file
 
 ---
 
