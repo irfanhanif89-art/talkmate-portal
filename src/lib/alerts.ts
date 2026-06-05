@@ -19,6 +19,8 @@ export type AlertType =
   | 'db_backup_failed'
   | 'db_backup_ok'
   | 'client_health_risk'
+  | 'onboarding_nudge_day3'
+  | 'onboarding_nudge_day14'
   | 'other'
 
 export interface AlertOptions {
