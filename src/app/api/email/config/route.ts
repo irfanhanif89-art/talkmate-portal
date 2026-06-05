@@ -8,7 +8,7 @@ import { resolveBusinessId } from '@/lib/resolve-business'
 
 export const dynamic = 'force-dynamic'
 
-const EMAIL_DOMAIN = 'talkmate-reply.com.au'
+const EMAIL_DOMAIN = 'reply.talkmate.com.au'
 const PAID = new Set(['growth', 'pro', 'professional', 'elite'])
 
 export async function GET(request: NextRequest) {
