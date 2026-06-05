@@ -27,6 +27,7 @@ export interface ChatbotDTO {
   collectLeadsAfter: number
   slug: string | null
   allowedDomains?: string[]
+  showPoweredBy?: boolean
 }
 
 interface SessionRow {
@@ -224,6 +225,7 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
   const [greeting, setGreeting] = useState(business.greeting || DEFAULT_GREETING)
   const [color, setColor] = useState(business.primaryColor || ORANGE)
   const [collectAfter, setCollectAfter] = useState<number>(business.collectLeadsAfter || 2)
+  const [poweredBy, setPoweredBy] = useState<boolean>(business.showPoweredBy ?? false)
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
 
@@ -306,6 +308,7 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
           greeting,
           primaryColor: color,
           collectLeadsAfter: collectAfter,
+          showPoweredBy: poweredBy,
         }),
       })
       if (r.ok) {
@@ -524,6 +527,10 @@ function ChatbotManager({ business }: { business: ChatbotDTO }) {
               </select>
             </div>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#C7D9E8' }}>
+            <input type="checkbox" checked={poweredBy} onChange={e => setPoweredBy(e.target.checked)} />
+            Show &ldquo;Powered by TalkMate&rdquo; badge on the widget
+          </label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               type="button"

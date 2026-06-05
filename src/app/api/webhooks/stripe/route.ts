@@ -240,7 +240,7 @@ export async function POST(request: NextRequest) {
         .eq('stripe_customer_id', customerId)
         .maybeSingle()
       if (biz) {
-        await supabase.from('businesses').update({ account_status: 'cancelled' }).eq('id', biz.id)
+        await supabase.from('businesses').update({ account_status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', biz.id)
 
         // Session 42 (H8) — unbind the Vapi phoneNumber so the assistant
         // can no longer answer calls. The assistant body is never touched
