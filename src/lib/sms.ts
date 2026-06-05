@@ -75,6 +75,8 @@ export type SmsType =
   // and referral prompt (marketing; only sent when owner_marketing_sms_consent).
   | 'cancellation_save'
   | 'referral_prompt'
+  // Session 4B — onboarding setup nudges (day 3 / day 14) to the owner.
+  | 'onboarding_nudge'
   | 'other'
 
 // SMS types that bypass plan limits entirely — they always send
@@ -116,6 +118,7 @@ const BYPASS_PLAN_LIMIT_TYPES: ReadonlySet<SmsType> = new Set<SmsType>([
   // messages, not client quota usage.
   'cancellation_save',
   'referral_prompt',
+  'onboarding_nudge',
 ])
 
 // Session sprint 1 — sent_by classification for the inbox view.
