@@ -66,6 +66,7 @@ export interface VapiAssistantPayload {
   }
   serverUrl: string
   serverUrlSecret?: string
+  serverMessages?: string[]
 }
 
 // Plan → tool name list. Mirrors the sync routes.
@@ -80,12 +81,22 @@ function toolsForPlan(plan: string): string[] {
 export function buildNewAgentPayload(options: AgentBuildOptions): VapiAssistantPayload {
   const std = AGENT_CONFIG_STANDARD
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.talkmate.com.au'
-  const serverUrl = options.serverUrl ?? `${appUrl}/api/vapi/functions`
+  // Two distinct endpoints:
+  //  - functionsUrl: per-tool server for mid-call function calls (check_caller,
+  //    create_booking, log_outcome, ...). Handled by /api/vapi/functions.
+  //  - webhookUrl: assistant-level server for lifecycle messages, chiefly
+  //    end-of-call-report, which is what writes the `calls` row (transcript,
+  //    duration, recording, scoring, owner SMS). Handled by /api/webhooks/vapi.
+  // These MUST NOT be collapsed into one URL: /api/vapi/functions does NOT
+  // handle end-of-call-report, so pointing the assistant server there silently
+  // drops every call (the 2026-06 ingestion outage). See [[vapi-ingestion-outage]].
+  const functionsUrl = options.serverUrl ?? `${appUrl}/api/vapi/functions`
+  const webhookUrl = `${appUrl}/api/webhooks/vapi`
   const serverSecret = options.serverSecret ?? process.env.VAPI_WEBHOOK_SECRET
 
   const toolNames = toolsForPlan(options.plan)
   const tools = toolNames.map(name =>
-    buildTool(name, options.businessId, null, { serverUrl, serverSecret }),
+    buildTool(name, options.businessId, null, { serverUrl: functionsUrl, serverSecret }),
   )
 
   return {
@@ -122,7 +133,8 @@ export function buildNewAgentPayload(options: AgentBuildOptions): VapiAssistantP
       voiceSeconds: std.timing.stopSpeakingPlan.voiceSeconds,
       backoffSeconds: std.timing.stopSpeakingPlan.backoffSeconds,
     },
-    serverUrl,
+    serverUrl: webhookUrl,
+    serverMessages: ['end-of-call-report', 'status-update'],
     ...(serverSecret ? { serverUrlSecret: serverSecret } : {}),
   }
 }
