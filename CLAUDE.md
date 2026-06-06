@@ -44,8 +44,8 @@ Before writing a single line of code, in order:
 
 Update this section at the end of every session via `/tm-session-wrap`.
 
-- **Next migration:** 077
-- **Main SHA:** b73f767
+- **Next migration:** 081 (080 = google_integration, PREVIEW only; PROD pending = Google activation step)
+- **Main SHA:** 5df3c10b (PR #152, 2026-06-06)
 - **Active clients:** GM Towing (biz: `df0ab1a1`, vapi: `25443e10`), Spectrum Towing (biz: `18a8f78e`, vapi: `8121a8b0`)
 - **HELD — do not merge:** PR #119 identity block injection (branch: `feature/session-4a-round2`)
 
