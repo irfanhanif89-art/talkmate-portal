@@ -86,8 +86,12 @@ Confirmed C-3 (appointments fake SMS button) not exercisable on demo — no job 
 
 **Verified clean (strong):** 64/65 admin routes properly `requireAdmin()`-gated (only A-1 ungated); admin mutations use service-role client correctly; **mirror layout enforces admin → NO cross-tenant breach**; Vapi lifecycle routes (activate/suspend/cancel) never touch webhook layers; **approve-agent + go-live are webhook-layer-safe AND checklist-gated** (cannot repeat June outage); audit-log tamper-resistant + read-only; Stripe payment links priced server-side (no client amounts); bulk lead import solid (caps, rep-active check, server-set assigned_by); sales-resources upload safe (type allowlist + 20MB cap + UUID path + CSP-sandbox serve); commission/clawback money math server-side + state-machine-guarded; `.single()`-on-businesses repo-wide fix holds (none in admin). Mirror edits route through admin-scoped server routes EXCEPT catalog (A-3).
 
-### Live UI findings
-_(pending clickthrough)_
+### Live UI findings (Playwright, prod, admin login, 2026-06-06)
+
+Swept all 22 admin screens + the client-mirror. **Every screen rendered — no 404s, 500s, white-screens, or crashes.** Only runtime issue:
+- **Same systemic #418 hydration mismatch (L-1)** on date-heavy admin pages (clients/overview, agent-health, and others) — confirms L-1 is platform-wide (client + admin), one root cause.
+- Mirror dashboard for the demo client renders correctly under admin (admin-gating + server-side client resolution both work live).
+- No new admin-specific live issues.
 
 ---
 
