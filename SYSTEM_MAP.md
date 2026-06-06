@@ -14,6 +14,15 @@
 
 ---
 
+## TO DO — Parked for a future session (bigger items)
+
+- [ ] **Google Calendar integration** — client connects their Google Calendar via OAuth so a booking from a call auto-creates a calendar event; review/owner-confirm fires after the scheduled job end. BLOCKED on Google Cloud OAuth consent-screen setup (external, can take days). Build per Session 6D in `Downloads/talkmate-sessions-6abc-brief-v2.md`. **Hard rule from the council review: never let the AI turn a guessed time into a real committed calendar slot — tentative/owner-confirm only.**
+- [ ] **Xero integration (phased — "we collect your money")** — the two-way idea. Phase 1: one-way webhook (Xero invoice paid → `calls.revenue_attributed`). Phase 2: AI drafts quotes/invoices as DRAFT only, owner taps "Approve & send" in the portal. Phase 3 (later): autonomous send. **Start the Xero developer-app + certification clock now (free, async, weeks); build nothing on it until approved.** GST/tax-invoice legality + per-client opt-in + liability must be signed off before Phase 2. Full spec = Session 6E in the v2 brief.
+
+(Smaller deferred items from Sessions 6A-6C also remain: community voice swap, identity injection PR #119 [needs a live test call], owner-SMS revenue capture + manual log-job-value UI, industry auto-apply on go-live, conversational-onboarding wiring, H12-15/H29/H32 audit-item investigation, and the manual security task: rotate the 5 leaked tokens + enable Supabase breached-password check. See Known Gaps.)
+
+---
+
 ## Local Development Workspace (consolidated 2026-06-01)
 
 All TalkMate code and docs live under ONE root on Irfan's PC:
