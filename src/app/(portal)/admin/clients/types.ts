@@ -73,6 +73,9 @@ export interface AdminBusiness {
   go_live_gate_passed?: boolean | null
   // Server-computed go-live readiness percent (null when no checklist row).
   readiness_percent?: number | null
+  // Session 6C — admin clients-list columns sourced off the businesses row.
+  servicem8_enabled?: boolean | null
+  industry_pack_applied?: string | null
 }
 
 export interface PartnerOption {
