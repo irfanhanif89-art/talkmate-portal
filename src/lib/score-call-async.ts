@@ -30,6 +30,7 @@ import {
 } from '@/lib/sms'
 import { notifyAdminOfSmsFailure, notifyAdminOfQualityIssue, sendAgentHealthAlert, sendAdminTelegram } from '@/lib/notifications'
 import { scanTranscript, TRANSCRIPT_PATTERN_LABELS } from '@/lib/transcript-scanner'
+import { maybeSendGapPush } from '@/lib/push-notify'
 
 interface CallRow {
   id: string
@@ -395,6 +396,10 @@ export async function scoreCallAsync(
               context: g.context || null,
             })),
           )
+
+          // Push the owner's mobile app (throttled to once/day per business;
+          // best-effort, no-op if no device registered).
+          void maybeSendGapPush(business.id)
 
           // Alert admin once when this insert pushes today's pending count to
           // >=3 (the crossing insert only — avoids repeat pings same day).

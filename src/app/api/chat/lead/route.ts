@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { CHAT_CORS_HEADERS, getClientIp, hashIp, checkRateLimit, upsertContactByPhone, originAllowed } from '@/lib/chat'
 import { sendSMS } from '@/lib/sms'
+import { sendPushToBusinessOwner } from '@/lib/push-notify'
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +95,13 @@ export async function POST(request: NextRequest) {
       smsType: 'chat_lead_notification',
     }).catch(() => {})
   }
+
+  // Push the owner's mobile app (best-effort; no-op if no device registered).
+  void sendPushToBusinessOwner(businessId, {
+    title: 'New website lead',
+    body: `${name ?? 'A visitor'} left their details on your website`,
+    data: { type: 'chat_lead', sessionId },
+  })
 
   return NextResponse.json({ success: true }, { headers: CHAT_CORS_HEADERS })
 }
