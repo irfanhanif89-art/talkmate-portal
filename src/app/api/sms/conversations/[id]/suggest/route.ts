@@ -15,7 +15,7 @@ export async function POST(
 ) {
   const { id } = await ctx.params
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
