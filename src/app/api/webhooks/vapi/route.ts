@@ -117,6 +117,8 @@ export async function POST(request: NextRequest) {
   try {
     if (eventType === 'end-of-call-report' || eventType === 'call.ended' || eventType === 'call-end') {
       await handleEndOfCall(supabase, business, msg, call, vapiCallId, new URL(request.url).origin)
+      // Session 6A — clear the live-call indicator now the call has ended.
+      await clearActiveCall(supabase, business.id, vapiCallId)
     } else if (eventType === 'call.started' || eventType === 'call-start') {
       await handleCallStart(supabase, business.id, call, vapiCallId)
     } else if (eventType === 'transfer-initiated' || eventType === 'call.transferred') {
@@ -231,6 +233,36 @@ async function handleCallStart(
     caller_number: call.customer?.number ?? null,
   }, { onConflict: 'vapi_call_id' })
   if (error) console.error('[vapi-webhook] call.started upsert failed', error.message)
+
+  // Session 6A — live-call indicator. Upsert a row so the portal shows a
+  // "live call" pill in realtime. One row per business (onConflict).
+  const { error: acErr } = await supabase.from('active_calls').upsert({
+    business_id: businessId,
+    vapi_call_id: vapiCallId,
+    from_number: call.customer?.number ?? null,
+    started_at: call.startedAt ?? new Date().toISOString(),
+  }, { onConflict: 'business_id' })
+  if (acErr) console.error('[vapi-webhook] active_calls upsert failed', acErr.message)
+}
+
+// ── live-call indicator cleanup ─────────────────────────────────────────
+// Remove the active_calls row for a finished call, and sweep any stale row
+// older than 15 min so a missed call.ended event never pins the pill on.
+async function clearActiveCall(
+  supabase: ReturnType<typeof createAdminClient>,
+  businessId: string,
+  vapiCallId: string,
+) {
+  await supabase
+    .from('active_calls')
+    .delete()
+    .eq('business_id', businessId)
+    .eq('vapi_call_id', vapiCallId)
+  const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+  await supabase
+    .from('active_calls')
+    .delete()
+    .lt('started_at', staleCutoff)
 }
 
 // ── end-of-call-report — the main path ──────────────────────────────────

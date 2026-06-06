@@ -5,6 +5,31 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell, ChevronDown, LogOut, Menu, Settings as SettingsIcon, User as UserIcon, Lock, Gift } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { useActiveCall } from '@/hooks/useActiveCall'
+
+// Format an AU number for the live-call pill: +61412345678 -> 0412 345 678.
+function formatPhone(raw: string | null): string {
+  if (!raw) return ''
+  let n = raw.replace(/[^\d+]/g, '')
+  if (n.startsWith('+61')) n = '0' + n.slice(3)
+  const d = n.replace(/\D/g, '')
+  if (d.length === 10 && d.startsWith('04')) return `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}`
+  return raw
+}
+
+// Counts up from a start timestamp, formatted m:ss (e.g. "0:34").
+function LiveCallTimer({ startedAt }: { startedAt: string }) {
+  const [secs, setSecs] = useState(() => Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)))
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSecs(Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  const m = Math.floor(secs / 60)
+  const s = String(secs % 60).padStart(2, '0')
+  return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{m}:{s}</span>
+}
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -35,6 +60,7 @@ const PAGE_TITLES: Record<string, string> = {
 }
 
 interface Props {
+  businessId: string
   userName: string
   userEmail: string
   unseenChangelog: number
@@ -42,11 +68,12 @@ interface Props {
   onOpenSidebar: () => void
 }
 
-export default function PortalTopbar({ userName, userEmail, unseenChangelog, onOpenChangelog, onOpenSidebar }: Props) {
+export default function PortalTopbar({ businessId, userName, userEmail, unseenChangelog, onOpenChangelog, onOpenSidebar }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
+  const activeCall = useActiveCall(businessId)
 
   // Close avatar menu on outside click.
   useEffect(() => {
@@ -138,7 +165,9 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
       {/* Right cluster: live pill → theme toggle → icon buttons → avatar */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
 
-        {/* Live pill — cosmetic status indicator */}
+        {/* Status pill — switches to a LIVE CALL state (with caller + timer)
+            when a call is in progress, otherwise the idle "Receptionist live"
+            indicator. The pulsing dot speeds up during a live call. */}
         <div
           style={{
             display: 'flex',
@@ -151,6 +180,7 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
             fontSize: 12.5,
             fontWeight: 700,
             color: 'var(--green)',
+            whiteSpace: 'nowrap',
           }}
         >
           {/* Pulsing green dot */}
@@ -162,12 +192,25 @@ export default function PortalTopbar({ userName, userEmail, unseenChangelog, onO
                 borderRadius: '50%',
                 background: 'var(--green)',
                 opacity: 0.4,
-                animation: 'tm-pulse 1.8s ease-out infinite',
+                animation: `tm-pulse ${activeCall ? '1s' : '1.8s'} ease-out infinite`,
               }}
             />
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', position: 'relative', zIndex: 1 }} />
           </span>
-          Receptionist live
+          {activeCall ? (
+            <>
+              Live call
+              {activeCall.from_number && (
+                <span className="hidden sm:inline" style={{ fontWeight: 600, opacity: 0.85 }}>
+                  · {formatPhone(activeCall.from_number)}
+                </span>
+              )}
+              <span style={{ opacity: 0.7 }}>·</span>
+              <LiveCallTimer startedAt={activeCall.started_at} />
+            </>
+          ) : (
+            <>Receptionist live</>
+          )}
         </div>
 
         {/* Theme toggle */}
