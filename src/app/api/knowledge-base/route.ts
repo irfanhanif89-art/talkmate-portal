@@ -23,7 +23,7 @@ interface EntryRow {
 
 export async function GET(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   let body: { category?: string; question?: string; answer?: string; sortOrder?: number }

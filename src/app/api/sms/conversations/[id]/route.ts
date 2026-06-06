@@ -22,8 +22,9 @@ interface ConvoOwnership {
 async function authoriseConvo(
   conversationId: string,
   adminClientId: string | null,
+  req: NextRequest,
 ): Promise<{ business_id: string; phone_number: string; from: string | null; isAdmin: boolean } | { error: string; status: number }> {
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, req)
   if (!auth.ok) return { error: auth.error, status: auth.status }
 
   const admin = createAdminClient()
@@ -54,7 +55,7 @@ export async function GET(
 ) {
   const { id } = await ctx.params
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const owned = await authoriseConvo(id, adminClientId)
+  const owned = await authoriseConvo(id, adminClientId, request)
   if ('error' in owned) return NextResponse.json({ ok: false, error: owned.error }, { status: owned.status })
 
   const admin = createAdminClient()
@@ -107,7 +108,7 @@ export async function POST(
 ) {
   const { id } = await ctx.params
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const owned = await authoriseConvo(id, adminClientId)
+  const owned = await authoriseConvo(id, adminClientId, request)
   if ('error' in owned) return NextResponse.json({ ok: false, error: owned.error }, { status: owned.status })
 
   let body: { message?: string }
@@ -155,7 +156,7 @@ export async function PATCH(
 ) {
   const { id } = await ctx.params
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const owned = await authoriseConvo(id, adminClientId)
+  const owned = await authoriseConvo(id, adminClientId, request)
   if ('error' in owned) return NextResponse.json({ ok: false, error: owned.error }, { status: owned.status })
 
   const admin = createAdminClient()

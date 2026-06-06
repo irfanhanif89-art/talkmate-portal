@@ -150,7 +150,7 @@ export async function performKbSync(
 
 export async function POST(request: NextRequest) {
   const adminClientId = request.nextUrl.searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const result = await performKbSync(auth.businessId)

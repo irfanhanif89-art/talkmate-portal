@@ -20,7 +20,7 @@ interface ConvoRow {
 
 export async function GET(request: Request) {
   const adminClientId = new URL(request.url).searchParams.get('adminClientId')
-  const auth = await resolveBusinessId(adminClientId)
+  const auth = await resolveBusinessId(adminClientId, request)
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
