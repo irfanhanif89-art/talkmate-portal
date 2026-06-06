@@ -24,7 +24,6 @@ import type { KbEntryDTO, SyncStatus } from './types'
 // Re-export so the server pages keep importing these from train-view unchanged.
 export type { KbEntryDTO, SyncStatus } from './types'
 
-export type ResponseStyle = 'concise' | 'balanced' | 'thorough'
 export interface DayHours { open: string; close: string; closed: boolean }
 export type OpeningHours = Record<string, DayHours>
 
@@ -39,8 +38,6 @@ interface Props {
   initialAgentName?: string
   initialGreeting?: string
   initialVoice?: string
-  initialTone?: number
-  initialResponseStyle?: ResponseStyle
   initialEscalation?: string
   forwardTo?: string
   initialOpeningHours?: OpeningHours
@@ -53,12 +50,6 @@ const voices = [
   { id: 'james', name: 'James', meta: 'Australian English · Male · Professional', sample: '"Thanks for calling, I\'m James…"' },
   { id: 'emma', name: 'Emma', meta: 'Australian English · Female · Energetic', sample: '"Hi there! You\'ve reached…"' },
   { id: 'liam', name: 'Liam', meta: 'Australian English · Male · Deep', sample: '"G\'day, you\'re through to…"' },
-]
-
-const RESPONSE_STYLES: { key: ResponseStyle; name: string; desc: string }[] = [
-  { key: 'concise', name: 'Concise', desc: 'Short, direct answers — gets to the point fast' },
-  { key: 'balanced', name: 'Balanced', desc: 'Natural conversation with enough detail' },
-  { key: 'thorough', name: 'Thorough', desc: 'Full explanations — great for complex services' },
 ]
 
 const DAYS: { key: string; short: string }[] = [
@@ -114,7 +105,7 @@ export default function TrainView(props: Props) {
         { value: 'callflow', label: 'Call Flow' },
       ]
     : [
-        { value: 'voice', label: 'Voice & Personality' },
+        { value: 'voice', label: 'Voice' },
         { value: 'greeting', label: 'Greeting Script' },
         { value: 'faq', label: 'FAQ Knowledge' },
         { value: 'escalation', label: 'Escalation Rules' },
@@ -127,8 +118,6 @@ export default function TrainView(props: Props) {
     agentName: props.initialAgentName ?? '',
     greeting: props.initialGreeting ?? 'Thank you for calling. How can I help you today?',
     voice: props.initialVoice ?? 'sarah',
-    tone: typeof props.initialTone === 'number' ? props.initialTone : 65,
-    responseStyle: (props.initialResponseStyle ?? 'balanced') as ResponseStyle,
     escalation: props.initialEscalation ?? '',
     hours: seedHours(props.initialOpeningHours),
   }), [props])
@@ -136,8 +125,6 @@ export default function TrainView(props: Props) {
   const [agentName, setAgentName] = useState(initialConfig.agentName)
   const [greeting, setGreeting] = useState(initialConfig.greeting)
   const [voice, setVoice] = useState(initialConfig.voice)
-  const [tone, setTone] = useState(initialConfig.tone)
-  const [responseStyle, setResponseStyle] = useState<ResponseStyle>(initialConfig.responseStyle)
   const [escalation, setEscalation] = useState(initialConfig.escalation)
   const [hours, setHours] = useState<OpeningHours>(initialConfig.hours)
   const [snapshot, setSnapshot] = useState(initialConfig)
@@ -145,15 +132,13 @@ export default function TrainView(props: Props) {
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState('')
 
-  const current = { agentName, greeting, voice, tone, responseStyle, escalation, hours }
+  const current = { agentName, greeting, voice, escalation, hours }
   const dirty = JSON.stringify(current) !== JSON.stringify(snapshot)
 
   function discard() {
     setAgentName(snapshot.agentName)
     setGreeting(snapshot.greeting)
     setVoice(snapshot.voice)
-    setTone(snapshot.tone)
-    setResponseStyle(snapshot.responseStyle)
     setEscalation(snapshot.escalation)
     setHours(snapshot.hours)
   }
@@ -185,8 +170,6 @@ export default function TrainView(props: Props) {
           agent_name: agentName,
           agent_answer_phrase: greeting,
           escalation_rules: escalation,
-          tone,
-          response_style: responseStyle,
           opening_hours: hours,
         },
       }).eq('id', b.id as string)
@@ -199,7 +182,7 @@ export default function TrainView(props: Props) {
       } else {
         showFlash('Saved ✅ (agent not configured yet)')
       }
-      setSnapshot({ agentName, greeting, voice, tone, responseStyle, escalation, hours })
+      setSnapshot({ agentName, greeting, voice, escalation, hours })
     } catch (e) {
       showFlash((e as Error).message + ' ❌')
     } finally {
@@ -269,45 +252,6 @@ export default function TrainView(props: Props) {
                             <span className="truncate text-[12px] italic text-faint">{v.sample}</span>
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                </Section>
-
-                <Section title="Personality & tone" desc="Adjust how your receptionist speaks to callers.">
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex justify-between text-[12.5px] font-bold text-dim">
-                      <span>Professional</span><span>Friendly</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={tone}
-                      onChange={e => setTone(Number(e.target.value))}
-                      className="tm-slider"
-                      style={{ background: `linear-gradient(to right, var(--orange) ${tone}%, var(--card-2) ${tone}%)` }}
-                    />
-                  </div>
-                </Section>
-
-                <Section title="Response style" desc="How much detail should your receptionist include in answers?">
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    {RESPONSE_STYLES.map(r => {
-                      const on = responseStyle === r.key
-                      return (
-                        <button
-                          key={r.key}
-                          type="button"
-                          onClick={() => setResponseStyle(r.key)}
-                          className={[
-                            'flex flex-col gap-1 rounded-[12px] border-2 p-[14px_15px] text-left shadow-[0_1px_4px_rgba(0,0,0,.28)] transition',
-                            on ? 'border-orange bg-orange/[.07]' : 'border-line bg-card hover:border-line-strong',
-                          ].join(' ')}
-                        >
-                          <span className="text-[14px] font-extrabold text-text">{r.name}</span>
-                          <span className="text-[12px] text-dim">{r.desc}</span>
-                        </button>
                       )
                     })}
                   </div>
