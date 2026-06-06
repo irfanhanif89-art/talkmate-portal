@@ -199,10 +199,13 @@ export default function BillingPage() {
   const usagePct = planConfig.callLimit ? Math.min(100, Math.round((callsThisMonth / planConfig.callLimit) * 100)) : 0
   const willEndAt = stripeSummary?.subscription?.current_period_end ?? null
   const alreadyCancelled = stripeSummary?.subscription?.cancel_at_period_end ?? false
-  // Next invoice estimate (plan price + 10% GST)
-  const nextInvoiceBase = planConfig.monthlyPrice
-  const nextInvoiceGst = Math.round(nextInvoiceBase * 0.1 * 100) / 100
-  const nextInvoiceTotal = nextInvoiceBase + nextInvoiceGst
+  // Next invoice estimate. The advertised plan price is GST-INCLUSIVE — it is
+  // exactly what Stripe charges (no tax added on top) and what the onboarding
+  // terms commit to ("inc. GST"). So the total IS the plan price; GST is the
+  // component already contained within it (total − total/1.1), shown for the
+  // tax invoice, not an extra line added on top.
+  const nextInvoiceTotal = planConfig.monthlyPrice
+  const nextInvoiceGst = Math.round((nextInvoiceTotal - nextInvoiceTotal / 1.1) * 100) / 100
 
   const CANCEL_REASONS = [
     { id: 'price',    label: 'Too expensive',                        offer: 'pause' },
@@ -436,15 +439,15 @@ export default function BillingPage() {
           {!alreadyCancelled && (
             <div className="mt-3 border-t border-line pt-3 flex flex-col gap-[7px]">
               <div className="flex justify-between text-[13px]">
-                <span className="text-dim">{planConfig.label} Plan</span>
-                <span className="font-[700]">${nextInvoiceBase.toFixed(2)}</span>
+                <span className="text-dim">{planConfig.label} Plan (inc. GST)</span>
+                <span className="font-[700]">${nextInvoiceTotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-[13px]">
-                <span className="text-dim">GST (10%)</span>
+                <span className="text-dim">Includes GST (10%)</span>
                 <span className="font-[700]">${nextInvoiceGst.toFixed(2)}</span>
               </div>
               <div className="flex justify-between border-t border-line pt-2 text-[14px]">
-                <span className="font-[700]">Total</span>
+                <span className="font-[700]">Total (inc. GST)</span>
                 <span className="font-[800] text-orange">${nextInvoiceTotal.toFixed(2)}</span>
               </div>
             </div>

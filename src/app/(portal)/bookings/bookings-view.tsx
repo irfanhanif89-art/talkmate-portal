@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SegmentedControl } from '@/components/portal/ui-v2/segmented-control'
 import { ButtonV2 } from '@/components/portal/ui-v2/button'
 import { DayJobRow } from '@/components/portal/ui-v2/booking-row'
+import GoogleConnectCard from '@/components/portal/google-connect-card'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +334,11 @@ export default function BookingsView({ businessName }: { businessName: string })
           </svg>
           Add booking
         </ButtonV2>
+      </div>
+
+      {/* ── Google Calendar connect ───────────────────────────────────────────── */}
+      <div className="px-7 pt-3.5 flex-shrink-0">
+        <GoogleConnectCard purpose="calendar" returnPath="/bookings" />
       </div>
 
       {/* ── Body ──────────────────────────────────────────────────────────────── */}
