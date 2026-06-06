@@ -42,7 +42,8 @@ export default async function AdminClientsPage() {
       billing_cycle, setup_fee_waived, setup_fee_amount,
       sales_rep_id,
       kb_sync_status, winback_enabled, review_requests_enabled,
-      agent_name, integration_mode, go_live_gate_passed
+      agent_name, integration_mode, go_live_gate_passed,
+      servicem8_enabled, industry_pack_applied
     `)
     .eq('is_demo', false)
     .order('created_at', { ascending: false })
@@ -140,6 +141,33 @@ export default async function AdminClientsPage() {
   // not N+1.
   const roiByBusiness = await computeRoiForBusinessList(admin)
 
+  // Session 6C — three new admin clients-list columns: unread AI emails,
+  // pending transcript gaps, and calls flagged for review (last 30d). Batched
+  // parallel aggregates scoped to the (non-demo) businesses on this list, not
+  // joined onto the main query.
+  const bizIds = (businessesRaw ?? []).map(b => (b as { id: string }).id)
+  const cutoff30 = new Date(Date.now() - 30 * day).toISOString()
+  const [emailRowsRes, gapRowsRes, flaggedRowsRes] = bizIds.length > 0
+    ? await Promise.all([
+        admin.from('email_threads').select('business_id, unread_count').gt('unread_count', 0).in('business_id', bizIds),
+        admin.from('transcript_gaps').select('business_id').eq('status', 'pending').in('business_id', bizIds),
+        admin.from('calls').select('business_id').eq('needs_review', true).gte('created_at', cutoff30).in('business_id', bizIds),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }]
+
+  const emailUnreadByBusiness: Record<string, number> = {}
+  for (const r of (emailRowsRes.data ?? []) as Array<{ business_id: string; unread_count: number | null }>) {
+    emailUnreadByBusiness[r.business_id] = (emailUnreadByBusiness[r.business_id] ?? 0) + (r.unread_count ?? 0)
+  }
+  const gapsByBusiness: Record<string, number> = {}
+  for (const r of (gapRowsRes.data ?? []) as Array<{ business_id: string }>) {
+    gapsByBusiness[r.business_id] = (gapsByBusiness[r.business_id] ?? 0) + 1
+  }
+  const flaggedByBusiness: Record<string, number> = {}
+  for (const r of (flaggedRowsRes.data ?? []) as Array<{ business_id: string }>) {
+    flaggedByBusiness[r.business_id] = (flaggedByBusiness[r.business_id] ?? 0) + 1
+  }
+
   return (
     <div style={{ padding: 28, maxWidth: 1300, margin: '0 auto', color: '#F2F6FB' }}>
       <Link href="/admin" style={{ fontSize: 13, color: '#7BAED4', textDecoration: 'none' }}>← Admin</Link>
@@ -148,6 +176,9 @@ export default async function AdminClientsPage() {
         partners={partners ?? []}
         qualityByBusiness={qualityByBusiness}
         roiByBusiness={roiByBusiness}
+        emailUnreadByBusiness={emailUnreadByBusiness}
+        gapsByBusiness={gapsByBusiness}
+        flaggedByBusiness={flaggedByBusiness}
       />
     </div>
   )
