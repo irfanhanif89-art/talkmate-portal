@@ -32,6 +32,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/server'
 import { normaliseAuPhone } from '@/lib/sms'
+import { sendPushToBusinessOwner } from '@/lib/push-notify'
 
 const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 const STOP_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'])
@@ -253,6 +254,14 @@ export async function POST(request: NextRequest) {
   if (STOP_KEYWORDS.has(trimmedBody) || START_KEYWORDS.has(trimmedBody)) {
     return twimlResponse()
   }
+
+  // Push the owner's mobile app about the new message (best-effort; no-op if
+  // no device is registered). Fires only for real messages, not STOP/START.
+  void sendPushToBusinessOwner(business.id, {
+    title: 'New message',
+    body: `${fromPhone}: ${body.length > 60 ? `${body.slice(0, 57)}...` : body}`,
+    data: { type: 'sms', phone: fromPhone },
+  })
 
   // Fan out to Vapi so Vapi's existing SMS auto-reply still fires.
   // We forward the raw body verbatim — Vapi expects the exact shape
