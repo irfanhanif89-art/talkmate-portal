@@ -45,7 +45,7 @@ Before writing a single line of code, in order:
 Update this section at the end of every session via `/tm-session-wrap`.
 
 - **Next migration:** 077
-- **Main SHA:** da38be3
+- **Main SHA:** b73f767
 - **Active clients:** GM Towing (biz: `df0ab1a1`, vapi: `25443e10`), Spectrum Towing (biz: `18a8f78e`, vapi: `8121a8b0`)
 - **HELD — do not merge:** PR #119 identity block injection (branch: `feature/session-4a-round2`)
 
@@ -68,6 +68,10 @@ Update this section at the end of every session via `/tm-session-wrap`.
 13. `VAPI_WEBHOOK_SECRET` MUST be verified on `/api/vapi/functions` — 500 if unset
 14. Field is `businesses.owner_user_id` — not `owner_id`
 15. `account_status` valid values ONLY: `pending`, `active`, `suspended`, `cancelled`, `expired`
+16. Vapi assistants have TWO separate webhook layers — NEVER collapse them, and any script/Donna/audit that PATCHes a LIVE assistant MUST preserve both:
+    - **Assistant-level** `serverUrl` MUST be `/api/webhooks/vapi` + `serverUrlSecret`=`VAPI_WEBHOOK_SECRET` + `serverMessages` includes `end-of-call-report`. THIS is what records calls. `/api/vapi/functions` does NOT handle `end-of-call-report` — pointing the assistant server there silently drops every call (the 2026-06 outage).
+    - **Per-tool** `server.url` MUST be `/api/vapi/functions` + the same secret (mid-call functions). Do NOT set per-tool servers to `/api/webhooks/vapi`.
+    - Running "Sync Agent" self-heals this; never hand-PATCH a live agent's server config without re-asserting both. The `call-ingestion-watch` cron must stay armed (`vercel.json`).
 
 ---
 
