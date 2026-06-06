@@ -40,7 +40,7 @@ export default async function DemoSettingsPage({ params, searchParams }: PagePro
     .from('businesses')
     .select('id, name, phone_number, address, greeting')
     .eq('id', businessId)
-    .single<BusinessRow>()
+    .maybeSingle<BusinessRow>()
 
   if (error || !business) notFound()
 

@@ -42,7 +42,7 @@ export default async function DemoLayout({ params, children }: LayoutProps) {
     .from('businesses')
     .select('id, name, business_type, industry, phone_number, address, plan, greeting')
     .eq('id', businessId)
-    .single<BusinessRow>()
+    .maybeSingle<BusinessRow>()
 
   if (error || !business) {
     notFound()

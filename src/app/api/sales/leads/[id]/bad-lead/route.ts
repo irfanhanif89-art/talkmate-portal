@@ -23,6 +23,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!lead || lead.assigned_to !== auth.rep.id) {
     return NextResponse.json({ ok: false, error: 'Lead not found' }, { status: 404 })
   }
+  if (lead.status === 'won') {
+    return NextResponse.json({ ok: false, error: 'This deal is already won. Contact admin to reverse it.' }, { status: 409 })
+  }
 
   const { error } = await admin
     .from('leads')

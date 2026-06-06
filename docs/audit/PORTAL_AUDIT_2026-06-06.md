@@ -96,7 +96,30 @@ Swept all 22 admin screens + the client-mirror. **Every screen rendered — no 4
 ---
 
 ## SALES REP PORTAL
-_(pending)_
+
+### Code audit findings (3 parallel slice agents, 2026-06-06)
+
+**The cleanest of the three portals — no P0/P1 IDOR, no money bugs.** `requireSalesRep`/`requireDriver` enforced everywhere; every per-rep/per-driver resource scoped by owner id; commissions + Stripe priced server-side; contractor onboarding token + signing solid.
+
+| # | Sev | File:line | Issue | Status |
+|---|-----|-----------|-------|--------|
+| SR-1 | P1 | `sales-demo/[industry]/layout.tsx:45`, `settings/page.tsx:43` | **2 `.single()`-on-`businesses` remnants** the repo-wide fix missed (they use `.single<BusinessRow>()` generic form). Rule-1. | **FIXED** — → `.maybeSingle<BusinessRow>()`. |
+| SR-2 | P2 | `api/sales/leads/[id]/lost/route.ts:34`, `bad-lead/route.ts:27` | No state guard: a `won` lead can be flipped to `lost`/`bad_lead`, orphaning the pending commission row. | **FIXED** — 409 if `status==='won'`. |
+| SR-3 | P2 | `sales/dashboard/page.tsx:441` | "Run demo" quick-action links to `/sales/demo-caller` which **doesn't exist** (→ 404). | **FIXED** — → `/sales/demo`. |
+| SR-4 | P2 | `api/driver/location/route.ts:42` | `driver_location_history` insert trusted `body.active_job_id` with no ownership check (driver could attach GPS trace to another driver's job id; bounded). | **FIXED** — verify job belongs to driver first. |
+| SR-5 | P2 | `api/driver/invite/accept/route.ts:100` | "Mark accepted" update not gated on `status='pending'` (TOCTOU double-accept; was neutralised by createUser dup-email). | **FIXED** — added `.eq('status','pending')`. |
+| SR-6 | P3 | `api/driver/jobs/[id]/photos/route.ts:102` | Photo counter is read-then-write (non-atomic). Single-driver-per-job so safe in practice. | OPEN (optional — RPC increment) |
+| SR-7 | P3 | `api/driver/invite/accept/route.ts:61` | Duplicate-email path returns raw Supabase error (confirms an email has an account). | OPEN (optional — generic message) |
+| SR-8 | P3 | `api/demo/reset`, `demo/seed` | Use `.single()` on `users` + hand-rolled gate instead of `requireAdmin()`. | OPEN (optional consolidation) |
+| SR-9 | P3 | `sales/dashboard/page.tsx:129` | Dead empty loop + `sprintMrrClosed = thisMonthEarned * 3` is an approximation presented as sprint progress. | OPEN (product) |
+| SR-10 | note | `lib/demo-config.ts:64` | Demo portal token is a single shared `NEXT_PUBLIC_` secret (by design — reps share one demo link), `===` compare. Not per-rep. All demo writes hard-locked to `is_demo=true` businesses, so safe. | INFO |
+
+**RESOLVES a stale memory:** the "contractor invite email broken" note (Make.com no-op) is now **fixed in code** — post-sign portal-access email always sends with admin-alert on failure; contractor webhooks are Resend-backed. → update that memory.
+
+**Verified clean (strong):** sales-rep IDOR fully scoped (no rep can touch another rep's leads/commissions/invoices/proposals); commission amounts from server-side `COMMISSION_MAP`/`CONTRACTOR_COMMISSION_MAP` (client amounts never trusted); Stripe price IDs + `client_reference_id` set server-side (correct commission attribution); won/close-and-onboard state-guarded (no double-commission); **driver portal: full Supabase Auth users, `requireDriver()` on every route, every job/photo/signature/location/push scoped to the authed driver — no cross-driver IDOR**; driver uploads safe (MIME+size+server path, no traversal); demo writes hard-locked to `is_demo=true` (cannot touch a real client) + `launch-demo` has Vapi-repoint allowlist guardrails; contractor token lifecycle validated (invalid/terminated/signed/expired), ABN+checksum mandatory, hard-fail on PDF/upload (no partial activation), 14-day clawback window enforced; all contractor/commission admin routes `requireAdmin()`-gated.
+
+### Live UI findings
+_(pending clickthrough)_
 
 ---
 

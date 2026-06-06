@@ -40,13 +40,23 @@ export async function PATCH(req: Request) {
   })
 
   if (typeof body.active_job_id === 'string' && body.active_job_id) {
-    await admin.from('driver_location_history').insert({
-      driver_id: auth.driver.id,
-      client_id: auth.driver.client_id,
-      dispatch_job_id: body.active_job_id,
-      lat,
-      lng,
-    })
+    // Only record history against a job that belongs to this driver, so a
+    // driver cannot attach their GPS trace to another driver's job id.
+    const { data: ownJob } = await admin
+      .from('dispatch_jobs')
+      .select('id')
+      .eq('id', body.active_job_id)
+      .eq('driver_id', auth.driver.id)
+      .maybeSingle()
+    if (ownJob) {
+      await admin.from('driver_location_history').insert({
+        driver_id: auth.driver.id,
+        client_id: auth.driver.client_id,
+        dispatch_job_id: body.active_job_id,
+        lat,
+        lng,
+      })
+    }
   }
 
   return NextResponse.json({ ok: true })
