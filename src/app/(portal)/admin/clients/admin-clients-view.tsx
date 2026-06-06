@@ -46,11 +46,17 @@ export default function AdminClientsView({
   partners,
   qualityByBusiness = {},
   roiByBusiness = {},
+  emailUnreadByBusiness = {},
+  gapsByBusiness = {},
+  flaggedByBusiness = {},
 }: {
   initialBusinesses: AdminBusiness[]
   partners: PartnerOption[]
   qualityByBusiness?: Record<string, QualitySummary>
   roiByBusiness?: Record<string, BusinessRoi>
+  emailUnreadByBusiness?: Record<string, number>
+  gapsByBusiness?: Record<string, number>
+  flaggedByBusiness?: Record<string, number>
 }) {
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [createOpen, setCreateOpen] = useState(false)
@@ -265,7 +271,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'Mode', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Unread', 'KB', 'WB', 'Rv', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'ServiceM8', 'Pack', 'Emails', 'Gaps', 'Flagged', 'Mode', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Unread', 'KB', 'WB', 'Rv', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -273,7 +279,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={21} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={26} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
 
                   No clients match this filter.
                 </td>
@@ -344,6 +350,42 @@ export default function AdminClientsView({
                   })()}
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: '#7BAED4' }}>{industryLabel(b.industry)}</td>
+                {/* Session 6C — ServiceM8 connection */}
+                <td style={{ padding: '12px 12px' }}>
+                  <span style={{
+                    fontSize: 11, padding: '3px 9px', borderRadius: 99, fontWeight: 700, whiteSpace: 'nowrap' as const,
+                    background: b.servicem8_enabled ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.06)',
+                    color: b.servicem8_enabled ? '#22C55E' : '#7BAED4',
+                  }}>{b.servicem8_enabled ? 'Connected' : 'Not connected'}</span>
+                </td>
+                {/* Session 6C — industry pack applied */}
+                <td style={{ padding: '12px 12px', fontSize: 12, whiteSpace: 'nowrap' as const, color: b.industry_pack_applied ? '#7BAED4' : 'rgba(255,255,255,0.3)' }}>
+                  {b.industry_pack_applied ? industryLabel(b.industry_pack_applied) : 'None'}
+                </td>
+                {/* Session 6C — unread AI emails */}
+                <td style={{ padding: '12px 12px' }}>
+                  {(() => {
+                    const n = emailUnreadByBusiness[b.id] ?? 0
+                    if (n === 0) return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>0</span>
+                    return <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99, background: '#4A9FE8', color: 'white' }}>{n > 99 ? '99+' : n}</span>
+                  })()}
+                </td>
+                {/* Session 6C — pending transcript gaps */}
+                <td style={{ padding: '12px 12px' }}>
+                  {(() => {
+                    const n = gapsByBusiness[b.id] ?? 0
+                    if (n === 0) return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>0</span>
+                    return <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99, background: 'rgba(251,191,36,0.16)', color: '#FBBF24' }}>{n}</span>
+                  })()}
+                </td>
+                {/* Session 6C — calls flagged for review (last 30d) */}
+                <td style={{ padding: '12px 12px' }}>
+                  {(() => {
+                    const n = flaggedByBusiness[b.id] ?? 0
+                    if (n === 0) return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>0</span>
+                    return <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 99, background: 'rgba(239,68,68,0.16)', color: '#EF4444' }}>{n}</span>
+                  })()}
+                </td>
                 {/* Session 4A — integration mode chip */}
                 <td style={{ padding: '12px 16px' }}>
                   {(() => {
