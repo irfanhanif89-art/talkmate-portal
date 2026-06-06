@@ -118,8 +118,10 @@ Swept all 22 admin screens + the client-mirror. **Every screen rendered — no 4
 
 **Verified clean (strong):** sales-rep IDOR fully scoped (no rep can touch another rep's leads/commissions/invoices/proposals); commission amounts from server-side `COMMISSION_MAP`/`CONTRACTOR_COMMISSION_MAP` (client amounts never trusted); Stripe price IDs + `client_reference_id` set server-side (correct commission attribution); won/close-and-onboard state-guarded (no double-commission); **driver portal: full Supabase Auth users, `requireDriver()` on every route, every job/photo/signature/location/push scoped to the authed driver — no cross-driver IDOR**; driver uploads safe (MIME+size+server path, no traversal); demo writes hard-locked to `is_demo=true` (cannot touch a real client) + `launch-demo` has Vapi-repoint allowlist guardrails; contractor token lifecycle validated (invalid/terminated/signed/expired), ABN+checksum mandatory, hard-fail on PDF/upload (no partial activation), 14-day clawback window enforced; all contractor/commission admin routes `requireAdmin()`-gated.
 
-### Live UI findings
-_(pending clickthrough)_
+### Live UI findings (Playwright, prod, 2026-06-06)
+
+- **sales-demo (towing) — all 6 pages swept** (home, calls, bookings, services, settings, team) via the shared demo token. **All render, zero console errors.**
+- **`sales/*` rep pages + `driver/*` pages NOT live-tested** — the admin login is not a sales rep (redirects to /admin), and there's no driver login available. Code audit covered both thoroughly (clean). **Live clickthrough of these needs a rep login + a driver login** (or a throwaway rep/driver I can create). Flagged for Irfan.
 
 ---
 
