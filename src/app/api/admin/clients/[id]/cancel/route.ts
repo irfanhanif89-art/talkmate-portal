@@ -60,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (send_pause_offer) {
     const { data: owner } = await admin.from('users').select('email')
-      .eq('id', business.owner_user_id).single()
+      .eq('id', business.owner_user_id).maybeSingle()
     if (owner?.email) {
       await postEmailTrigger({
         event: 'subscription_cancelled',

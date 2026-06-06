@@ -63,7 +63,31 @@ Confirmed C-3 (appointments fake SMS button) not exercisable on demo — no job 
 ---
 
 ## ADMIN PORTAL
-_(pending)_
+
+### Code audit findings (4 parallel slice agents, 2026-06-06)
+
+| # | Sev | File:line | Issue | Status |
+|---|-----|-----------|-------|--------|
+| A-1 | **P0** | `api/admin/business-preview/route.ts:4-17` | **No auth gate at all.** Uses `createAdminClient()` (service-role, RLS bypass), returns business name/type/preview_number/agent_status for ANY `businessId`. Middleware excludes `/api/`, so reachable by **anyone unauthenticated** → enumerate clients by UUID. Confirmed by 2 agents. | **FIXED** — added `requireAdmin()` gate. |
+| A-2 | P1 | `(portal)/admin/demo-accounts/page.tsx:19-27` | Page has **no requireAdmin** — any logged-in client/rep can open it and click "Impersonate" (triggers magic-link into a demo business). Every sibling admin page gates; this one missed. | **FIXED** — added auth+role redirect gate. |
+| A-3 | P1 | `(portal)/catalog/page.tsx:154-177` (mirror) | Admin-mirror catalog edits use the **anon browser client** → RLS rejects (admin doesn't own client rows) → **writes silently no-op** while UI shows success + fires Sync. Same as C-12. Only broken edit surface in the mirror. | OPEN (needs `/api/admin/businesses/[id]/catalog` route) |
+| A-4 | P2 | `api/admin/partner-update/route.ts:9-16` | Hand-rolled admin gate omits `ADMIN_EMAIL` + comma-list support; `.single()` on `users`. Still gated (falls through to role check) but inconsistent. | **FIXED** — replaced with `requireAdmin()`. |
+| A-5 | P2 | `api/admin/rep-invoices/[id]/route.ts:30-33` | `pay` action sets `status='paid'` with **no precondition** — can pay a `rejected`/already-paid invoice, no idempotency. Money. | **FIXED** — pay now requires current status `approved` (409 otherwise). |
+| A-6 | P2 | `(portal)/admin/clients/page.tsx:18`, `clients/overview/page.tsx:33` | Page super-admin allowlist omits `ADMIN_EMAIL` (only `INTERNAL_ALERT_EMAIL` + hardcoded). A super-admin set only via `ADMIN_EMAIL` is redirected away. | **FIXED** — added `ADMIN_EMAIL`. |
+| A-7 | P2 | `(portal)/admin/approve/page.tsx:27` | Hardcoded `'x-admin-key': 'talkmate-admin-2026'` shipped in client bundle. Dead (route ignores it) but a credential-shaped literal. | **FIXED** — header removed. |
+| A-8 | P2 | `api/admin/clients/[id]/cancel/route.ts:62`, `impersonate/route.ts:17` | `.single()` on `users` (owner row) → 500 if owner has no mirror row (impersonate path unguarded). | **FIXED** — `.maybeSingle()`. |
+| A-9 | P3 | `(portal)/admin/make-setup/make-setup-client.tsx:116` | On-screen Make.com setup docs say `Model grok-2-latest` (rule-10 forbids). Display-only but misleads operator. | **FIXED** — → grok-3. |
+| A-10 | P3 | `api/admin/clients/[id]/route.ts:155` | PATCH on bad id returns `{ok:true, business:null}` instead of 404. | OPEN (minor) |
+| A-11 | P3 | `(portal)/admin/clients/overview/page.tsx:38` | No `is_demo=false` filter → demo businesses show in overview (main list excludes them). | OPEN (confirm intent) |
+| A-12 | P3 | mirror dashboard/insights/chatbot/inbox/train pages | No own `requireAdmin` — rely on layout gate (which IS enforced). Defense-in-depth only, no exposure. | OPEN (optional) |
+| A-13 | P3 | `api/admin/sms-failures-count/route.ts:12` | Returns `{count:0}` 200 on auth fail instead of 401. | OPEN (minor) |
+
+**IMPORTANT doc correction (not a bug):** `account_status` CHECK constraint (migration 022) actually allows `pending, active, suspended, cancelled, expired, trial, pending_payment`. **CLAUDE.md rule-15 is STALE** (lists only 5). Code using `trial`/`pending_payment` is valid. → Update rule-15.
+
+**Verified clean (strong):** 64/65 admin routes properly `requireAdmin()`-gated (only A-1 ungated); admin mutations use service-role client correctly; **mirror layout enforces admin → NO cross-tenant breach**; Vapi lifecycle routes (activate/suspend/cancel) never touch webhook layers; **approve-agent + go-live are webhook-layer-safe AND checklist-gated** (cannot repeat June outage); audit-log tamper-resistant + read-only; Stripe payment links priced server-side (no client amounts); bulk lead import solid (caps, rep-active check, server-set assigned_by); sales-resources upload safe (type allowlist + 20MB cap + UUID path + CSP-sandbox serve); commission/clawback money math server-side + state-machine-guarded; `.single()`-on-businesses repo-wide fix holds (none in admin). Mirror edits route through admin-scoped server routes EXCEPT catalog (A-3).
+
+### Live UI findings
+_(pending clickthrough)_
 
 ---
 

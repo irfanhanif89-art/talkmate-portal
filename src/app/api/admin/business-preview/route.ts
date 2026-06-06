@@ -1,7 +1,11 @@
 import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/admin-auth'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
   const businessId = req.nextUrl.searchParams.get('businessId')
   if (!businessId) return NextResponse.json({ error: 'businessId required' }, { status: 400 })
 

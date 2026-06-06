@@ -1,4 +1,5 @@
-import { createAdminClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,15 @@ const sectionTitle: React.CSSProperties = {
 }
 
 export default async function DemoAccountsPage() {
+  const gate = await createClient()
+  const { data: { user } } = await gate.auth.getUser()
+  if (!user) redirect('/login')
+  const { data: userProfile } = await gate.from('users').select('role').eq('id', user.id).single()
+  const isSuperAdmin = user.email === process.env.INTERNAL_ALERT_EMAIL
+    || user.email === process.env.ADMIN_EMAIL
+    || user.email === 'hello@talkmate.com.au'
+  if (userProfile?.role !== 'admin' && !isSuperAdmin) redirect('/dashboard')
+
   const supabase = createAdminClient()
 
   const { data: businesses } = await supabase

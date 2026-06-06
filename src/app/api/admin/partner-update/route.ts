@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/admin-auth'
 
 // POST /api/admin/partner-update
 // Body: { id: string, partner_tier?: string, partner_commission_rate?: number, is_partner?: boolean }
 // Used by the inline-edit table on /admin/partners.
 export async function POST(req: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
-
-  const { data: userProfile } = await supabase.from('users').select('role').eq('id', user.id).single()
-  const isSuperAdmin = user.email === process.env.INTERNAL_ALERT_EMAIL || user.email === 'hello@talkmate.com.au'
-  if (userProfile?.role !== 'admin' && !isSuperAdmin) {
-    return NextResponse.json({ ok: false, error: 'Admin only' }, { status: 403 })
-  }
+  const auth = await requireAdmin()
+  if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const id = String(body.id ?? '')

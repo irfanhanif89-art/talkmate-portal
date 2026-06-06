@@ -15,7 +15,7 @@ async function handle(req: NextRequest, params: Promise<{ id: string }>) {
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   const { data: owner } = await admin.from('users').select('email')
-    .eq('id', business.owner_user_id).single()
+    .eq('id', business.owner_user_id).maybeSingle()
   if (!owner?.email) {
     return NextResponse.json({ ok: false, error: 'Client owner has no email on file' }, { status: 400 })
   }
