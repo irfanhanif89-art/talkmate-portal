@@ -390,13 +390,36 @@ export async function POST(req: Request) {
     }
   }
 
-  if (!agent.serverUrl) {
-    patchBody.serverUrl = appUrl + '/api/vapi/functions'
+  // Ensure end-of-call-report reaches the full ingestion handler
+  // (/api/webhooks/vapi), authenticated with the webhook secret. Mid-call
+  // function calls keep using their own per-tool /api/vapi/functions server,
+  // so this assistant-level config is ONLY for the lifecycle webhook. A
+  // 2026-06 batch agent operation wiped serverUrlSecret and pointed serverUrl
+  // at /api/vapi/functions (which does NOT handle end-of-call-report),
+  // silently dropping every call for 9 days. Heal any drift on every sync.
+  const desiredServerUrl = appUrl + '/api/webhooks/vapi'
+  if (agent.serverUrl !== desiredServerUrl) {
+    patchBody.serverUrl = desiredServerUrl
     fieldsUpdated.push('serverUrl')
   }
-  if (!agent.serverUrlSecret && webhookSecret) {
+  // serverUrlSecret is redacted on GET, so always re-assert it when we hold
+  // the secret — guarantees it can never silently fall back to blank.
+  if (webhookSecret) {
     patchBody.serverUrlSecret = webhookSecret
     fieldsUpdated.push('serverUrlSecret')
+  }
+  const desiredServerMessages = ['end-of-call-report', 'status-update']
+  const currentMsgs = Array.isArray(agent.serverMessages) ? [...agent.serverMessages].sort() : []
+  if (currentMsgs.join(',') !== [...desiredServerMessages].sort().join(',')) {
+    patchBody.serverMessages = desiredServerMessages
+    fieldsUpdated.push('serverMessages')
+  }
+  // Clear the modern `server` object if present: this account authenticates
+  // via legacy serverUrl/serverUrlSecret, and a secretless `server` object
+  // would shadow them and re-break ingestion.
+  if (agent.server) {
+    patchBody.server = null
+    fieldsUpdated.push('server_cleared')
   }
 
   const meta = {
