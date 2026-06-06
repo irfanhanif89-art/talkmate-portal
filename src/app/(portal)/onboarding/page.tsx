@@ -192,7 +192,6 @@ export default function OnboardingPage() {
   const faqs = (responses.faqs as Faq[]) || defaultFaqs
   const notifs = (responses.notifications as Notifs) || defaultNotifs
   const voice = (responses.voice as string) || voices[0].id
-  const tone = (responses.tone as string) || 'Friendly'
   const industryKey = (responses.industry as string) || ''
   const industry = industryKey && INDUSTRY_LIBRARY[industryKey] ? INDUSTRY_LIBRARY[industryKey] : null
   const businessName = (responses.businessName as string) || ''
@@ -900,18 +899,6 @@ export default function OnboardingPage() {
                   })}
                 </div>
               </div>
-              <div>
-                <label style={lbl}>Tone</label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {['Professional', 'Friendly', 'Casual'].map(t => (
-                    <button key={t} onClick={() => setResponse('tone', t)}
-                      style={{ flex: 1, padding: '11px', borderRadius: 10, border: tone === t ? 'none' : '1px solid rgba(255,255,255,0.1)', background: tone === t ? '#E8622A' : '#071829', color: 'white', fontFamily: 'Outfit,sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Recording disclosure (Session 1 brief Part 5) */}
               <div style={{
                 marginTop: 20, padding: 16,
