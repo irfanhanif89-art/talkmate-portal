@@ -7,7 +7,7 @@
 
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import TrainView, { type KbEntryDTO, type SyncStatus, type ResponseStyle, type OpeningHours } from './train-view'
+import TrainView, { type KbEntryDTO, type SyncStatus, type OpeningHours } from './train-view'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'AI Receptionist · TalkMate' }
@@ -32,8 +32,6 @@ export default async function TrainPage() {
   const topHours = (business.opening_hours ?? null) as OpeningHours | null
   const cfgHours = (cfg.opening_hours ?? null) as OpeningHours | null
   const openingHours = (topHours && Object.keys(topHours).length > 0 ? topHours : cfgHours) ?? undefined
-  const toneVal = typeof cfg.tone === 'number' ? cfg.tone : 65
-  const responseStyle = (typeof cfg.response_style === 'string' ? cfg.response_style : 'balanced') as ResponseStyle
   const forwardTo = (cfg.forward_to_number as string) || (cfg.live_transfer_number as string) || ''
 
   const { data: entries } = await supabase
@@ -66,8 +64,6 @@ export default async function TrainPage() {
       initialAgentName={(cfg.agent_name as string) || (business.agent_name as string | null) || ''}
       initialGreeting={(cfg.agent_answer_phrase as string) || (business.greeting as string | null) || 'Thank you for calling. How can I help you today?'}
       initialVoice={(business.voice as string | null) || 'sarah'}
-      initialTone={toneVal}
-      initialResponseStyle={responseStyle}
       initialEscalation={(cfg.escalation_rules as string) || ''}
       forwardTo={forwardTo}
       initialOpeningHours={openingHours}

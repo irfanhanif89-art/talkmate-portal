@@ -6,6 +6,7 @@
 // Styling uses design-system tokens so it adapts to dark/light.
 
 import { useCallback, useEffect, useState } from 'react'
+import GoogleConnectCard from '@/components/portal/google-connect-card'
 
 interface ThreadListItem {
   id: string; from_email: string; from_name: string | null; subject: string | null
@@ -123,7 +124,9 @@ export default function EmailInbox({ businessId, adminClientId }: { businessId: 
   }
 
   return (
-    <div className="grid gap-4" style={{ gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 320px) 1fr', minHeight: 480 }}>
+    <div>
+      <GoogleConnectCard purpose="email" returnPath="/inbox" adminClientId={adminClientId} />
+      <div className="grid gap-4" style={{ gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 320px) 1fr', minHeight: 480 }}>
       {/* Thread list */}
       <div
         className="overflow-y-auto rounded-[14px] border border-line bg-card"
@@ -205,6 +208,7 @@ export default function EmailInbox({ businessId, adminClientId }: { businessId: 
             {err && <div className="mt-2.5 text-[13px] text-red">{err}</div>}
           </>
         )}
+      </div>
       </div>
     </div>
   )
