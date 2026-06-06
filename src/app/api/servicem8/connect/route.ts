@@ -1,11 +1,11 @@
 // POST /api/servicem8/connect  — user auth (or ?adminClientId)
-// Validates a ServiceM8 API key, then stores it and enables the integration.
-// NOTE (DEPLOYMENT): the key is stored as plain text in businesses.servicem8_api_key.
-// A follow-up should encrypt it at rest (e.g. pgcrypto / a KMS-wrapped column).
+// Validates a ServiceM8 API key, then stores it (ENCRYPTED at rest via
+// src/lib/crypto.ts) and enables the integration.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { resolveBusinessId } from '@/lib/resolve-business'
+import { encryptSecret } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const { error } = await admin
     .from('businesses')
     .update({
-      servicem8_api_key: apiKey,
+      servicem8_api_key: encryptSecret(apiKey),
       servicem8_company_uuid: companyUuid,
       servicem8_enabled: true,
     })
