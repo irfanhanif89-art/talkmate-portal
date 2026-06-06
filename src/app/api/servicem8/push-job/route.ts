@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { decryptSecret } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,6 +55,8 @@ export async function POST(request: NextRequest) {
   if (!business || business.servicem8_enabled !== true || !business.servicem8_api_key) {
     return NextResponse.json({ skipped: true, reason: 'not_connected' })
   }
+  // Decrypt the stored key (legacy plain-text passes through unchanged).
+  const apiKey = decryptSecret(business.servicem8_api_key as string) as string
 
   // Call — idempotency + duration gate.
   const { data: call } = await admin
@@ -100,7 +103,7 @@ export async function POST(request: NextRequest) {
     const res = await fetch(`${SM8}/job.json`, {
       method: 'POST',
       headers: {
-        Authorization: basicAuth(business.servicem8_api_key as string),
+        Authorization: basicAuth(apiKey),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
@@ -115,7 +118,7 @@ export async function POST(request: NextRequest) {
           await fetch(`${SM8}/jobcontact.json`, {
             method: 'POST',
             headers: {
-              Authorization: basicAuth(business.servicem8_api_key as string),
+              Authorization: basicAuth(apiKey),
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({

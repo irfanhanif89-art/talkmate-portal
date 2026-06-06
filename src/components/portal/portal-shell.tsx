@@ -7,6 +7,7 @@ import PortalTopbar from './topbar'
 import ChangelogDrawer from './changelog-drawer'
 
 interface Props {
+  businessId: string
   businessName: string
   userName: string
   userEmail: string
@@ -68,6 +69,7 @@ export default function PortalShell(props: Props) {
 
       <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <PortalTopbar
+          businessId={props.businessId}
           userName={props.userName}
           userEmail={props.userEmail}
           unseenChangelog={props.unseenChangelog}

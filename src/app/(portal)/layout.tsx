@@ -169,6 +169,7 @@ export default async function PortalLayout({ children }: { children: React.React
       businessId={business.id}
     >
       <PortalShell
+        businessId={business.id}
         businessName={business.name}
         userName={userName}
         userEmail={user.email ?? ''}

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { resolveBusinessId } from '@/lib/resolve-business'
+import { decryptSecret, encryptSecret, isEncrypted } from '@/lib/crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +25,18 @@ export async function POST(request: NextRequest) {
     .select('servicem8_api_key')
     .eq('id', auth.businessId)
     .maybeSingle()
-  const apiKey = (business?.servicem8_api_key as string | null) ?? null
+  const stored = (business?.servicem8_api_key as string | null) ?? null
+  if (!stored) return NextResponse.json({ ok: true, connected: false })
+  const apiKey = decryptSecret(stored)
   if (!apiKey) return NextResponse.json({ ok: true, connected: false })
+
+  // Opportunistic backfill: upgrade a legacy plain-text key to encrypted.
+  if (!isEncrypted(stored)) {
+    const enc = encryptSecret(apiKey)
+    if (isEncrypted(enc)) {
+      await admin.from('businesses').update({ servicem8_api_key: enc }).eq('id', auth.businessId)
+    }
+  }
 
   try {
     const res = await fetch(`${SM8}/staff.json`, { headers: { Authorization: basicAuth(apiKey) } })
