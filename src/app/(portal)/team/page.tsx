@@ -15,7 +15,7 @@ export default async function TeamPage() {
     .from('businesses')
     .select('id, plan, call_transfer_enabled, vapi_agent_id, agent_last_synced_at')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/register')
 
   return (

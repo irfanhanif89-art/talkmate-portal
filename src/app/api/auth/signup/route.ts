@@ -240,7 +240,7 @@ export async function POST(request: Request) {
     .from('businesses')
     .insert(businessInsert)
     .select('*')
-    .single()
+    .maybeSingle()
 
   if (bizError || !biz) {
     console.error('[signup] business insert failed', bizError)

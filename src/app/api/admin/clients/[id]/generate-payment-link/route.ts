@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const admin = createAdminClient()
   const { data: business } = await admin.from('businesses')
-    .select('id, name, plan').eq('id', id).single()
+    .select('id, name, plan').eq('id', id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   const planRaw = overridePlan ?? business.plan

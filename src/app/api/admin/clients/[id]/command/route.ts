@@ -27,7 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .from('businesses')
     .select('name')
     .eq('id', id)
-    .single()
+    .maybeSingle()
   if (!biz) return NextResponse.json({ ok: false, error: 'business not found' }, { status: 404 })
 
   const result = await createTelegramBotForClient({

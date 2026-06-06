@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: business } = await admin.from('businesses')
     .select('id, name, owner_user_id, stripe_customer_id')
-    .eq('id', id).single()
+    .eq('id', id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   // Cancel any active Stripe subscription for this business.

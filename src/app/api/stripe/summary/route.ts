@@ -11,7 +11,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-  const { data: business } = await supabase.from('businesses').select('id, plan').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id, plan').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   const { data: sub } = await supabase

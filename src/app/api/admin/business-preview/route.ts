@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     .from('businesses')
     .select('name, business_type, preview_number, agent_status')
     .eq('id', businessId)
-    .single()
+    .maybeSingle()
 
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(data)

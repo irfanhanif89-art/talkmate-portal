@@ -15,7 +15,7 @@ export async function GET() {
     .from('businesses')
     .select('dispatch_enabled, dispatch_config, plan, industry')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({
@@ -37,7 +37,7 @@ export async function PATCH(request: Request) {
     .from('businesses')
     .select('dispatch_config')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const current = (existing?.dispatch_config ?? {}) as Record<string, unknown>
 
   const update: Record<string, unknown> = {}
@@ -57,7 +57,7 @@ export async function PATCH(request: Request) {
     .update(update)
     .eq('id', clientId)
     .select('dispatch_config')
-    .single()
+    .maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ dispatch_config: data?.dispatch_config ?? {} })
 }

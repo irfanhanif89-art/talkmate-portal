@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     .from('businesses')
     .insert({ name: businessName, business_type: businessType, owner_user_id: authData.user.id })
     .select()
-    .single()
+    .maybeSingle()
 
   if (bizError || !biz) {
     console.error('[register] Business creation failed:', bizError)

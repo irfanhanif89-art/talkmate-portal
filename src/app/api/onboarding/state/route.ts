@@ -176,7 +176,7 @@ export async function GET() {
     .from('businesses')
     .select(BUSINESS_SELECT)
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (error || !business) {
     return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
   }
@@ -259,7 +259,7 @@ export async function POST(req: Request) {
     .from('businesses')
     .select('id, notifications_config')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (bizErr || !business) {
     return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
   }

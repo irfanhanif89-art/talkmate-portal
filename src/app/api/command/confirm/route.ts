@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (!log) return NextResponse.json({ ok: false, error: 'log not found' }, { status: 404 })
 
   // Verify ownership
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business || business.id !== log.business_id) return NextResponse.json({ ok: false }, { status: 403 })
 
   if (log.outcome !== 'pending_confirmation') {

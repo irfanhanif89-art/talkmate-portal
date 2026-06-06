@@ -130,7 +130,7 @@ export default function SettingsPage() {
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
+    const { data: b } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).maybeSingle()
     if (b) {
       const biz = b as Record<string, unknown>
       setBiz(biz as Record<string, string>)
@@ -309,7 +309,7 @@ export default function SettingsPage() {
     setSyncing(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: b } = await supabase.from('businesses').select('id, notifications_config').eq('owner_user_id', user.id).single()
+      const { data: b } = await supabase.from('businesses').select('id, notifications_config').eq('owner_user_id', user.id).maybeSingle()
       if (b) {
         const existingCfg = ((b as Record<string, unknown>).notifications_config ?? {}) as Record<string, unknown>
         const faqsToSave = faqs.map(f => ({ question: f.q, answer: f.a }))

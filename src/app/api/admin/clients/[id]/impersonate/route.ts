@@ -11,7 +11,7 @@ async function handle(req: NextRequest, params: Promise<{ id: string }>) {
 
   const admin = createAdminClient()
   const { data: business } = await admin.from('businesses')
-    .select('id, name, owner_user_id').eq('id', id).single()
+    .select('id, name, owner_user_id').eq('id', id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   const { data: owner } = await admin.from('users').select('email')

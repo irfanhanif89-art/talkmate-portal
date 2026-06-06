@@ -98,7 +98,7 @@ export async function PATCH(
     .update({ intelligence_alert_config: merged })
     .eq('id', id)
     .select('intelligence_alert_config')
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({

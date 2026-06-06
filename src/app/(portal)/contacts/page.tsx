@@ -16,7 +16,7 @@ export default async function ContactsPage() {
   if (!user) redirect('/login')
 
   const { data: business } = await supabase
-    .from('businesses').select('id, industry').eq('owner_user_id', user.id).single()
+    .from('businesses').select('id, industry').eq('owner_user_id', user.id).maybeSingle()
   if (!business) redirect('/register')
 
   const [{ data: contacts }, { count: totalCount }, { count: demoCount }, { data: userProfile }] = await Promise.all([

@@ -18,7 +18,7 @@ export default async function PartnerWhiteLabelPage() {
     .from('businesses')
     .select('id, name, is_partner, partner_tier')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/register')
 
   if (!business.is_partner) {

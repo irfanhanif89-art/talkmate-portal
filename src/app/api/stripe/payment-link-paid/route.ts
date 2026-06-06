@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
   const { data: business } = await supabase.from('businesses')
     .select('id, name, plan, owner_user_id, welcome_email_sent, stripe_customer_id')
-    .eq('id', businessId).single()
+    .eq('id', businessId).maybeSingle()
   if (!business) {
     return NextResponse.json({ received: true, error: 'business row missing' }, { status: 200 })
   }

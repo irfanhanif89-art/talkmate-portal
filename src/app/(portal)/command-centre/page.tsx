@@ -15,7 +15,7 @@ export default async function CommandCentrePage() {
     .from('businesses')
     .select('id, name, plan, command_centre_platform, command_centre_token, command_authorised_numbers, command_daily_count')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/dashboard')
 
   const plan = getPlan(business.plan)

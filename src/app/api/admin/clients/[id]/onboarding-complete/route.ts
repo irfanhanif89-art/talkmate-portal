@@ -28,7 +28,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     })
     .eq('id', id)
     .select('*')
-    .single()
+    .maybeSingle()
 
   if (error || !business) {
     return NextResponse.json({ ok: false, error: error?.message ?? 'business not found' }, { status: 500 })

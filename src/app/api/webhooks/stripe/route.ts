@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
       if (session.subscription) {
         const sub = await stripe.subscriptions.retrieve(session.subscription as string)
         const customerId = session.customer as string
-        const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', customerId).single()
+        const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', customerId).maybeSingle()
         if (biz) {
           // Session 42 (H10) — use the canonical mapper instead of
           // raw nickname.toLowerCase(), which lets through anything an
@@ -162,9 +162,9 @@ export async function POST(request: NextRequest) {
           await supabase.from('businesses').update({ plan: planName }).eq('id', biz.id)
           // Send welcome email
           const { data: owner } = await supabase.from('users').select('email').eq('id',
-            (await supabase.from('businesses').select('owner_user_id').eq('id', biz.id).single()).data?.owner_user_id
+            (await supabase.from('businesses').select('owner_user_id').eq('id', biz.id).maybeSingle()).data?.owner_user_id
           ).single()
-          const { data: bizDetails } = await supabase.from('businesses').select('name').eq('id', biz.id).single()
+          const { data: bizDetails } = await supabase.from('businesses').select('name').eq('id', biz.id).maybeSingle()
           if (owner?.email && bizDetails?.name) {
             await sendWelcomeEmail(owner.email, bizDetails.name, planName)
           }
@@ -289,7 +289,7 @@ export async function POST(request: NextRequest) {
     }
     case 'invoice.payment_succeeded': {
       const invoice = event.data.object as Stripe.Invoice & { customer: string; amount_paid: number; subscription?: string }
-      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', invoice.customer).single()
+      const { data: biz } = await supabase.from('businesses').select('id').eq('stripe_customer_id', invoice.customer).maybeSingle()
       if (biz) {
         await supabase.from('notifications').insert({ business_id: biz.id, type: 'payment_success', message: `✅ Payment successful: $${((invoice.amount_paid || 0) / 100).toFixed(2)} AUD` })
       }

@@ -102,7 +102,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   // 1. Verify the client exists and is active.
-  const { data: business } = await admin.from('businesses').select('id, industry').eq('id', client_id).single()
+  const { data: business } = await admin.from('businesses').select('id, industry').eq('id', client_id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Client not found' }, { status: 404 })
 
   const phoneNormalized = phone.replace(/\s+/g, '')

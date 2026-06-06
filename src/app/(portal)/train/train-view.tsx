@@ -157,7 +157,7 @@ export default function TrainView(props: Props) {
         .from('businesses')
         .select('id, notifications_config')
         .eq('owner_user_id', user.id)
-        .single()
+        .maybeSingle()
       if (!b) { showFlash('Could not load your business ❌'); return }
       const existingCfg = ((b as Record<string, unknown>).notifications_config ?? {}) as Record<string, unknown>
       const { error } = await supabase.from('businesses').update({

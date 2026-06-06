@@ -15,7 +15,7 @@ export default async function DispatchSettingsPage() {
     .from('businesses')
     .select('id, industry, plan, dispatch_enabled, dispatch_config')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/register')
 
   return (

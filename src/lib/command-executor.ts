@@ -73,7 +73,7 @@ async function setWaitTime(
     .from('businesses')
     .select('dispatch_config')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const cfg = (biz?.dispatch_config ?? {}) as Record<string, unknown>
 
   const { error } = await supabase
@@ -100,7 +100,7 @@ async function toggleAvailability(
     .from('businesses')
     .select('dispatch_config')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const cfg = (biz?.dispatch_config ?? {}) as Record<string, unknown>
 
   const { error } = await supabase
@@ -421,7 +421,7 @@ async function pauseAgent(
     .from('businesses')
     .select('dispatch_config')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const cfg = (biz?.dispatch_config ?? {}) as Record<string, unknown>
 
   const resumeAt = new Date(Date.now() + minutes * 60000).toISOString()
