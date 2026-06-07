@@ -26,7 +26,9 @@ export function RevenueStrip({ items, cta, className }: RevenueStripProps) {
   return (
     <div
       className={cn(
-        'flex items-center rounded-[var(--r)] border border-[rgba(21,101,192,.25)] p-[14px_20px]',
+        // overflow-x-auto: on narrow screens the stat row scrolls inside the
+        // strip instead of forcing the whole page to scroll sideways.
+        'flex items-center overflow-x-auto rounded-[var(--r)] border border-[rgba(21,101,192,.25)] p-[14px_20px]',
         'bg-[linear-gradient(135deg,rgba(21,101,192,.15),rgba(238,106,44,.10))]',
         className
       )}
@@ -35,7 +37,7 @@ export function RevenueStrip({ items, cta, className }: RevenueStripProps) {
         <div
           key={i}
           className={cn(
-            'flex flex-1 flex-col gap-[3px] px-5',
+            'flex flex-1 flex-shrink-0 flex-col gap-[3px] px-5',
             i === 0 && 'pl-0',
             i < items.length - 1 && 'border-r border-line'
           )}
