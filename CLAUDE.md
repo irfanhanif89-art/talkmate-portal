@@ -67,7 +67,7 @@ Update this section at the end of every session via `/tm-session-wrap`.
 12. NEVER filter `businesses` without `account_status NOT IN ('cancelled', 'expired')`
 13. `VAPI_WEBHOOK_SECRET` MUST be verified on `/api/vapi/functions` — 500 if unset
 14. Field is `businesses.owner_user_id` — not `owner_id`
-15. `account_status` valid values ONLY: `pending`, `active`, `suspended`, `cancelled`, `expired`
+15. `account_status` valid values ONLY (per DB CHECK constraint, migration 022): `pending`, `active`, `suspended`, `cancelled`, `expired`, `trial`, `pending_payment`
 16. Vapi assistants have TWO separate webhook layers — NEVER collapse them, and any script/Donna/audit that PATCHes a LIVE assistant MUST preserve both:
     - **Assistant-level** `serverUrl` MUST be `/api/webhooks/vapi` + `serverUrlSecret`=`VAPI_WEBHOOK_SECRET` + `serverMessages` includes `end-of-call-report`. THIS is what records calls. `/api/vapi/functions` does NOT handle `end-of-call-report` — pointing the assistant server there silently drops every call (the 2026-06 outage).
     - **Per-tool** `server.url` MUST be `/api/vapi/functions` + the same secret (mid-call functions). Do NOT set per-tool servers to `/api/webhooks/vapi`.
