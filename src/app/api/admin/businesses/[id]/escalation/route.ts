@@ -23,7 +23,7 @@ export async function GET(
     .from('businesses')
     .select('escalation_config, knowledge_base, plan, call_transfer_enabled')
     .eq('id', id)
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({
@@ -50,7 +50,7 @@ export async function PATCH(
     .from('businesses')
     .select('escalation_config')
     .eq('id', id)
-    .single()
+    .maybeSingle()
   const current = (existing?.escalation_config ?? {}) as Record<string, unknown>
 
   const update: Record<string, unknown> = {}
@@ -72,7 +72,7 @@ export async function PATCH(
     .update(update)
     .eq('id', id)
     .select('escalation_config, knowledge_base, call_transfer_enabled')
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, ...data })

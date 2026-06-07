@@ -110,7 +110,7 @@ export async function POST(req: Request) {
     temp_password,
     welcome_email_sent: false,
     onboarding_started_at: new Date().toISOString(),
-  }).select('id, name').single()
+  }).select('id, name').maybeSingle()
 
   if (bizError || !business) {
     // ROLLBACK: delete the orphan auth user (mirrors clients/create:193).

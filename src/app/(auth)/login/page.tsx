@@ -36,7 +36,9 @@ const testimonials = [
 function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const nextUrl = searchParams.get('next') ?? '/'
+  const nextParam = searchParams.get('next') ?? '/'
+  // Only allow same-origin relative redirects (block //evil.com and https://…).
+  const nextUrl = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/'
   const supabase = createClient()
   const [tab, setTab] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')

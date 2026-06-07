@@ -28,7 +28,7 @@ export async function PATCH(request: Request) {
     .update({ services: body.services })
     .eq('owner_user_id', user.id)
     .select('id, services')
-    .single()
+    .maybeSingle()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

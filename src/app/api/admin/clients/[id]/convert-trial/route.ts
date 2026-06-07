@@ -30,7 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })
     .eq('id', id)
     .select('id, name, plan, account_status, trial_converted_at')
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 

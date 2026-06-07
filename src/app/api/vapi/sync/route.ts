@@ -212,7 +212,7 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: business } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).maybeSingle()
   if (!business?.vapi_agent_id) return NextResponse.json({ error: 'No Vapi agent configured' }, { status: 400 })
 
   const apiKey = process.env.VAPI_API_KEY

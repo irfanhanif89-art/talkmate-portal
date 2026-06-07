@@ -96,11 +96,13 @@ export async function POST(req: Request) {
     )
   }
 
-  // 4. Mark invite accepted.
+  // 4. Mark invite accepted (only if still pending — guards against a
+  //    concurrent double-accept of the same token).
   await admin
     .from('driver_invites')
     .update({ status: 'accepted', accepted_at: new Date().toISOString() })
     .eq('id', invite.id)
+    .eq('status', 'pending')
 
   // 5. Owner alert (fire-and-forget).
   const { data: business } = await admin

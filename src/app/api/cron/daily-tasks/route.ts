@@ -32,7 +32,7 @@ export async function GET(req: Request) {
         .from('businesses')
         .select('id')
         .eq('owner_user_id', referral.referred_user_id)
-        .single()
+        .maybeSingle()
 
       const { count: callCount } = await supabase
         .from('calls')

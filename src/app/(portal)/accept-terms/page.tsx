@@ -19,7 +19,7 @@ export default async function AcceptTermsPage({ searchParams }: { searchParams: 
     .from('businesses')
     .select('id, name, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/register')
 
   const params = await searchParams

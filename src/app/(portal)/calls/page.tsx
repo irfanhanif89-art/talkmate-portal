@@ -589,7 +589,7 @@ export default function CallsPage() {
         .from('businesses')
         .select('id, phone_number')
         .eq('owner_user_id', user.id)
-        .single()
+        .maybeSingle()
       if (!biz) { setLoading(false); return }
       setBusinessPhone((biz as { phone_number?: string | null }).phone_number ?? '')
       const { data } = await supabase

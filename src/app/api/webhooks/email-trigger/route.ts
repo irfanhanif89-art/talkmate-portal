@@ -25,7 +25,8 @@ const VALID_EVENTS = new Set<EmailTriggerEvent>([
 
 export async function POST(req: Request) {
   const auth = req.headers.get('authorization')
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Fail closed: if the secret is unset the endpoint must not be callable.
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ ok: false }, { status: 401 })
   }
 

@@ -438,7 +438,7 @@ export default async function SalesDashboardPage() {
                 Add lead
               </Link>
               <Link
-                href="/sales/demo-caller"
+                href="/sales/demo"
                 className="flex items-center gap-2 rounded-[10px] border border-line bg-card-2 px-3 py-[11px] text-[12.5px] font-bold text-text no-underline transition hover:border-[rgba(238,106,44,.3)] hover:text-orange"
               >
                 <Play size={14} className="flex-shrink-0" />

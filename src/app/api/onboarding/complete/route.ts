@@ -18,7 +18,7 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: business } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('*').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ error: 'Business not found' }, { status: 404 })
 
   const { data: onboarding } = await supabase.from('onboarding_responses').select('responses').eq('business_id', business.id).single()

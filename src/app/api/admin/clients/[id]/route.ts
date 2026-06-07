@@ -132,7 +132,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (Object.keys(agentSetupPatch).length > 0) {
     const { data: current } = await admin.from('businesses')
-      .select('notifications_config').eq('id', id).single()
+      .select('notifications_config').eq('id', id).maybeSingle()
     const merged = { ...(current?.notifications_config ?? {}), ...agentSetupPatch }
     update.notifications_config = merged
   }
@@ -152,7 +152,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     : { data: null }
   const before = (beforeRaw ?? null) as Record<string, unknown> | null
 
-  const { data, error } = await admin.from('businesses').update(update).eq('id', id).select('*').single()
+  const { data, error } = await admin.from('businesses').update(update).eq('id', id).select('*').maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   // Pick the action name based on the most meaningful change — plan and

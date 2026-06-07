@@ -40,7 +40,7 @@ export async function GET() {
     .from('businesses')
     .select('intelligence_alert_config, escalation_number')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -76,7 +76,7 @@ export async function PATCH(request: Request) {
     .from('businesses')
     .select('intelligence_alert_config')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
   const current = (existingRow?.intelligence_alert_config ?? {}) as Record<string, unknown>
 
   const merged: Record<string, unknown> = { ...current }
@@ -94,7 +94,7 @@ export async function PATCH(request: Request) {
     .update({ intelligence_alert_config: merged })
     .eq('id', clientId)
     .select('intelligence_alert_config')
-    .single()
+    .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({

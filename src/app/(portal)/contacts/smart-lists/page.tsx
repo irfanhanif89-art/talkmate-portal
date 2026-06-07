@@ -14,7 +14,7 @@ export default async function SmartListsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
   const { data: business } = await supabase
-    .from('businesses').select('id, industry').eq('owner_user_id', user.id).single()
+    .from('businesses').select('id, industry').eq('owner_user_id', user.id).maybeSingle()
   if (!business) redirect('/register')
 
   // Always run the (idempotent) seeder — `seedDefaultSmartLists` skips lists

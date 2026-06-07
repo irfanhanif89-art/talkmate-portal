@@ -9,10 +9,13 @@ import { sendSMS, templateWaitlistOffer } from '@/lib/sms'
 
 export async function POST(request: Request) {
   const expected = process.env.INTERNAL_API_SECRET || process.env.VAPI_WEBHOOK_SECRET
-  if (expected) {
-    const got = request.headers.get('x-internal-secret') ?? ''
-    if (got !== expected) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Fail closed: if no secret is configured the endpoint must NOT be callable,
+  // otherwise an unauthenticated caller could trigger waitlist SMS sends.
+  if (!expected) {
+    return NextResponse.json({ error: 'Server auth misconfigured' }, { status: 500 })
   }
+  const got = request.headers.get('x-internal-secret') ?? ''
+  if (got !== expected) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   const clientId = String(body.client_id ?? '').trim()

@@ -147,7 +147,7 @@ export default function BillingPage() {
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: biz } = await supabase.from('businesses').select('id, plan, signup_at, name, billing_cycle, setup_fee_amount, setup_fee_waived').eq('owner_user_id', user.id).single()
+      const { data: biz } = await supabase.from('businesses').select('id, plan, signup_at, name, billing_cycle, setup_fee_amount, setup_fee_waived').eq('owner_user_id', user.id).maybeSingle()
       if (!biz) return
       setPlan(biz.plan ?? 'starter')
       setSignupAt(biz.signup_at)
