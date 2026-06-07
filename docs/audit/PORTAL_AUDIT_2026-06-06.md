@@ -126,4 +126,27 @@ Swept all 22 admin screens + the client-mirror. **Every screen rendered — no 4
 ---
 
 ## SHARED (auth / webhooks / crons)
-_(pending)_
+
+### Code audit findings (3 parallel slice agents, 2026-06-06)
+
+**No P0. Recurring theme: several webhooks/crons fail OPEN when their secret env-var is unset (latent — all secrets ARE set in prod), plus one genuinely-exploitable open redirect. All 34 crons are auth-gated; every money webhook fails closed today; `vapi/functions` is exemplary (rule-13).**
+
+| # | Sev | File:line | Issue | Status |
+|---|-----|-----------|-------|--------|
+| SH-1 | P1 | `app/auth/callback/route.ts:8` | **Open redirect** — `?next=` concatenated raw into redirect after a valid session is minted. Exploitable regardless of env (phishing). | **FIXED** — only same-origin relative `next` allowed. |
+| SH-2 | P2 | `(auth)/login/page.tsx:39` | Same open-redirect class, client-side (`next`→`window.location.href`). | **FIXED** — sanitised. |
+| SH-3 | P2 | `api/auth/register/route.ts:48`, `signup/route.ts:245` | On businesses-insert failure the orphaned **auth user isn't rolled back** → email permanently taken, user locked out on retry. | **FIXED** — `deleteUser()` rollback. |
+| SH-4 | P1 | `api/webhooks/vapi/route.ts:146` | **Call-recording webhook failed OPEN** if `VAPI_WEBHOOK_SECRET` unset → forge call records + trigger outbound SMS. Latent (set in prod). | **FIXED** — fails closed. ⚠️ confirm secret set in ALL envs before merge (June-outage-adjacent path). |
+| SH-5 | P1 | `api/webhooks/email-trigger/route.ts:28` | Failed OPEN if `CRON_SECRET` unset → fire lifecycle emails for any businessId. | **FIXED** — fails closed. |
+| SH-6 | P2 | `api/webhooks/twilio/sms-inbound/route.ts:104`, `sms-status/route.ts:80` | Twilio sig check skipped if `TWILIO_AUTH_TOKEN` unset. | **FIXED** — both fail closed. |
+| SH-7 | P2 | `api/webhooks/resend/inbound/route.ts:48` | Accepted unverified inbound email if secret unset (dormant). | **FIXED** — fails closed (401). |
+| SH-8 | P2 | `api/stripe/payment-link-paid/route.ts:117` | No event-id idempotency → Stripe retries re-insert duplicate `client_admin_notes` rows (activation idempotent; sig verified). | OPEN (gate the note insert) |
+| SH-9 | P3 | `api/stripe/payment-link-paid/route.ts:84` | Plan from raw `price.nickname` not canonical `planFromStripePriceNickname()` (H10 remnant) → typo drift (not money bypass). | OPEN (use canonical mapper) |
+| SH-10 | P3 | `api/webhooks/stripe/route.ts:166` | `.single()` on `users` (welcome-email lookup) → missing owner drops email. | **FIXED** — `.maybeSingle()`. |
+| SH-11 | P2 | `lib/cron-auth.ts:8` | `verifyCron` ALLOWED when `CRON_SECRET` unset → all 29 verifyCron crons fail-open if env cleared. | **FIXED** — fails closed (500) outside dev. Hardens 29 crons at once. |
+| SH-12 | P3 | `api/auth/check-email`, `signup` | Email enumeration (intentional UX) + `listUsers({perPage:200})` only scans first 200 users. | OPEN (accepted / debt) |
+
+**Verified clean (strong):** middleware gates `/dashboard /admin /sales /driver /onboarding /contacts …` (unauth→/login; `/admin` role delegated to pages which DO re-check); duplicate-owner enforced at DB (migration 025 full UNIQUE, rule-5 OK); change-password verifies session + can't target another user; accept-invite token SHA-256 hashed + single-use + role/business from invite (no escalation); **all 34 crons auth-gated** (5 inline already fail-closed); money crons server-side amounts + 14-day clawback; data-retention rule-8 compliant (dry-run default, scoped deletes); Stripe webhook idempotent + sig-verified; **vapi/functions exemplary** (500 if unset, business from verified assistantId not client input, account_status gated); embedded-checkout can't self-upgrade; cloudflare-email + resend + sms-reply already fail closed; no `.single()`-on-businesses remnants. **expire-trials `account_status='trial'` is valid** (confirms rule-15 stale).
+
+### Live UI findings
+Auth pages render + function (covered during client/admin sweeps + login). Webhooks/crons are backend-only. No live issues.

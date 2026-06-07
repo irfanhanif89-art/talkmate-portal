@@ -99,15 +99,17 @@ export async function POST(request: NextRequest) {
 
   const formParams = Object.fromEntries(new URLSearchParams(rawBody).entries())
 
-  // Signature check (skipped when TWILIO_AUTH_TOKEN is unset).
+  // Signature check — fail closed if TWILIO_AUTH_TOKEN is unset.
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  if (authToken) {
-    const signature = request.headers.get('x-twilio-signature') ?? ''
-    const url = getWebhookUrl(request)
-    if (!verifyTwilioSignature(authToken, signature, url, formParams)) {
-      console.warn('[twilio-inbound] signature invalid', { url, hasSig: Boolean(signature) })
-      return new NextResponse('Forbidden', { status: 403 })
-    }
+  if (!authToken) {
+    console.error('[twilio-inbound] TWILIO_AUTH_TOKEN unset — rejecting (fail closed)')
+    return new NextResponse('Forbidden', { status: 403 })
+  }
+  const signature = request.headers.get('x-twilio-signature') ?? ''
+  const url = getWebhookUrl(request)
+  if (!verifyTwilioSignature(authToken, signature, url, formParams)) {
+    console.warn('[twilio-inbound] signature invalid', { url, hasSig: Boolean(signature) })
+    return new NextResponse('Forbidden', { status: 403 })
   }
 
   const fromRaw = formParams.From ?? ''

@@ -244,8 +244,11 @@ export async function POST(request: Request) {
 
   if (bizError || !biz) {
     console.error('[signup] business insert failed', bizError)
+    // Roll back the orphaned auth user so the email isn't permanently taken
+    // (otherwise a retry hits the duplicate-email block and the user is locked out).
+    await admin.auth.admin.deleteUser(authData.user.id).catch(() => {})
     return NextResponse.json(
-      { success: false, error: 'Account created, but business record failed. Contact support.' },
+      { success: false, error: 'Signup failed, please try again. Contact support if it persists.' },
       { status: 500 },
     )
   }

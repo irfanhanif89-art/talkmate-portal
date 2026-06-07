@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
           // Send welcome email
           const { data: owner } = await supabase.from('users').select('email').eq('id',
             (await supabase.from('businesses').select('owner_user_id').eq('id', biz.id).maybeSingle()).data?.owner_user_id
-          ).single()
+          ).maybeSingle()
           const { data: bizDetails } = await supabase.from('businesses').select('name').eq('id', biz.id).maybeSingle()
           if (owner?.email && bizDetails?.name) {
             await sendWelcomeEmail(owner.email, bizDetails.name, planName)

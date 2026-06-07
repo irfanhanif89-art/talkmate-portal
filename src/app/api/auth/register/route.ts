@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
 
   if (bizError || !biz) {
     console.error('[register] Business creation failed:', bizError)
+    // Roll back the orphaned auth user so the email isn't permanently taken
+    // (otherwise a retry hits the duplicate-email block and the user is locked out).
+    await admin.auth.admin.deleteUser(authData.user.id).catch(() => {})
     return NextResponse.json({ error: bizError?.message ?? 'Failed to create business' }, { status: 400 })
   }
 
