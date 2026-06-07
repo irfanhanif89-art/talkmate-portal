@@ -110,8 +110,16 @@ export default function CatalogPage({
   useEffect(() => { fetchItems() }, [businessId])
 
   async function fetchItems() {
-    const { data } = await supabase.from('catalog_items').select('*').eq('business_id', businessId).order('sort_order')
-    const list = data ?? []
+    // In admin mode the anon/RLS client can't read another business's rows,
+    // so go through the admin-scoped service-role route.
+    let list: CatalogItem[] = []
+    if (adminClientId) {
+      const res = await fetch(`/api/admin/businesses/${businessId}/catalog`)
+      if (res.ok) list = (await res.json()).items ?? []
+    } else {
+      const { data } = await supabase.from('catalog_items').select('*').eq('business_id', businessId).order('sort_order')
+      list = data ?? []
+    }
     setItems(list)
 
     // If catalog_items is empty, fall back to the data the business already
@@ -148,9 +156,30 @@ export default function CatalogPage({
   function openAdd() { setEditing(emptyItem()); setEditingId(null); setSheetOpen(true) }
   function openEdit(item: CatalogItem) { setEditing({ ...item }); setEditingId(item.id); setSheetOpen(true) }
 
+  // PATCH a single catalog item (admin route in admin mode, anon client otherwise).
+  async function patchItem(itemId: string, fields: Partial<CatalogItem>) {
+    if (adminClientId) {
+      await fetch(`/api/admin/businesses/${businessId}/catalog/${itemId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
+      })
+    } else {
+      await supabase.from('catalog_items').update(fields).eq('id', itemId)
+    }
+  }
+
   async function save() {
     if (!editing.name) return
-    if (editingId) {
+    if (adminClientId) {
+      if (editingId) {
+        await fetch(`/api/admin/businesses/${businessId}/catalog/${editingId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing),
+        })
+      } else {
+        await fetch(`/api/admin/businesses/${businessId}/catalog`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...editing, sort_order: items.length }),
+        })
+      }
+    } else if (editingId) {
       await supabase.from('catalog_items').update({ ...editing }).eq('id', editingId)
     } else {
       await supabase.from('catalog_items').insert({ ...editing, business_id: businessId, sort_order: items.length })
@@ -162,19 +191,23 @@ export default function CatalogPage({
 
   async function deleteItem(id: string) {
     if (!confirm('Delete this item?')) return
-    await supabase.from('catalog_items').delete().eq('id', id)
+    if (adminClientId) {
+      await fetch(`/api/admin/businesses/${businessId}/catalog/${id}`, { method: 'DELETE' })
+    } else {
+      await supabase.from('catalog_items').delete().eq('id', id)
+    }
     setItems(prev => prev.filter(i => i.id !== id))
     silentSyncAgent(adminClientId)
   }
 
   async function toggleActive(item: CatalogItem) {
-    await supabase.from('catalog_items').update({ active: !item.active }).eq('id', item.id)
+    await patchItem(item.id, { active: !item.active })
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, active: !i.active } : i))
     silentSyncAgent(adminClientId)
   }
 
   async function toggleFeatured(item: CatalogItem) {
-    await supabase.from('catalog_items').update({ is_featured: !item.is_featured }).eq('id', item.id)
+    await patchItem(item.id, { is_featured: !item.is_featured })
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_featured: !i.is_featured } : i))
     silentSyncAgent(adminClientId)
   }
