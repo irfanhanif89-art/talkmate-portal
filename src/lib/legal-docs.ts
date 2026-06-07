@@ -3,7 +3,7 @@
 // are bumped when text changes, which forces re-acceptance on next login.
 
 export const TOS_VERSION = 'v3.0-2026-06'
-export const PRIVACY_VERSION = 'v3.0-2026-06'
+export const PRIVACY_VERSION = 'v3.1-2026-06'
 export const DPA_VERSION = 'v2.0-2026-06'
 
 // TalkMate's own ABN. Set to "TBC" until business registration completes —
@@ -98,15 +98,17 @@ export const PRIVACY_POLICY: LegalDoc = {
   version: PRIVACY_VERSION,
   acceptanceLabel: 'I have read and agree to the TalkMate Privacy Policy',
   body: `TALKMATE PRIVACY POLICY
-Version 3.0, June 2026
+Version 3.1, June 2026
 
 1. INTRODUCTION
 TalkMate Pty Ltd is committed to protecting personal information in accordance with the Australian Privacy Act 1988. This policy explains how we collect, use, store, and disclose personal information.
+This policy applies to the TalkMate website (talkmate.com.au), the TalkMate web portal, and the TalkMate mobile applications for iOS and Android.
 
 2. INFORMATION WE COLLECT ABOUT YOU (THE BUSINESS OWNER)
 2.1 Account information: your name, business name, email address, phone number, and billing details when you create an account.
-2.2 Usage data: how you use the TalkMate portal, which features you access, and when.
+2.2 Usage data: how you use the TalkMate portal and mobile app, which features you access, and when.
 2.3 Payment information: processed and stored by Stripe. TalkMate does not store credit card numbers.
+2.4 Mobile application data: when you use the TalkMate mobile app and grant notification permission, we collect a push notification token so we can alert you about calls, messages, and bookings, and basic device type information so notifications are delivered correctly. The TalkMate app does not collect advertising identifiers, does not track you across other apps or websites, and contains no third-party advertising or analytics software. You can turn notifications off at any time in your device settings.
 
 3. INFORMATION WE PROCESS ON YOUR BEHALF (CALLER DATA)
 3.1 When your customers call your TalkMate-powered number, we process their call on your behalf.
@@ -123,6 +125,7 @@ TalkMate Pty Ltd is committed to protecting personal information in accordance w
 4.6 Social media message data is retained for 12 months from the date of the conversation. After 12 months it is automatically deleted by TalkMate's data retention process.
 4.7 You may request deletion of your social media message data at any time by contacting hello@talkmate.com.au.
 4.8 You are responsible for ensuring that your use of automated responses via TalkMate's Social DM Nurture feature complies with Meta's Messaging Platform Policies and any applicable Australian laws regarding automated communications.
+4.9 You may revoke TalkMate's access to your social accounts at any time by disconnecting them from your portal settings or from within Meta's own app settings. On disconnection TalkMate immediately stops receiving new messages from those accounts.
 
 5. HOW WE USE YOUR INFORMATION
 5.1 To provide and improve the TalkMate service.
@@ -148,6 +151,7 @@ TalkMate Pty Ltd is committed to protecting personal information in accordance w
 8.3 You have the right to request deletion of your data subject to legal retention requirements.
 8.4 You can export all your contact data at any time from your portal settings.
 8.5 To exercise these rights contact hello@talkmate.com.au.
+8.6 Account deletion: you can delete your account directly from within the TalkMate mobile app (Settings, then Delete account) or by contacting hello@talkmate.com.au. When you delete your account it is disabled immediately and your personal data is permanently deleted within 30 days, except for limited records we are required to keep to meet legal, tax, or accounting obligations.
 
 9. THIRD PARTY SERVICES
 TalkMate uses the following third party services to provide the platform:
@@ -156,8 +160,10 @@ TalkMate uses the following third party services to provide the platform:
 - Supabase: database hosting (AWS ap-southeast-2, Sydney)
 - Stripe: payment processing (USA, PCI DSS compliant)
 - Vercel: application hosting (USA, data processing agreement in place)
-- Make.com: workflow automation (EU, data processing agreement in place)
-- Meta Platforms Inc.: Instagram and Facebook messaging APIs for Social DM Nurture (USA, data processing agreement in place — applies to Elite and Social plan subscribers only)
+- Expo: mobile push notification delivery (USA, data processing agreement in place)
+- Twilio: SMS communications (USA, data processing agreement in place)
+- Meta Platforms Inc.: Instagram and Facebook messaging APIs for Social DM Nurture (USA, data processing agreement in place — applies to Social DM Nurture subscribers only)
+Each of these providers is bound by contract to protect your data to a standard comparable to that required under the Australian Privacy Act 1988.
 
 10. COMPLAINTS
 If you have a privacy concern contact hello@talkmate.com.au. If we cannot resolve your concern you may contact the Office of the Australian Information Commissioner at oaic.gov.au.
