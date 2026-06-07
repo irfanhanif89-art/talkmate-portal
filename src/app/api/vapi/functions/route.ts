@@ -369,7 +369,7 @@ async function getTeam(
     .from('businesses')
     .select('plan, call_transfer_enabled')
     .eq('id', clientId)
-    .single()
+    .maybeSingle()
 
   const transferEnabled =
     !!biz?.call_transfer_enabled &&

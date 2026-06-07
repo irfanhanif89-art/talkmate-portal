@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     .from('businesses')
     .select('id, industry')
     .eq('id', businessId)
-    .single()
+    .maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   if (business.industry !== 'real_estate') {

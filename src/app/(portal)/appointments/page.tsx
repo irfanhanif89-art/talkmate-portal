@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { MessageSquare, User, Phone, Clock } from 'lucide-react'
+import { User, Phone, Clock } from 'lucide-react'
 
 interface Appointment {
   id: string; customer_name: string; customer_phone: string; service_type: string
@@ -62,12 +62,6 @@ export default function AppointmentsPage() {
     await supabase.from(table).update({ notes: editNotes, status: editStatus }).eq('id', selected.id)
     setItems(prev => prev.map(i => i.id === selected.id ? { ...i, notes: editNotes, status: editStatus } : i))
     setSaving(false); setSelected(null)
-  }
-
-  async function sendSmsReminder() {
-    if (!selected) return
-    await fetch('/api/sms/reminder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: selected.id, table }) })
-    alert('SMS reminder sent!')
   }
 
   const grouped = statuses.reduce((acc, s) => {
@@ -212,10 +206,6 @@ export default function AppointmentsPage() {
                 <div className="flex gap-3">
                   <Button onClick={saveItem} disabled={saving} className="flex-1" style={{ background: '#E8622A', color: 'white', border: 'none' }}>
                     {saving ? 'Saving…' : 'Save Changes'}
-                  </Button>
-                  <Button onClick={sendSmsReminder} variant="outline" className="flex-1 gap-2"
-                    style={{ borderColor: '#1565C0', color: '#4A9FE8' }}>
-                    <MessageSquare size={14} /> SMS Reminder
                   </Button>
                 </div>
               </div>

@@ -29,7 +29,7 @@ export default async function SmartListDetailPage({ params }: { params: Promise<
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) redirect('/register')
 
   const { data: list } = await supabase

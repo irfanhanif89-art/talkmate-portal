@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     .from('businesses')
     .select('id, is_partner, partner_tier')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'No business' }, { status: 404 })
   if (!business.is_partner) return NextResponse.json({ ok: false, error: 'Not a partner account' }, { status: 403 })
 

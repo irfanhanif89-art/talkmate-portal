@@ -124,7 +124,7 @@ export default function CatalogPage({
         .from('businesses')
         .select('industry, services, notifications_config')
         .eq('id', businessId)
-        .single()
+        .maybeSingle()
       if (biz) {
         const b = biz as Record<string, unknown>
         setIndustry((b.industry as string) ?? null)

@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const exclude = url.searchParams.get('exclude') ?? ''
   if (q.length < 2) return NextResponse.json({ ok: true, contacts: [] })
 
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false }, { status: 404 })
 
   let q1 = supabase.from('contacts')

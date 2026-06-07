@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const { contact_id, stage_id } = body
   if (!contact_id || !stage_id) return NextResponse.json({ ok: false, error: 'contact_id and stage_id required' }, { status: 400 })
 
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false }, { status: 404 })
 
   // Verify both rows belong to this business via RLS-scoped reads.

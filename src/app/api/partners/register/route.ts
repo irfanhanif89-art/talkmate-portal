@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       .from('businesses')
       .select('name')
       .eq('owner_user_id', user.id)
-      .single()
+      .maybeSingle()
 
     const baseName = biz?.name || user.email?.split('@')[0] || 'partner'
     let slug = slugify(baseName)

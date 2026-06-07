@@ -113,7 +113,7 @@ export default function MakeSetupClient({ baseUrl }: Props) {
         <p style={{ fontSize: 13, color: '#7BAED4', marginBottom: 12, lineHeight: 1.6 }}>
           Add an HTTP request module pointing at <code style={{ color: '#E8622A' }}>https://api.x.ai/v1/chat/completions</code>.
           Use the prompt from <code style={{ color: '#E8622A' }}>src/lib/extraction-prompt.ts → CONTACT_EXTRACTION_PROMPT</code>.
-          Model <code>grok-2-latest</code>, <code>response_format: json_object</code>, temperature <code>0.1</code>.
+          Model <code>grok-3</code>, <code>response_format: json_object</code>, temperature <code>0.1</code>.
         </p>
         <div style={{ fontSize: 11, color: '#4A7FBB' }}>Output: caller_name, caller_email, call_purpose, call_outcome, tags, industry_data.</div>
       </div>

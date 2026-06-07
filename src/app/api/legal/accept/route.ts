@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
   const { data: business } = await admin.from('businesses')
-    .select('id').eq('owner_user_id', user.id).single()
+    .select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'No business' }, { status: 404 })
 
   const ipAddress =

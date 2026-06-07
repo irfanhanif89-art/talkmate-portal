@@ -22,6 +22,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: false, error: 'action must be approve, pay, or reject' }, { status: 400 })
   }
 
+  const admin = createAdminClient()
+
+  // Guard the money action: only an 'approved' invoice may be paid, and never twice.
+  if (action === 'pay') {
+    const { data: current } = await admin
+      .from('rep_invoices')
+      .select('status')
+      .eq('id', id)
+      .maybeSingle()
+    if (!current) {
+      return NextResponse.json({ ok: false, error: 'Invoice not found' }, { status: 404 })
+    }
+    if (current.status !== 'approved') {
+      return NextResponse.json({ ok: false, error: `Cannot pay an invoice with status '${current.status}' (must be 'approved')` }, { status: 409 })
+    }
+  }
+
   const nowIso = new Date().toISOString()
   const update: Record<string, unknown> = { reviewed_at: nowIso }
 
@@ -36,7 +53,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     update.admin_note = (body.admin_note ?? '').trim().slice(0, 500) || 'Rejected'
   }
 
-  const admin = createAdminClient()
   const { data, error } = await admin
     .from('rep_invoices')
     .update(update)

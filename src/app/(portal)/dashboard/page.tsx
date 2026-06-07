@@ -16,9 +16,9 @@ export default async function DashboardPage() {
 
   const { data: business } = await supabase
     .from('businesses')
-    .select('id, name, phone_number, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours, industry, notifications_config, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
+    .select('id, name, phone_number, onboarding_completed, business_type, plan, signup_at, agent_name, talkmate_number, escalation_number, address, website, opening_hours, industry, avg_job_value, notifications_config, tos_accepted_version, privacy_accepted_version, dpa_accepted_version')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!business) redirect('/login')
 
@@ -61,25 +61,13 @@ export default async function DashboardPage() {
     return d >= todayStart && d <= todayEnd && c.outcome && c.outcome !== 'Missed'
   }).length
 
-  // Revenue captured this month — fall back to a per-call estimate.
-  let revenueRecoveredThisMonth = 0
-  let revenueIsEstimate = false
-  try {
-    const { data: jobs, error } = await supabase
-      .from('jobs').select('job_value')
-      .eq('business_id', business.id).gte('created_at', startOfMonth.toISOString())
-    if (error || !jobs || jobs.length === 0) {
-      revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE
-      revenueIsEstimate = true
-    } else {
-      const total = jobs.reduce((sum: number, j: { job_value?: number | null }) => sum + (j.job_value || 0), 0)
-      if (total === 0) { revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE; revenueIsEstimate = true }
-      else revenueRecoveredThisMonth = total
-    }
-  } catch {
-    revenueRecoveredThisMonth = totalMonth * INDUSTRY_AVG_CALL_VALUE
-    revenueIsEstimate = true
-  }
+  // Revenue captured this month — always an estimate (we don't store per-job values).
+  // Prefer the business's own average job value x bookings won; otherwise a per-call industry estimate.
+  const avgJobValue = (business as { avg_job_value?: number | null }).avg_job_value ?? 0
+  const revenueIsEstimate = true
+  const revenueRecoveredThisMonth = avgJobValue > 0
+    ? bookingsThisMonth * avgJobValue
+    : totalMonth * INDUSTRY_AVG_CALL_VALUE
 
   // vs last month
   const lastMonthStart = new Date(); lastMonthStart.setDate(1); lastMonthStart.setHours(0, 0, 0, 0); lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)

@@ -24,7 +24,7 @@ function ApproveContent() {
     setError('')
     const res = await fetch('/api/admin/approve-agent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-key': 'talkmate-admin-2026' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ businessId }),
     })
     const data = await res.json()

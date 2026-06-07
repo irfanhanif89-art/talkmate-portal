@@ -186,7 +186,7 @@ export async function POST(req: Request) {
       urgent_call: notif_urgent_call,
       urgent_call_number: notif_urgent_number,
     },
-  }).select('*').single()
+  }).select('*').maybeSingle()
 
   if (bizError || !business) {
     // Roll back the auth user so we don't leave an orphaned login.

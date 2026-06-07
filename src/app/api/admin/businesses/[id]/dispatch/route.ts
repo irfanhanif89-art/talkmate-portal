@@ -28,7 +28,7 @@ export async function GET(
   // `drivers.active` is now `drivers.is_active`, and the dispatch_jobs
   // status enum is the new 13-state lifecycle.
   const [bizRes, driversRes, jobsRes] = await Promise.all([
-    admin.from('businesses').select('dispatch_enabled, dispatch_config, plan, industry').eq('id', id).single(),
+    admin.from('businesses').select('dispatch_enabled, dispatch_config, plan, industry').eq('id', id).maybeSingle(),
     admin.from('drivers').select('id', { count: 'exact', head: true }).eq('client_id', id).eq('is_active', true),
     admin.from('dispatch_jobs').select('id', { count: 'exact', head: true }).eq('client_id', id).in('status', ['created','driver_notified','accepted','en_route','on_scene','loaded','in_transit','at_dropoff']),
   ])
@@ -62,7 +62,7 @@ export async function PATCH(
 
   const admin = createAdminClient()
   const { data: existing } = await admin
-    .from('businesses').select('dispatch_config').eq('id', id).single()
+    .from('businesses').select('dispatch_config').eq('id', id).maybeSingle()
   const current = (existing?.dispatch_config ?? {}) as Record<string, unknown>
 
   const update: Record<string, unknown> = {}
@@ -82,7 +82,7 @@ export async function PATCH(
 
   const { data, error } = await admin
     .from('businesses').update(update).eq('id', id)
-    .select('dispatch_enabled, dispatch_config').single()
+    .select('dispatch_enabled, dispatch_config').maybeSingle()
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   if (typeof body.dispatch_enabled === 'boolean' && priorBiz?.dispatch_enabled !== body.dispatch_enabled) {

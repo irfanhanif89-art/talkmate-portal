@@ -36,7 +36,7 @@ export default async function RoutingSettingsPage() {
     .from('businesses')
     .select('id, industry, plan, call_transfer_enabled, escalation_config, knowledge_base, vapi_agent_id, agent_last_synced_at')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) redirect('/register')
 
   const industry = (business.industry as string) || 'other'

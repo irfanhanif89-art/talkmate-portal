@@ -75,15 +75,17 @@ export async function POST(request: NextRequest) {
   try { rawBody = await request.text() } catch { return new NextResponse('', { status: 400 }) }
   const formParams = Object.fromEntries(new URLSearchParams(rawBody).entries())
 
-  // Signature check (open mode if no token, mirrors sms-inbound).
+  // Signature check — fail closed if TWILIO_AUTH_TOKEN is unset.
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  if (authToken) {
-    const signature = request.headers.get('x-twilio-signature') ?? ''
-    const url = getWebhookUrl(request)
-    if (!verifyTwilioSignature(authToken, signature, url, formParams)) {
-      console.warn('[twilio-status] signature invalid')
-      return new NextResponse('Forbidden', { status: 403 })
-    }
+  if (!authToken) {
+    console.error('[twilio-status] TWILIO_AUTH_TOKEN unset — rejecting (fail closed)')
+    return new NextResponse('Forbidden', { status: 403 })
+  }
+  const signature = request.headers.get('x-twilio-signature') ?? ''
+  const url = getWebhookUrl(request)
+  if (!verifyTwilioSignature(authToken, signature, url, formParams)) {
+    console.warn('[twilio-status] signature invalid')
+    return new NextResponse('Forbidden', { status: 403 })
   }
 
   const messageSid = formParams.MessageSid ?? ''

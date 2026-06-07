@@ -143,7 +143,10 @@ export async function POST(request: NextRequest) {
 
 function verifySecret(request: NextRequest, body: string): boolean {
   const secret = process.env.VAPI_WEBHOOK_SECRET
-  if (!secret) return true   // no secret set: open mode (flagged in DEPLOYMENT.md)
+  // Fail closed: never accept unsigned call-report payloads. VAPI_WEBHOOK_SECRET
+  // MUST be set in every environment (it is in prod). Open mode previously let
+  // anyone forge call records + trigger outbound SMS. (rule #13 / #16 posture)
+  if (!secret) return false
 
   // Plain shared-secret headers — Vapi sends one of these depending on
   // how the server URL was configured.

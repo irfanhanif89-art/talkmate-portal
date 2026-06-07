@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     .from('businesses')
     .select('id, name, plan')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'Business not found' }, { status: 404 })
 
   const body = await req.json().catch(() => ({})) as { reason?: string }

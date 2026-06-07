@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
     }
   } else {
-    console.warn('[resend-inbound] RESEND_INBOUND_WEBHOOK_SECRET unset — accepting unverified (dev/preview)')
+    console.error('[resend-inbound] RESEND_INBOUND_WEBHOOK_SECRET unset — rejecting (fail closed)')
+    return NextResponse.json({ error: 'inbound webhook not configured' }, { status: 401 })
   }
 
   let payload: Record<string, unknown>

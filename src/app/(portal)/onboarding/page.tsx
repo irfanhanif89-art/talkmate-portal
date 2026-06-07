@@ -233,7 +233,7 @@ export default function OnboardingPage() {
       if (!serverResponses) {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
-        const { data: biz } = await supabase.from('businesses').select('id, business_type').eq('owner_user_id', user.id).single()
+        const { data: biz } = await supabase.from('businesses').select('id, business_type').eq('owner_user_id', user.id).maybeSingle()
         if (biz) {
           setBizId(biz.id)
           setBizType(biz.business_type as BusinessType)

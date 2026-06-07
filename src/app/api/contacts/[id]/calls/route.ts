@@ -20,7 +20,7 @@ export async function GET(
     .from('businesses')
     .select('id')
     .eq('owner_user_id', user.id)
-    .single()
+    .maybeSingle()
   if (!business) return NextResponse.json({ ok: false }, { status: 404 })
 
   const { data: contact } = await supabase

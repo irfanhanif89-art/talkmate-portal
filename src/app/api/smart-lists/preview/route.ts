@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ ok: false }, { status: 401 })
 
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false }, { status: 404 })
 
   const body = await req.json().catch(() => ({})) as { rules?: FilterRules }

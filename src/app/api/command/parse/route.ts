@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
   const { data: business } = await supabase.from('businesses')
     .select('id, name, business_type, plan, command_daily_count, command_daily_count_date')
-    .eq('owner_user_id', user.id).single()
+    .eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'No business' }, { status: 404 })
 
   const plan = getPlan(business.plan)

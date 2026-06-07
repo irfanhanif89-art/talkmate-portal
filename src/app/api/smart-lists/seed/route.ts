@@ -10,7 +10,7 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ ok: false }, { status: 401 })
 
-  const { data: business } = await supabase.from('businesses').select('id, industry').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id, industry').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'No business' }, { status: 404 })
 
   const admin = createAdminClient()

@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Cannot merge a contact with itself' }, { status: 400 })
   }
 
-  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).single()
+  const { data: business } = await supabase.from('businesses').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (!business) return NextResponse.json({ ok: false, error: 'No business' }, { status: 404 })
 
   // Both reads must succeed via the user-scoped client so we know the user

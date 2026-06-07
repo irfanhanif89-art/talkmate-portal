@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .from('businesses')
     .select('industry, plan, name')
     .eq('id', id)
-    .single()
+    .maybeSingle()
   if (biz && biz.industry === 'towing' && ['growth', 'pro'].includes((biz.plan ?? '').toLowerCase())) {
     const result = await createTelegramBotForClient({
       clientId: id,
