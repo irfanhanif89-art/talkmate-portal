@@ -25,6 +25,8 @@ import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/server'
 import { scoreCallAsync } from '@/lib/score-call-async'
 import { sendSMS } from '@/lib/sms'
+import { sendAdminTelegram } from '@/lib/notifications'
+import { WEBSITE_DEMO_ASSISTANT_ID, DEMO_BUSINESS_ID } from '@/lib/demo-config'
 
 interface VapiCall {
   id?: string
@@ -106,7 +108,29 @@ export async function POST(request: NextRequest) {
   // legacy path. If neither matches, log and 200 — the alternative is
   // a retry storm from Vapi for an unrecoverable mismatch.
   const assistantId = call.assistantId?.trim() ?? ''
-  const business = assistantId ? await findBusinessByAssistant(supabase, assistantId) : null
+  let business = assistantId ? await findBusinessByAssistant(supabase, assistantId) : null
+
+  // Session 77 — demo call fallback. Real calls to the demo phone number arrive
+  // with whichever template assistant the Demo Launcher last loaded (NOT the
+  // demo business's vapi_agent_id), and website Talk-button web calls arrive
+  // with the website demo agent id. Neither matches via findBusinessByAssistant,
+  // so associate them with the demo business by stable signals: the demo phone
+  // number id (phone calls) or the website demo assistant id (web calls).
+  if (!business) {
+    const isDemoWeb = assistantId === WEBSITE_DEMO_ASSISTANT_ID
+    const isDemoPhone =
+      !!call.phoneNumberId &&
+      call.phoneNumberId === process.env.VAPI_DEMO_PHONE_NUMBER_ID
+    if (isDemoWeb || isDemoPhone) {
+      const { data } = await supabase
+        .from('businesses')
+        .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled, is_demo')
+        .eq('id', DEMO_BUSINESS_ID)
+        .maybeSingle()
+      if (data) business = data as BusinessRow
+    }
+  }
+
   if (!business) {
     console.warn('[vapi-webhook] no business matched assistantId', {
       vapiCallId, assistantId, eventType,
@@ -187,6 +211,10 @@ interface BusinessRow {
   // fire the ServiceM8 push without an extra round-trip. Optional so the
   // fallback path and older callers compile unchanged.
   servicem8_enabled?: boolean | null
+  // Session 77 — true for the demo business. Gates outbound side-effects
+  // (winback / owner SMS / ServiceM8 / Make.com) so demo callers are never
+  // texted or pushed into integrations, and drives the demo Telegram alert.
+  is_demo?: boolean | null
 }
 
 async function findBusinessByAssistant(
@@ -196,7 +224,7 @@ async function findBusinessByAssistant(
   // Primary lookup: vapi_agent_id column (set during onboarding).
   const { data: primary } = await supabase
     .from('businesses')
-    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled')
+    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled, is_demo')
     .eq('vapi_agent_id', assistantId)
     .maybeSingle()
   if (primary) return primary as BusinessRow
@@ -206,7 +234,7 @@ async function findBusinessByAssistant(
   // when the primary missed.
   const { data: fallback } = await supabase
     .from('businesses')
-    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled, notifications_config')
+    .select('id, business_type, escalation_number, talkmate_number, name, servicem8_enabled, is_demo, notifications_config')
     .filter('notifications_config->>vapi_assistant_id', 'eq', assistantId)
     .maybeSingle()
   if (fallback) return {
@@ -216,6 +244,7 @@ async function findBusinessByAssistant(
     talkmate_number: (fallback.talkmate_number as string | null) ?? null,
     name: (fallback.name as string | null) ?? null,
     servicem8_enabled: (fallback.servicem8_enabled as boolean | null) ?? null,
+    is_demo: (fallback.is_demo as boolean | null) ?? null,
   }
 
   return null
@@ -380,6 +409,19 @@ async function handleEndOfCall(
     }
   }
 
+  // Session 77 — Telegram alert when a real call lands on the demo line or the
+  // website Talk button, so the team can review prospect transcripts and refine
+  // the product. Fire-and-forget; never throws, never blocks the webhook.
+  if (business.is_demo) {
+    const callerDisplay = call.customer?.number
+      ? `📞 ${call.customer.number}`
+      : '🌐 Web call (Talk button)'
+    const durationText = durationSeconds ? `${durationSeconds}s` : 'unknown duration'
+    void sendAdminTelegram(
+      `🎯 Demo call received\n${callerDisplay}\nDuration: ${durationText}\nView: https://app.talkmate.com.au/admin/demo-calls`,
+    ).catch(() => {})
+  }
+
   // Contacts — upsert on (client_id, phone). Increment call_count and
   // refresh last_seen. The contacts table uses `client_id` (migration
   // 008) not the older `business_id` shape.
@@ -425,14 +467,23 @@ async function handleEndOfCall(
   })
 
   // SMS notification to business owner/escalation number on call end.
-  await maybeSendOwnerSms(business, call, msg.analysis?.summary ?? call.summary ?? msg.summary ?? null, phone)
+  // Session 77 — skipped for demo calls: the demo business must never text a
+  // stranger who happened to ring the demo line / use the Talk button.
+  if (!business.is_demo) {
+    await maybeSendOwnerSms(business, call, msg.analysis?.summary ?? call.summary ?? msg.summary ?? null, phone)
+  }
 
   // Sprint Session 1 — missed-call win-back. Fire when the call was a
   // short customer-hangup / did-not-answer / voicemail and the business
   // opted in. Doesn't await: the SMS send is fire-and-forget so the
   // webhook doesn't pay the latency.
-  void maybeSendWinback(supabase, business.id, callRowId, vapiCallId, phone, durationSeconds, endedReason, transcript)
-    .catch(err => console.error('[vapi-webhook] winback failed', (err as Error).message))
+  // Session 77 — never run win-back for demo calls (demo business has
+  // winback_enabled=true; without this guard a stranger calling the demo line
+  // and hanging up would be auto-texted).
+  if (!business.is_demo) {
+    void maybeSendWinback(supabase, business.id, callRowId, vapiCallId, phone, durationSeconds, endedReason, transcript)
+      .catch(err => console.error('[vapi-webhook] winback failed', (err as Error).message))
+  }
 
   // Session 18 — fire-and-forget Call Intelligence scoring. Must not
   // await; the webhook must return quickly so Vapi doesn't retry.
@@ -443,8 +494,9 @@ async function handleEndOfCall(
   })
 
   // Optional Make.com fan-out (kept from the original receiver).
+  // Session 77 — demo calls do not fan out to Make.com automations.
   const makeUrl = process.env.MAKE_WEBHOOK_URL
-  if (makeUrl) {
+  if (makeUrl && !business.is_demo) {
     fetch(makeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -468,7 +520,8 @@ async function handleEndOfCall(
   // call.ended handler. Uses the request origin (not a hardcoded prod URL) so
   // preview deploys call their own route.
   try {
-    if (business.servicem8_enabled) {
+    // Session 77 — demo calls never push into ServiceM8.
+    if (business.servicem8_enabled && !business.is_demo) {
       void fetch(`${requestOrigin}/api/servicem8/push-job`, {
         method: 'POST',
         headers: {
