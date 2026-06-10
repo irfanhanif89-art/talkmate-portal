@@ -604,8 +604,11 @@ function scorePassword(p: string): { score: number; label: string } {
 
 function Logo() {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src="/logo-lockup-dark.svg" alt="TalkMate" style={{ height: 42, width: 'auto', display: 'block' }} />
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }} aria-label="TalkMate">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-mark.svg" alt="" aria-hidden="true" width={40} height={40} style={{ display: 'block' }} />
+      <span style={{ fontWeight: 800, fontSize: 26, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1 }}>Talk<span style={{ color: '#7EC8F5' }}>Mate</span></span>
+    </span>
   )
 }
 

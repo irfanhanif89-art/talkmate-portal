@@ -6,8 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import PasswordInput from '@/components/PasswordInput'
 
 const Logo = () => (
-  // eslint-disable-next-line @next/next/no-img-element
-  <img src="/logo-lockup-dark.svg" alt="TalkMate" style={{ height: 48, width: 'auto', display: 'block' }} />
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 11 }}>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src="/logo-mark.svg" alt="" aria-hidden="true" width={46} height={46} style={{ display: 'block' }} />
+    <span style={{ fontWeight: 800, fontSize: 30, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1 }}>Talk<span style={{ color: '#7EC8F5' }}>Mate</span></span>
+  </span>
 )
 
 const stats = [

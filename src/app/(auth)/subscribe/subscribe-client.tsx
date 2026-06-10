@@ -7,8 +7,11 @@ import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe
 const stripePromise = loadStripe('pk_live_51NbbW7CzrOLgF5MUozZxFYByT5Pd71yoSnv4aVcPb9c0uRRyvD36q5jvijBNk3tJ9iEXnp1PVCveDhE1fjKGJba00zFkyvFpQ')
 
 const Logo = () => (
-  // eslint-disable-next-line @next/next/no-img-element
-  <img src="/logo-lockup-dark.svg" alt="TalkMate" style={{ height: 42, width: 'auto', display: 'block' }} />
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src="/logo-mark.svg" alt="" aria-hidden="true" width={40} height={40} style={{ display: 'block' }} />
+    <span style={{ fontWeight: 800, fontSize: 26, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1 }}>Talk<span style={{ color: '#7EC8F5' }}>Mate</span></span>
+  </span>
 )
 
 type Plan = {

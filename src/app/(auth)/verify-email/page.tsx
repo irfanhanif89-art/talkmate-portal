@@ -12,9 +12,10 @@ function VerifyEmailContent() {
       <div style={{ width: '100%', maxWidth: '480px', padding: '48px 40px', borderRadius: '16px', border: '1px solid rgba(232,98,42,0.2)', background: '#0A1E38', textAlign: 'center' }}>
 
         {/* Logo */}
-        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 11 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-lockup-dark.svg" alt="TalkMate" style={{ height: 48, width: 'auto', display: 'block' }} />
+          <img src="/logo-mark.svg" alt="" aria-hidden="true" width={46} height={46} style={{ display: 'block' }} />
+          <span style={{ fontWeight: 800, fontSize: 30, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1 }}>Talk<span style={{ color: '#7EC8F5' }}>Mate</span></span>
         </div>
 
         {/* Email icon */}
