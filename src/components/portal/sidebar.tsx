@@ -269,19 +269,9 @@ export default function PortalSidebar(props: Props) {
         justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Inline SVG logo — 34×34, gradient #f58a42→#e66020 per design spec §1d */}
-          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect width="34" height="34" rx="8" fill="url(#tmG)" />
-            <path d="M9 10.5h16v3H19V24h-4V13.5H9z" fill="white" />
-            <path d="M23 27a4 4 0 0 1 0-6" stroke="rgba(255,255,255,.8)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-            <path d="M20.5 29.5a7.5 7.5 0 0 1 0-11" stroke="rgba(255,255,255,.4)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-            <defs>
-              <linearGradient id="tmG" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#f58a42" />
-                <stop offset="1" stopColor="#e66020" />
-              </linearGradient>
-            </defs>
-          </svg>
+          {/* Brand mark — canonical refreshed logo (squircle + gradient + wifi), 34×34 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.svg" alt="" aria-hidden="true" width={34} height={34} style={{ display: 'block' }} />
           {/* Wordmark: "Talk" 800-weight text-token, "mate" 300-weight blue, 17px, tracking -.5px */}
           <span style={{ fontWeight: 800, fontSize: 17, color: 'var(--text)', letterSpacing: '-0.5px', lineHeight: 1 }}>
             Talk<span style={{ fontWeight: 300, color: '#4a9fe8' }}>mate</span>

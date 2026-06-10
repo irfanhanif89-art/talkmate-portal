@@ -66,19 +66,9 @@ export default function SalesNav({ repName, repEmail, isOpenMobile, onCloseMobil
         justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Same logo SVG as portal sidebar — gradient orange #f58a42→#e66020 */}
-          <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect width="34" height="34" rx="8" fill="url(#tmGSales)" />
-            <path d="M9 10.5h16v3H19V24h-4V13.5H9z" fill="white" />
-            <path d="M23 27a4 4 0 0 1 0-6" stroke="rgba(255,255,255,.8)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-            <path d="M20.5 29.5a7.5 7.5 0 0 1 0-11" stroke="rgba(255,255,255,.4)" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-            <defs>
-              <linearGradient id="tmGSales" x1="0" y1="0" x2="34" y2="34" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#f58a42" />
-                <stop offset="1" stopColor="#e66020" />
-              </linearGradient>
-            </defs>
-          </svg>
+          {/* Brand mark — canonical refreshed logo (squircle + gradient + wifi), 34×34 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark.svg" alt="" aria-hidden="true" width={34} height={34} style={{ display: 'block' }} />
 
           {/* Wordmark + Sales HQ sub-label */}
           <div>

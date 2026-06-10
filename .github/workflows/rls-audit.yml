@@ -1,0 +1,38 @@
+name: RLS Security Audit
+
+# Runs the live Supabase security advisor against both projects on every PR and
+# fails if any public table is RLS-disabled or RLS-enabled-with-no-policy. This is
+# the prevention gate installed after the 08 Jun 2026 Supabase alert: it catches
+# tables created by direct SQL / the dashboard, which a migration-file scan misses.
+#
+# Until the SUPABASE_ACCESS_TOKEN repo secret is added, the audit step skips
+# cleanly (exit 0) so it never blocks unrelated PRs. Once the secret exists, it
+# becomes a real blocking check.
+
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  rls-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run RLS advisor audit (skips if token not configured)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "SUPABASE_ACCESS_TOKEN not set — skipping RLS audit."
+            echo "Add it under Settings > Secrets and variables > Actions to enable the gate."
+            exit 0
+          fi
+          node scripts/security/rls-advisor-check.mjs
