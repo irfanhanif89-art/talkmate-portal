@@ -23,6 +23,23 @@ export const DEMO_BUSINESS_IDS: Partial<Record<DemoIndustryKey, string>> = {
   towing: 'ad380eb3-a0b5-4566-9107-e0b075ac48e8',
 }
 
+// ── Session 77 — demo call ingestion constants ───────────────────────────
+// Used by the Vapi webhook handler to associate real demo calls (phone +
+// website Talk button) with the demo business, and by the /admin/demo-calls
+// transcript viewer. These are the only hardcoded ids this feature needs;
+// phone-call matching itself uses process.env.VAPI_DEMO_PHONE_NUMBER_ID.
+
+// Website Talk button demo agent — associates WEB calls with the demo business.
+export const WEBSITE_DEMO_ASSISTANT_ID = 'ca0752a1-b87b-49eb-93d7-b83ea864494c'
+
+// Demo business Supabase id — webhook demo fallback + transcript viewer query.
+// Same value as DEMO_BUSINESS_IDS.towing; exported by name for direct import.
+export const DEMO_BUSINESS_ID = 'ad380eb3-a0b5-4566-9107-e0b075ac48e8'
+
+// Demo phone number in E.164 — DISPLAY ONLY (empty-state copy).
+// NOTE: matching is done by VAPI_DEMO_PHONE_NUMBER_ID (env), NOT this string.
+export const DEMO_PHONE_NUMBER = '+61752409791'
+
 export type DemoIndustry = {
   key: DemoIndustryKey
   label: string

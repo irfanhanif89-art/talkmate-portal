@@ -72,6 +72,102 @@ shows no permission errors. (Client-data tables already had RLS before this sess
 
 ---
 
+## Session 77 — Demo Transcript Portal + Marketing Tracking (2026-06-11)
+
+Branch: `feature/session-77-demo-calls` (off latest `origin/main`; `origin/dev`
+was 8 commits stale so we did NOT branch off it).
+Build: `npx tsc --noEmit` clean, `npm run build` clean. No migration this session.
+
+### PHASE 0 — brief review (findings that shaped the build)
+Built from the corrected v2 brief. v1 wrongly assumed the webhook matched calls
+by phone number; it matches by `assistantId -> vapi_agent_id`. Key facts:
+1. Demo PHONE calls arrive with a rotating template `assistantId` matching no
+   business → were dropped. FIX: match by `call.phoneNumberId ===
+   VAPI_DEMO_PHONE_NUMBER_ID` (phone) / `assistantId === WEBSITE_DEMO_ASSISTANT_ID`
+   (web). v1 Part B (`talkmate_number`) was a no-op → removed.
+2. Demo business `winback_enabled = true` → capturing demo calls would auto-SMS
+   strangers. FIX: gate winback / owner SMS / ServiceM8 / Make.com behind
+   `!business.is_demo`. Transcript save + CI scoring kept.
+3. Schema: transcript = `calls.transcript` (text); CI = `intelligence_score`
+   (NOT `ci_score`); web vs phone derived from `caller_number IS NULL`.
+4. Telegram helper = `sendAdminTelegram` (NOT `sendTelegram`).
+
+### PART A — demo-config constants — DONE
+`src/lib/demo-config.ts`: `WEBSITE_DEMO_ASSISTANT_ID`, `DEMO_BUSINESS_ID`,
+`DEMO_PHONE_NUMBER` (display-only).
+
+### PART B — REMOVED (no-op). No SQL run.
+
+### PART C — Vapi assistant webhook wiring — DONE (production Vapi)
+One-shot in-house script (deleted after). Per assistant: GET+snapshot, re-assert
+legacy `serverUrl` + `serverUrlSecret` (canonical prod secret) + `serverMessages`
+(union `end-of-call-report`), clear modern `server` if present, per-tool servers
+untouched. Live agents (GM `25443e10`, Spectrum `8121a8b0`) hard-guarded out.
+- 14 industry templates: all PATCH OK, `serverUrl` (unset) -> `/api/webhooks/vapi`,
+  `serverMessages` (none) -> `end-of-call-report`, no per-tool servers (0->0).
+- `ca0752a1` (website Talk button): already wired; PATCH re-asserted idempotently.
+- `fdeef08c` (default demo): **GET 404 — deleted in Vapi.** Irrelevant to capture.
+  Follow-up: demo business `vapi_agent_id` is a dangling ref to this deleted id.
+- CODE: `launch-demo/route.ts` now re-asserts the swapped template's webhook
+  (fire-and-forget) on every demo launch.
+
+### PART D — webhook handler — DONE
+`src/app/api/webhooks/vapi/route.ts`: `is_demo` added to `BusinessRow` + both
+selects; demo fallback (web/phone signals) → demo business; winback/owner SMS/
+ServiceM8/Make.com gated behind `!is_demo`; `sendAdminTelegram` demo alert.
+
+### PART E — MRR audit — DONE
+FIX: `src/app/api/sales/platform-stats/route.ts` += `.eq('is_demo', false)`
+(demo business is active+growth, was inflating MRR by $499 + active count by 1).
+Verified CLEAN: `/admin` overview (already filtered; MRR from `subscriptions`,
+demo has 0 rows), sales-pipeline + sales/dashboard (MRR from `leads.won_plan`),
+sales/clients (rep-assigned only), admin/clients (already filtered), stripe/summary.
+
+### PART F — /admin/demo-calls viewer — DONE
+Server `page.tsx` (admin gate + fetch) + `DemoCallsClient.tsx` (stat pills,
+All/Phone/Web filter, expandable transcript turns, empty state, masked numbers,
+dark design). Sidebar "Demo Calls" entry added below "Demo Accounts".
+
+### PART G — website GTM/Clarity/Pixel — PARKED (coordination guard)
+A separate session is actively editing `talkmate-website` (on
+`feature/privacy-policy-v3`). Part G touches `layout.tsx` + Talk button — high
+collision risk. NOT edited. Handoff snippets at the very bottom of this file.
+
+### PART H — Spectrum live-agent ingestion — DONE
+Re-asserted Spectrum (`8121a8b0`) webhook config; rollback at
+`.vercel/rollback-SPECTRUM-2026-06-11.json`. GOTCHA: `serverUrlSecret` is REDACTED
+on Vapi GET — config now guaranteed correct but a live test call is required to
+confirm. GM Towing (cancelled) untouched.
+
+### Manual steps for Irfan (after merge/deploy)
+1. Verify phone capture: call +61 752 409 791 in default state AND right after a
+   rep loads a template; both must appear in /admin/demo-calls.
+2. Verify web capture: Talk button on talkmate.com.au → a "WEB" card appears.
+3. Verify Spectrum: test call to +61 468 003 053 lands in `calls` for biz `18a8f78e`.
+4. Website (when Part G ships): add blank `NEXT_PUBLIC_GTM_ID` +
+   `NEXT_PUBLIC_CLARITY_ID` to talkmate-website Vercel, then real IDs later.
+
+### PART G handoff snippets (for the website session)
+G1 GTM — `<head>`:
+```tsx
+{process.env.NEXT_PUBLIC_GTM_ID && (<script dangerouslySetInnerHTML={{ __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${process.env.NEXT_PUBLIC_GTM_ID}');` }} />)}
+```
+after `<body>`:
+```tsx
+{process.env.NEXT_PUBLIC_GTM_ID && (<noscript><iframe src={`https://www.googletagmanager.com/ns.html?id=${process.env.NEXT_PUBLIC_GTM_ID}`} height="0" width="0" style={{ display: 'none', visibility: 'hidden' }} /></noscript>)}
+```
+G2 Clarity — `<head>`:
+```tsx
+{process.env.NEXT_PUBLIC_CLARITY_ID && (<script dangerouslySetInnerHTML={{ __html: `(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window, document, "clarity", "script", "${process.env.NEXT_PUBLIC_CLARITY_ID}");` }} />)}
+```
+G3 DemoCallStarted — Talk button onClick:
+```typescript
+if (typeof window !== 'undefined' && (window as any).fbq) { (window as any).fbq('trackCustom', 'DemoCallStarted', { content_name: 'TalkMate Demo', content_category: 'demo_interaction' }) }
+if (typeof window !== 'undefined' && (window as any).dataLayer) { (window as any).dataLayer.push({ event: 'DemoCallStarted', category: 'demo_interaction' }) }
+```
+
+---
+
 ## Sprint Session 1 — Two-way SMS Inbox + Train TalkMate + Win-back + Reviews (2026-05-31)
 
 ### Branch

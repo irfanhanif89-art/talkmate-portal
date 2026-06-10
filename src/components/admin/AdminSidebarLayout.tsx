@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, TrendingUp, FileText, BookOpen,
   MessageSquareX, Activity, Settings, ChevronsLeft, ChevronsRight,
   LogOut, Shield, Upload, Menu, X, ClipboardList, BarChart3, FlaskConical,
-  GraduationCap, Receipt,
+  GraduationCap, Receipt, MessageSquare,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -43,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/contractors',        label: 'Contractors',       icon: FileText },
   { href: '/admin/rep-invoices',       label: 'Rep Invoices',      icon: Receipt },
   { href: '/admin/demo-accounts',      label: 'Demo Accounts',     icon: FlaskConical },
+  { href: '/admin/demo-calls',         label: 'Demo Calls',        icon: MessageSquare },
   { href: '/admin/leads-import',       label: 'Import Leads',      icon: Upload },
   { href: '/admin/sales-resources',    label: 'Sales Resources',   icon: BookOpen },
   { href: '/admin/sales-scripts',      label: 'Sales Scripts',     icon: FileText },

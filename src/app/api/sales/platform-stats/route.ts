@@ -13,10 +13,14 @@ export async function GET(req: Request) {
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
 
   const admin = createAdminClient()
+  // Session 77 MRR audit — exclude demo businesses (the demo business is
+  // account_status='active', plan='growth', so without this filter it would
+  // inflate the platform active-client count and MRR by one Growth seat).
   const { data: rows, error } = await admin
     .from('businesses')
     .select('plan')
     .eq('account_status', 'active')
+    .eq('is_demo', false)
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })

@@ -75,6 +75,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Demo unavailable. Try again.' }, { status: 502 })
   }
 
+  // Session 77 — ensure the newly-loaded demo assistant posts its
+  // end-of-call-report to the ingestion webhook so real demo calls are captured
+  // in /admin/demo-calls. Without this, a freshly-swapped template would lose
+  // its assistant-level webhook wiring. Fire-and-forget: a failure here must
+  // never break the demo launch the rep is waiting on. (Per Rule #16 this only
+  // sets the assistant-level server; per-tool function servers are untouched.)
+  const webhookSecret = process.env.VAPI_WEBHOOK_SECRET
+  if (webhookSecret) {
+    void fetch(`${VAPI_BASE}/assistant/${templateId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        serverUrl: 'https://app.talkmate.com.au/api/webhooks/vapi',
+        serverUrlSecret: webhookSecret,
+        serverMessages: ['end-of-call-report', 'status-update'],
+      }),
+      signal: AbortSignal.timeout(5000),
+    }).catch((err) => console.error('[launch-demo] webhook assert failed', (err as Error).message))
+  }
+
   return NextResponse.json({
     ok: true,
     success: true,
