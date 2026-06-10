@@ -47,9 +47,10 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg p-8 rounded-2xl border" style={{ background: '#0A1E38', borderColor: 'rgba(232,98,42,0.2)' }}>
 
         {/* Logo */}
-        <div className="mb-8">
+        <div className="mb-8" style={{ display: 'inline-flex', alignItems: 'center', gap: 11 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-lockup-dark.svg" alt="TalkMate" style={{ height: 48, width: 'auto', display: 'block' }} />
+          <img src="/logo-mark.svg" alt="" aria-hidden="true" width={46} height={46} style={{ display: 'block' }} />
+          <span style={{ fontWeight: 800, fontSize: 30, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1 }}>Talk<span style={{ color: '#7EC8F5' }}>Mate</span></span>
         </div>
 
         <h1 className="text-2xl font-bold text-white mb-1">Get started free</h1>
