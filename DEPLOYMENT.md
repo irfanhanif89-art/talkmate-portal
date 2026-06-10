@@ -2,6 +2,76 @@
 
 ---
 
+## Security Session — RLS Hardening v2 (2026-06-11)
+
+### Branch / worktree
+`feature/rls-hardening` (off `origin/dev`), built in isolated worktree
+`_worktrees/rls-hardening` so it does not touch the Session 77 / logo-refresh checkouts.
+
+### Why
+Supabase security advisor email (08 Jun 2026) flagged `rls_disabled_in_public`. The
+supplied v1 brief was built on a stale 08-Jun snapshot and was unsafe (wrong migration
+number, unqualified RLS helper, file-regex prevention that misses direct-SQL tables). This
+session is the corrected v2: fix the real remaining gaps + install a live-advisor prevention.
+
+### PHASE 0 — review (logged here per the brief)
+- **GAPS:** v1 migration number 038 already taken (repo at 081) → claim next free (082).
+  v1 helper unqualified → must be `private.get_current_client_id()` (moved by migration 056).
+- **DOWNSTREAM IMPACT:** none of the targeted tables are read by anon/authenticated app code
+  (verified: zero references in portal/website source). service_role bypasses RLS so all
+  cron/admin/server paths and Vapi/Make flows are unaffected. The function EXECUTE revokes
+  keep service_role (used by the account-purge cron and sms.ts createAdminClient()).
+- **OVERLOOKED (v1 missed, added here):** `app_purge_business`/`app_purge_sales_rep` (DELETE
+  data), `kb_entries_mark_pending`, `increment_sms_used` were SECURITY DEFINER + anon/
+  authenticated/PUBLIC executable over REST → revoked. `rate_limit_log` RLS-enabled-no-policy
+  → explicit service_role_only. function_search_path_mutable on bookings_status_stamp +
+  increment_sms_used → pinned.
+- **SEQUENCING:** the RLS-helper functions (current_rep_id/get_current_client_id/is_super_admin)
+  were deliberately left anon-executable (migration 054) then moved to the private schema (056);
+  NOT touched here. The advisor-check script allowlists them.
+
+### RLS AUDIT (live advisor, 2026-06-11)
+- PROD `mdsfdaefsxwrakgkyflr`: 98 public tables; RLS-disabled = `demo_tts` only.
+- PREVIEW `rgifivtzmjvanzqwgadq`: 97 public tables; RLS-disabled = `webhook_debug` only.
+- (Schema drift: demo_tts is prod-only; webhook_debug + increment_sms_used are preview-only.)
+
+### What ships
+- **Migration `082_rls_security_hardening_v2.sql`** (idempotent, existence-guarded for the
+  prod/preview drift):
+  - Part A: ENABLE RLS + `service_role_only` RESTRICTIVE deny-all on `demo_tts`,
+    `webhook_debug`, `rate_limit_log` (whichever exist on the project).
+  - Part B: REVOKE EXECUTE FROM PUBLIC, anon, authenticated on app_purge_business(uuid),
+    app_purge_sales_rep(uuid), kb_entries_mark_pending(), increment_sms_used(uuid).
+  - Part C: pin `search_path = public` on bookings_status_stamp(), increment_sms_used(uuid).
+- **`scripts/security/rls-advisor-check.mjs`** + `npm run rls-audit` — live-advisor gate
+  (needs `SUPABASE_ACCESS_TOKEN`), exits non-zero on rls_disabled_in_public /
+  rls_enabled_no_policy; allowlists the RLS-helper functions.
+- **CLAUDE.md** rule 17 (private-schema helper + live-advisor verify), **`_TEMPLATE_new_table.sql`**,
+  **`/tm-rls-audit`** command, **tm-db-guardian** RLS enforcement rule, **LESSONS.md** entries.
+
+### Apply status
+- **PREVIEW: APPLIED 2026-06-11.** Post-apply advisor: rls_disabled_in_public GONE, all 4
+  anon-executable-SECURITY-DEFINER warnings GONE, rate_limit_log no-policy GONE. Verified:
+  webhook_debug + rate_limit_log have `service_role_only`; the 4 functions' ACLs now hold
+  only postgres + service_role.
+- **PROD: PENDING Irfan approval** (apply `082` via Supabase MCP after sign-off).
+
+### Manual steps (in-house, Supabase dashboard — NOT in this migration)
+- Enable leaked-password protection (HaveIBeenPwned) in Auth settings (both projects).
+- Add `SUPABASE_ACCESS_TOKEN` as a CI secret so `npm run rls-audit` can run in CI.
+- Consider moving `pg_net` / `http` extensions out of `public` (higher-risk — recommend, not done here).
+
+### Separate finding to flag (NOT fixed here, out of scope)
+`increment_sms_used` does not exist on PROD (only preview), yet `sms.ts` calls it via RPC —
+the prod SMS-usage counter may be silently failing. Worth a separate investigation.
+
+### PHASE 3 — browser audit
+RLS change affects only non-customer, zero-reader tables, so no client UI surface changed.
+Post-prod, confirm via advisor (rls_disabled gone) + a GM Towing / Spectrum Towing login
+shows no permission errors. (Client-data tables already had RLS before this session.)
+
+---
+
 ## Sprint Session 1 — Two-way SMS Inbox + Train TalkMate + Win-back + Reviews (2026-05-31)
 
 ### Branch

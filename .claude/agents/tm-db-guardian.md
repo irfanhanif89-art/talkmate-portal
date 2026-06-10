@@ -64,3 +64,23 @@ CREATE POLICY "owner_read" ON table_name
 4. Apply to PREVIEW and confirm
 5. Wait for Irfan PROD approval
 6. After PROD: update migration number in SYSTEM_MAP.md
+
+## RLS Enforcement Rule (added 2026-06-11)
+
+Before approving any migration with CREATE TABLE:
+1. Confirm ENABLE ROW LEVEL SECURITY for every new public table.
+2. Confirm at least one policy exists for every new table (enabled-with-no-policy is
+   a fail-closed lockout — still a bug).
+3. Confirm client-owned policies qualify the helper as `private.get_current_client_id()`
+   (NOT unqualified — it lives in the `private` schema after migration 056; an
+   unqualified call throws for anon/authenticated and locks users out).
+4. Confirm the ownership column is correct for that table (client_id vs business_id
+   vs user_id). Do not assume client_id universally.
+5. Service/admin/debug tables: use the `service_role_only` RESTRICTIVE deny-all policy
+   (TO anon, authenticated USING(false) WITH CHECK(false)); service_role bypasses RLS.
+
+A migration-file review is NOT sufficient: tables created by direct SQL / the dashboard
+bypass migrations entirely (that is how demo_tts + webhook_debug evaded detection until
+the 08 Jun 2026 Supabase alert). The authoritative check is `npm run rls-audit` (live
+Supabase security advisor). Recommend running it whenever a session touches the DB by
+any path, and after any direct SQL edit. If any check fails, BLOCK and report.
