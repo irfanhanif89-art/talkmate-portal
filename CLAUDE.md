@@ -72,6 +72,7 @@ Update this section at the end of every session via `/tm-session-wrap`.
     - **Assistant-level** `serverUrl` MUST be `/api/webhooks/vapi` + `serverUrlSecret`=`VAPI_WEBHOOK_SECRET` + `serverMessages` includes `end-of-call-report`. THIS is what records calls. `/api/vapi/functions` does NOT handle `end-of-call-report` — pointing the assistant server there silently drops every call (the 2026-06 outage).
     - **Per-tool** `server.url` MUST be `/api/vapi/functions` + the same secret (mid-call functions). Do NOT set per-tool servers to `/api/webhooks/vapi`.
     - Running "Sync Agent" self-heals this; never hand-PATCH a live agent's server config without re-asserting both. The `call-ingestion-watch` cron must stay armed (`vercel.json`).
+17. RLS is mandatory on every `public` table — enabled AND with at least one policy (enabled-with-no-policy is a fail-closed lockout bug). The RLS helper lives in the PRIVATE schema: always write `private.get_current_client_id()` — unqualified `get_current_client_id()` throws for anon/authenticated and locks users out. Ownership column varies per table (client_id / business_id / user_id — no universal column). Service/admin/debug tables use the `service_role_only` restrictive deny-all policy (service_role bypasses RLS). This applies to tables created by direct SQL/dashboard too. Verify with `npm run rls-audit` (live Supabase advisor) after any schema change or direct SQL edit — a migration-file scan does NOT catch direct-SQL tables.
 
 ---
 

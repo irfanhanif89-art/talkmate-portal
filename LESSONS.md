@@ -77,5 +77,34 @@ Rule: Always `claude-sonnet-4-6`. Never `claude-sonnet-4-20250514`.
 
 ## Session Notes
 
+**2026-06-11 | RLS-disabled tables flagged by Supabase | created by direct SQL, never via a migration | verify RLS with the LIVE advisor, not migration files**
+The Supabase security advisor (08 Jun 2026) flagged RLS-disabled public tables. Migrations
+053-056 had already hardened RLS; the two that remained — `demo_tts` (prod) and
+`webhook_debug` (preview) — were created by direct SQL / the dashboard and never appeared
+in any migration file, so a file-based check can never see them.
+Rule: every public table needs RLS + a policy regardless of how it was created. Verify with
+`npm run rls-audit` (live Supabase advisor), not by reading migration files.
+
+**2026-06-11 | RLS policy would lock users out | unqualified get_current_client_id() | always private.get_current_client_id()**
+A draft fix used `client_id = get_current_client_id()`. Migration 056 moved that helper to
+the `private` schema, so an unqualified call resolves there (not `public`) and throws for
+anon/authenticated inside an RLS policy → permission denied for legitimate users.
+Rule: always `private.get_current_client_id()`. Never the unqualified form.
+
+**2026-06-11 | Stale brief nearly overwrote a live migration | hardcoded migration number 038 | claim the next free number at build time**
+A security brief said "create migration 038" from an old snapshot; 038
+(`contractor_agreement_flow`) was already shipped and the repo was at 081.
+Rule: never hardcode a migration number — claim the true next free number at build time
+(check `supabase/migrations/` + SYSTEM_MAP.md, and any unmerged sibling sessions).
+
+**2026-06-11 | Data-deleting RPCs callable unauthenticated | SECURITY DEFINER fns with PUBLIC/anon EXECUTE | revoke EXECUTE from PUBLIC/anon/authenticated on non-helper definer fns**
+`app_purge_business` / `app_purge_sales_rep` (which DELETE account data),
+`kb_entries_mark_pending`, and `increment_sms_used` were `SECURITY DEFINER` and reachable
+over `/rest/v1/rpc` by anon/authenticated, though only ever called server-side via the
+service-role admin client (or as triggers).
+Rule: revoke EXECUTE from PUBLIC/anon/authenticated on any SECURITY DEFINER function that is
+not an RLS helper. The RLS helpers (current_rep_id/get_current_client_id/is_super_admin) are
+the deliberate exception (now in the private schema).
+
 <!-- Add new lessons here after each session using the format above -->
 <!-- /tm-session-wrap will prompt you to add any new lessons discovered -->
