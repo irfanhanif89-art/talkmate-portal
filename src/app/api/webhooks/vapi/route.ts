@@ -189,6 +189,26 @@ function verifySecret(request: NextRequest, body: string): boolean {
     if (safeEq(sig, expected) || safeEq(sig, `sha256=${expected}`)) return true
   }
 
+  // TEMP DIAGNOSTIC (Session 77 — remove after capture). Pins the 401 root cause
+  // with ZERO secret exposure: logs lengths + short one-way SHA-256 hashes so we
+  // can compare the received value against the env value without ever logging
+  // either secret. Comparing envHash vs xVapiSecretHash tells us definitively
+  // whether Vapi is sending the right value, a wrong value, or nothing.
+  const h = (s: string) => s ? crypto.createHmac('sha256', 'diag').update(s).digest('hex').slice(0, 10) : ''
+  console.warn('[vapi-webhook-diag]', JSON.stringify({
+    envLen: secret.length,
+    envHash: h(secret),
+    xVapiSecretLen: plain.length,
+    xVapiSecretHash: h(plain),
+    authzPresent: !!authz,
+    authzLen: authz.length,
+    authzScheme: authz.split(' ')[0] || '',
+    authzHash: authz.startsWith('Bearer ') ? h(authz.slice(7)) : '',
+    sigPresent: !!sig,
+    sigLen: sig.length,
+    headerKeys: [...request.headers.keys()],
+  }))
+
   return false
 }
 
