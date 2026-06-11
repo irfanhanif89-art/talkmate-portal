@@ -34,6 +34,7 @@
     { "path": "/api/cron/monthly-performance-report", "schedule": "0 23 1 * *" },
     { "path": "/api/cron/cancellation-save",          "schedule": "0 * * * *" },
     { "path": "/api/cron/call-ingestion-watch",       "schedule": "13,43 * * * *" },
+    { "path": "/api/cron/vapi-call-sync",             "schedule": "*/3 * * * *" },
     { "path": "/api/cron/account-purge",              "schedule": "23 3 * * *" }
   ]
 }
