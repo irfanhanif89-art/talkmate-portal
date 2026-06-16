@@ -515,6 +515,22 @@ Or just open talkmate.com.au and ask the bubble a question. After testing, delet
 
 ---
 
+## Lessons Learned
+
+> The running log of what we got wrong (or right) so we never repeat it. **Append the newest entry at the top.** Each bullet = the mistake + the rule it produced. Read this at session start alongside Known Gaps.
+
+### 2026-06-16 — iOS App Review (build 6 → 8)
+- **Audit the WHOLE reviewer-reachable flow before the FIRST resubmit — not just the screen Apple screenshotted.** Build 7 fixed the flagged "Manage Billing" button but missed dead onboarding buttons + an email/no-email contradiction, so Apple re-rejected and we burned a second build (8). One thorough self-review up front collapses two build rounds into one.
+- **Apple reviews iPhone-only apps ON AN iPAD.** Bundle is `supportsTablet:false`, yet the reviewer used an iPad Air (iPadOS 26.5) — that's where the dead buttons were caught. Test and think iPad even for phone-only apps.
+- **Pre-submit iOS checklist (run before every App Store submit):** no dead/empty handlers (`() => {}`, empty `onPress`); no price / payment / "complete payment" UI anywhere a reviewer can reach; no external-purchase steering ("manage your plan at <url>"); on-screen copy must match data actually collected (never promise an email if no email field exists); demo login set in App Review Information; literally tap every button on every reachable screen.
+- **Batch ALL known App-Review fixes into one build.** Don't rebuild per fix — each round is ~15 min (build + Apple processing) plus reviewer wait.
+- **Guideline 2.1(b) "Information Needed" is NOT a bug report** — it's a business-model question. Read Apple's message + the attached screenshot and diagnose before touching code.
+- **EAS iOS build + submit is fully non-interactive** (remote credentials + stored ASC API key + `ascAppId` in `eas.json` → no Apple 2FA; the `production` profile auto-increments the build number). Runs on EAS cloud — no Mac needed for builds.
+- **The Claude Code auto-mode classifier blocks posting App Review message replies / clicking "Resubmit to App Review" as the user.** Those final outbound-to-Apple clicks must be done by Irfan — plan a human handoff at submit time.
+- **No iOS simulator on Windows** → can't capture true device screenshots here; can only edit existing listing PNGs. Real captures need a Mac or device.
+
+---
+
 ## Known Gaps / Deferred Work
 
 ### Session 3 — live features, follow-ups (2026-06-05)
