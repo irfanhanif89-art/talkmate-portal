@@ -271,7 +271,7 @@ export default function AdminClientsView({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr style={{ background: '#071829' }}>
-              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'ServiceM8', 'Pack', 'Emails', 'Gaps', 'Flagged', 'Mode', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Unread', 'KB', 'WB', 'Rv', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
+              {['Business', 'Phone', 'Plan', 'Billing', 'Setup Fee', 'SMS / Mo', 'Industry', 'ServiceM8', 'Integrations', 'Pack', 'Emails', 'Gaps', 'Flagged', 'Mode', 'Chat Leads', 'Est. ROI', 'Chatbot', 'Status', 'Unread', 'KB', 'WB', 'Rv', 'Go-Live', 'Onboarded', 'Closed by rep', 'Created', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#4A7FBB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
               ))}
             </tr>
@@ -279,7 +279,7 @@ export default function AdminClientsView({
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={26} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
+                <td colSpan={27} style={{ padding: 28, textAlign: 'center' as const, fontSize: 13, color: '#7BAED4' }}>
 
                   No clients match this filter.
                 </td>
@@ -357,6 +357,27 @@ export default function AdminClientsView({
                     background: b.servicem8_enabled ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.06)',
                     color: b.servicem8_enabled ? '#22C55E' : '#7BAED4',
                   }}>{b.servicem8_enabled ? 'Connected' : 'Not connected'}</span>
+                </td>
+                {/* Session 78 — integration connection dots (read-only) */}
+                <td style={{ padding: '12px 12px', whiteSpace: 'nowrap' as const }}>
+                  {(() => {
+                    const dots: Array<{ on: boolean; color: string; label: string }> = [
+                      { on: !!b.zapier_webhook_url, color: '#FF4A00', label: 'Zapier' },
+                      { on: !!b.hubspot_access_token, color: '#FF7A59', label: 'HubSpot' },
+                      { on: !!b.myob_access_token, color: '#A36BE0', label: 'MYOB' },
+                      { on: !!b.google_business_location_id, color: '#22C55E', label: 'Google Business Profile' },
+                    ]
+                    const any = dots.some(d => d.on)
+                    if (!any) return <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>None</span>
+                    return (
+                      <div style={{ display: 'flex', gap: 5 }}>
+                        {dots.filter(d => d.on).map(d => (
+                          <span key={d.label} title={d.label}
+                            style={{ width: 9, height: 9, borderRadius: '50%', background: d.color, boxShadow: `0 0 0 3px ${d.color}22` }} />
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </td>
                 {/* Session 6C — industry pack applied */}
                 <td style={{ padding: '12px 12px', fontSize: 12, whiteSpace: 'nowrap' as const, color: b.industry_pack_applied ? '#7BAED4' : 'rgba(255,255,255,0.3)' }}>
