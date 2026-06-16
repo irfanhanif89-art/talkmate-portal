@@ -24,8 +24,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createAdminClient } from '@/lib/supabase/server'
 import { scoreCallAsync } from '@/lib/score-call-async'
-import { sendSMS } from '@/lib/sms'
 import { sendAdminTelegram } from '@/lib/notifications'
+import { runCallSideEffects } from '@/lib/call-side-effects'
 import { WEBSITE_DEMO_ASSISTANT_ID, DEMO_BUSINESS_ID } from '@/lib/demo-config'
 
 interface VapiCall {
@@ -466,24 +466,13 @@ async function handleEndOfCall(
     if (error) console.error('[vapi-webhook] notifications insert failed', error.message)
   })
 
-  // SMS notification to business owner/escalation number on call end.
-  // Session 77 — skipped for demo calls: the demo business must never text a
-  // stranger who happened to ring the demo line / use the Talk button.
-  if (!business.is_demo) {
-    await maybeSendOwnerSms(business, call, msg.analysis?.summary ?? call.summary ?? msg.summary ?? null, phone)
-  }
-
-  // Sprint Session 1 — missed-call win-back. Fire when the call was a
-  // short customer-hangup / did-not-answer / voicemail and the business
-  // opted in. Doesn't await: the SMS send is fire-and-forget so the
-  // webhook doesn't pay the latency.
-  // Session 77 — never run win-back for demo calls (demo business has
-  // winback_enabled=true; without this guard a stranger calling the demo line
-  // and hanging up would be auto-texted).
-  if (!business.is_demo) {
-    void maybeSendWinback(supabase, business.id, callRowId, vapiCallId, phone, durationSeconds, endedReason, transcript)
-      .catch(err => console.error('[vapi-webhook] winback failed', (err as Error).message))
-  }
+  // Post-call SMS side-effects — owner call-alert + missed-call win-back. These
+  // now live in the shared runCallSideEffects (so the pull cron, which is the
+  // live ingestion path, runs them too). It claims `side_effects_at` for
+  // exactly-once delivery across both paths, and internally skips demo /
+  // non-active accounts. Fire-and-forget; never blocks the webhook response.
+  void runCallSideEffects(supabase, callRowId)
+    .catch(err => console.error('[vapi-webhook] side-effects failed', (err as Error).message))
 
   // Session 18 — fire-and-forget Call Intelligence scoring. Must not
   // await; the webhook must return quickly so Vapi doesn't retry.
@@ -653,169 +642,6 @@ async function maybeInsertOrder(
   }).then(({ error }) => {
     if (error) console.error('[vapi-webhook] orders insert failed', error.message)
   })
-}
-
-// ── owner SMS notification ─────────────────────────────────────────────
-
-async function maybeSendOwnerSms(
-  business: BusinessRow,
-  call: VapiCall,
-  summary: string | null,
-  callerPhone: string | null,
-): Promise<void> {
-  const toNumber = business.escalation_number
-  const fromNumber = business.talkmate_number ?? process.env.TWILIO_PHONE_NUMBER
-  if (!toNumber || !fromNumber) return
-
-  const accountSid = process.env.TWILIO_ACCOUNT_SID
-  const authToken = process.env.TWILIO_AUTH_TOKEN
-  if (!accountSid || !authToken) return
-
-  // Format the SMS — concise, all key info for the owner
-  const caller = callerPhone ?? 'Unknown'
-  const bizName = business.name ?? 'Your business'
-  const summaryText = summary
-    ? summary.replace(/\n+/g, ' ').substring(0, 400)
-    : 'No summary available.'
-
-  const body = `📞 ${bizName} — New call\nFrom: ${caller}\n\n${summaryText}\n\nReply to this number to call back.`
-
-  try {
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
-    const params = new URLSearchParams({ To: toNumber, From: fromNumber, Body: body })
-    const resp = await fetch(twilioUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    })
-    if (!resp.ok) {
-      const err = await resp.text()
-      console.error('[vapi-webhook] owner SMS failed', { status: resp.status, err: err.substring(0, 200) })
-    } else {
-      console.log('[vapi-webhook] owner SMS sent to', toNumber)
-    }
-  } catch (e) {
-    console.error('[vapi-webhook] owner SMS exception', (e as Error).message)
-  }
-}
-
-// ── Sprint Session 1: missed-call win-back ─────────────────────────────
-// Triggered from handleEndOfCall when a call ended quickly without the
-// agent engaging the caller. Auto-texts the caller back via /lib/sms.ts
-// so the message lands in the in-portal Inbox AND in their phone.
-
-const WINBACK_ABANDON_REASONS = new Set([
-  'customer-hangup',
-  'customer-did-not-answer',
-  'voicemail',
-  'silence-timed-out',
-])
-const WINBACK_DURATION_THRESHOLD_SECONDS = 15
-// Sprint 1 hardening — a <15s call that nonetheless produced a real
-// transcript means the AI engaged (e.g. "what time do you close?" "5pm"
-// "thanks"), so it is NOT a missed call. Only treat it as abandoned when
-// the transcript is shorter than this (caller hung up before pickup).
-const WINBACK_MAX_TRANSCRIPT_CHARS = 25
-
-async function maybeSendWinback(
-  supabase: ReturnType<typeof createAdminClient>,
-  businessId: string,
-  callRowId: string,
-  vapiCallId: string,
-  callerPhone: string | null,
-  durationSeconds: number,
-  endedReason: string | null,
-  transcript: string,
-): Promise<void> {
-  if (!callerPhone) return
-  if (durationSeconds >= WINBACK_DURATION_THRESHOLD_SECONDS) return
-  if (!endedReason || !WINBACK_ABANDON_REASONS.has(endedReason)) return
-  // False-positive guard: skip quick *successful* calls (the AI engaged).
-  if (transcript && transcript.trim().length >= WINBACK_MAX_TRANSCRIPT_CHARS) return
-
-  // Stamp the abandoned flag regardless of whether we end up sending —
-  // the cron review-follow-up route uses it to skip these calls.
-  await supabase.from('calls').update({
-    was_abandoned: true,
-    abandoned_at: new Date().toISOString(),
-  }).eq('id', callRowId)
-
-  // Need winback settings + business name for the message + from-number
-  const { data: businessRow } = await supabase
-    .from('businesses')
-    .select('id, name, winback_enabled, winback_custom_message, twilio_phone_number, talkmate_number')
-    .eq('id', businessId)
-    .limit(1)
-    .maybeSingle()
-  if (!businessRow) return
-  if (businessRow.winback_enabled === false) return
-
-  // Idempotency: if a previous webhook attempt already fired the SMS
-  // (Vapi retries the end-of-call payload on transient errors), don't
-  // double-text.
-  const { data: existing } = await supabase
-    .from('calls')
-    .select('winback_sent')
-    .eq('id', callRowId)
-    .limit(1)
-    .maybeSingle()
-  if (existing?.winback_sent === true) return
-
-  // Opt-out check against the contact row. The contacts table uses
-  // client_id, not business_id.
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('id, sms_opted_out')
-    .eq('client_id', businessId)
-    .eq('phone', callerPhone)
-    .eq('is_merged', false)
-    .limit(1)
-    .maybeSingle()
-  if (contact?.sms_opted_out === true) return
-
-  const bizName = (businessRow.name as string | null) ?? 'us'
-  const custom = (businessRow.winback_custom_message as string | null)?.trim() ?? ''
-  let message = custom
-    ? custom.replace(/\{business_name\}/gi, bizName)
-    : `Hey, we missed your call at ${bizName}. We are here to help, how can we assist?`
-  // Compliance (Australian Spam Act): commercial SMS needs a functional
-  // unsubscribe. STOP is handled at the Twilio inbound webhook; append the
-  // instruction unless the operator's custom copy already includes it.
-  if (!/\bstop\b/i.test(message)) message += ' Reply STOP to opt out.'
-
-  const fromNumber = (businessRow.twilio_phone_number as string | null)
-    ?? (businessRow.talkmate_number as string | null)
-    ?? undefined
-
-  const result = await sendSMS({
-    to: callerPhone,
-    message,
-    clientId: businessId,
-    smsType: 'missed_call_winback',
-    from: fromNumber,
-    sentBy: 'winback',
-  })
-
-  if (result.success) {
-    await supabase.from('calls').update({
-      winback_sent: true,
-      winback_sent_at: new Date().toISOString(),
-    }).eq('id', callRowId)
-    // Sprint Session 2 — ROI audit trail. The ROI dashboard calculates from
-    // source tables directly, so this insert is supplementary (not relied on
-    // for the headline number); failures must never break win-back sending.
-    await supabase.from('roi_events').insert({
-      business_id: businessId,
-      event_type: 'winback_sent',
-      source_id: callRowId,
-      source_table: 'calls',
-    }).then(() => {}, () => {})
-  } else {
-    console.warn('[vapi-webhook] winback send failed', { vapiCallId, reason: result.reason, error: result.error })
-  }
 }
 
 // ── derivation helpers ──────────────────────────────────────────────────
