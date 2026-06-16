@@ -43,7 +43,8 @@ export default async function AdminClientsPage() {
       sales_rep_id,
       kb_sync_status, winback_enabled, review_requests_enabled,
       agent_name, integration_mode, go_live_gate_passed,
-      servicem8_enabled, industry_pack_applied
+      servicem8_enabled, industry_pack_applied,
+      zapier_webhook_url, hubspot_access_token, myob_access_token, google_business_location_id
     `)
     .eq('is_demo', false)
     .order('created_at', { ascending: false })

@@ -13,8 +13,8 @@ import IntelligenceAlertSettings from '@/components/portal/intelligence-alert-se
 import { Switch } from '@/components/portal/ui-v2/switch'
 import { ButtonV2 } from '@/components/portal/ui-v2/button'
 import { Panel } from '@/components/portal/ui-v2/panel'
-import ServiceM8Card from './servicem8-card'
 import EmailResponderCard from './email-responder-card'
+import IntegrationsView from '@/components/portal/integrations-view'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,24 @@ export default function SettingsPage() {
   // ─── Data loading ─────────────────────────────────────────────────────────
 
   useEffect(() => { loadData() }, [])
+
+  // OAuth return handling: land on the Integrations tab + toast the result.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('tab') === 'integrations') setTab('integrations')
+    const connected = params.get('connected')
+    if (connected) {
+      const map: Record<string, string> = {
+        hubspot: 'HubSpot connected ✅',
+        myob: 'MYOB connected ✅',
+        hubspot_error: 'HubSpot connection failed ❌',
+        myob_error: 'MYOB connection failed ❌',
+      }
+      if (map[connected]) flash(map[connected])
+      window.history.replaceState({}, '', '/settings')
+    }
+  }, [])
 
   async function loadData() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -684,9 +702,6 @@ export default function SettingsPage() {
               {/* AI Email Responder — Session 3C */}
               <EmailResponderCard />
 
-              {/* ServiceM8 Job Push — Session 3B */}
-              <ServiceM8Card />
-
               {/* Win-back card */}
               <Panel>
                 <div className="flex items-start justify-between gap-4 mb-4">
@@ -1011,6 +1026,11 @@ export default function SettingsPage() {
                 <h2 className="text-[19px] font-[800] tracking-[-0.3px] text-text">Integrations</h2>
                 <p className="mt-1 text-[13.5px] text-dim">Connect third-party services to your TalkMate account.</p>
               </div>
+
+              {/* Session 78 — integrations layer (ServiceM8 / HubSpot / MYOB / Xero / Zapier / GBP) */}
+              <IntegrationsView />
+
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-[.1em] text-dim">Notifications</p>
 
               {/* WhatsApp */}
               <Panel>

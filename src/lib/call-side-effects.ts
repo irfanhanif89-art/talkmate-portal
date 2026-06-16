@@ -15,6 +15,10 @@
 
 import type { createAdminClient } from '@/lib/supabase/server'
 import { sendSMS } from '@/lib/sms'
+import { fireZapierWebhook } from '@/lib/integrations/zapier'
+import { fireHubSpotSync } from '@/lib/integrations/hubspot'
+import { fireMyobSync } from '@/lib/integrations/myob'
+import type { IntegrationBusiness, IntegrationCall } from '@/lib/integrations/types'
 
 type Admin = ReturnType<typeof createAdminClient>
 
@@ -27,6 +31,13 @@ interface SideEffectCall {
   ended_reason: string | null
   transcript: string | null
   summary: string | null
+  outcome: string | null
+  intelligence_score: number | null
+  was_abandoned: boolean | null
+  winback_sent: boolean | null
+  started_at: string | null
+  ended_at: string | null
+  booking_id: string | null
 }
 
 interface SideEffectBusiness {
@@ -39,6 +50,14 @@ interface SideEffectBusiness {
   winback_custom_message: string | null
   is_demo: boolean | null
   account_status: string | null
+  // Session 78 integrations
+  zapier_webhook_url: string | null
+  hubspot_access_token: string | null
+  hubspot_refresh_token: string | null
+  hubspot_portal_id: string | null
+  myob_access_token: string | null
+  myob_refresh_token: string | null
+  myob_company_id: string | null
 }
 
 /**
@@ -49,7 +68,7 @@ export async function runCallSideEffects(supabase: Admin, callId: string): Promi
   try {
     const { data: call } = await supabase
       .from('calls')
-      .select('id, business_id, vapi_call_id, caller_number, duration_seconds, ended_reason, transcript, summary, side_effects_at')
+      .select('id, business_id, vapi_call_id, caller_number, duration_seconds, ended_reason, transcript, summary, side_effects_at, outcome, intelligence_score, was_abandoned, winback_sent, started_at, ended_at, booking_id')
       .eq('id', callId)
       .maybeSingle()
     if (!call || !call.business_id) return
@@ -68,7 +87,7 @@ export async function runCallSideEffects(supabase: Admin, callId: string): Promi
 
     const { data: bizRow } = await supabase
       .from('businesses')
-      .select('id, name, escalation_number, talkmate_number, twilio_phone_number, winback_enabled, winback_custom_message, is_demo, account_status')
+      .select('id, name, escalation_number, talkmate_number, twilio_phone_number, winback_enabled, winback_custom_message, is_demo, account_status, zapier_webhook_url, hubspot_access_token, hubspot_refresh_token, hubspot_portal_id, myob_access_token, myob_refresh_token, myob_company_id')
       .eq('id', call.business_id)
       .limit(1)
       .maybeSingle()
@@ -96,8 +115,63 @@ export async function runCallSideEffects(supabase: Admin, callId: string): Promi
       c.ended_reason,
       c.transcript ?? '',
     )
+
+    // 3. Outbound integrations (Session 78) — Zapier / HubSpot / MYOB. Each is
+    // independent and best-effort; one failing never affects the others or the
+    // texts above. They ride this same side_effects_at claim, so exactly-once.
+    await fireIntegrations(supabase, business, c)
   } catch (e) {
     console.error('[call-side-effects] failed', { callId, error: (e as Error).message })
+  }
+}
+
+// ── Session 78 outbound integrations ───────────────────────────────────────────
+
+async function fireIntegrations(supabase: Admin, business: SideEffectBusiness, c: SideEffectCall): Promise<void> {
+  const ib: IntegrationBusiness = {
+    id: business.id,
+    name: business.name,
+    talkmate_number: business.talkmate_number,
+    zapier_webhook_url: business.zapier_webhook_url,
+    hubspot_access_token: business.hubspot_access_token,
+    hubspot_refresh_token: business.hubspot_refresh_token,
+    hubspot_portal_id: business.hubspot_portal_id,
+    myob_access_token: business.myob_access_token,
+    myob_refresh_token: business.myob_refresh_token,
+    myob_company_id: business.myob_company_id,
+  }
+  const ic: IntegrationCall = {
+    id: c.id,
+    caller_number: c.caller_number,
+    duration_seconds: c.duration_seconds,
+    outcome: c.outcome,
+    intelligence_score: c.intelligence_score,
+    was_abandoned: c.was_abandoned,
+    winback_sent: c.winback_sent,
+    transcript: c.transcript,
+    started_at: c.started_at,
+    ended_at: c.ended_at,
+    booking_id: c.booking_id,
+  }
+  // HubSpot + MYOB only on a real, engaged call.
+  const qualifies = (c.duration_seconds ?? 0) >= 30 && !c.was_abandoned
+
+  // Zapier — every call with a configured hook URL.
+  if (business.zapier_webhook_url) {
+    try {
+      await fireZapierWebhook(ib, ic, new Date().toISOString())
+      await supabase.from('businesses')
+        .update({ zapier_last_triggered_at: new Date().toISOString() })
+        .eq('id', business.id)
+    } catch (e) { console.error('[integrations] zapier failed', (e as Error).message) }
+  }
+  // HubSpot — qualifying calls only.
+  if (business.hubspot_access_token && qualifies) {
+    try { await fireHubSpotSync(ib, ic) } catch (e) { console.error('[integrations] hubspot failed', (e as Error).message) }
+  }
+  // MYOB — qualifying calls with a caller number.
+  if (business.myob_access_token && qualifies && c.caller_number) {
+    try { await fireMyobSync(ib, ic) } catch (e) { console.error('[integrations] myob failed', (e as Error).message) }
   }
 }
 

@@ -76,6 +76,11 @@ export interface AdminBusiness {
   // Session 6C — admin clients-list columns sourced off the businesses row.
   servicem8_enabled?: boolean | null
   industry_pack_applied?: string | null
+  // Session 78 — integration connection flags (read-only chips on the list).
+  zapier_webhook_url?: string | null
+  hubspot_access_token?: string | null
+  myob_access_token?: string | null
+  google_business_location_id?: string | null
 }
 
 export interface PartnerOption {

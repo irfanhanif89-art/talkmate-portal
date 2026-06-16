@@ -17,6 +17,10 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.events',
+  // Google Business Profile (Session 78) — read the client's business listing
+  // (name/address/phone/hours). SENSITIVE scope: needs Google verification AND
+  // GBP API project allowlisting before it functions in prod.
+  'https://www.googleapis.com/auth/business.manage',
 ]
 
 export function isGoogleOAuthConfigured(): boolean {
