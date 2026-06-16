@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { isAdminPlan, requireAdmin } from '@/lib/admin-auth'
 import { logAdminAction, diffFields } from '@/lib/audit'
+import { unassignVapiPhone, reassignVapiPhone, type UnassignReason } from '@/lib/vapi-phone'
+
+// Statuses that must take the Vapi agent OFFLINE (stop billable calls).
+const DEPROVISION_STATUSES = new Set(['cancelled', 'expired', 'suspended'])
+// Statuses that should bring the agent back online.
+const REACTIVATE_STATUSES = new Set(['active', 'trial'])
 
 const ALLOWED_ACCOUNT_STATUS = new Set([
   'active', 'pending', 'pending_payment', 'trial',
@@ -176,6 +182,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     after: afterDiff,
     request: req,
   })
+
+  // Vapi entitlement sync on status change (closes the gap where editing the
+  // status dropdown to 'cancelled' left the agent online + billable). The
+  // dedicated /cancel route + Stripe webhook already deprovision; this catches
+  // a direct status edit here. Best-effort: unassignVapiPhone/reassignVapiPhone
+  // are idempotent and Telegram-alert on failure, so we never block the PATCH.
+  const newStatus = update.account_status as string | undefined
+  if (newStatus && before?.account_status !== newStatus) {
+    if (DEPROVISION_STATUSES.has(newStatus)) {
+      await unassignVapiPhone(id, newStatus as UnassignReason).catch((e) =>
+        console.error('[admin-patch] unassignVapiPhone threw', id, (e as Error).message))
+    } else if (REACTIVATE_STATUSES.has(newStatus)) {
+      await reassignVapiPhone(id).catch((e) =>
+        console.error('[admin-patch] reassignVapiPhone threw', id, (e as Error).message))
+    }
+  }
 
   return NextResponse.json({ ok: true, business: data })
 }
