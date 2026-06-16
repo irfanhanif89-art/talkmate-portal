@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server'
 import { verifyCron } from '@/lib/cron-auth'
 import { createAdminClient } from '@/lib/supabase/server'
 import { DEMO_BUSINESS_ID, WEBSITE_DEMO_ASSISTANT_ID } from '@/lib/demo-config'
+import { runCallSideEffects } from '@/lib/call-side-effects'
 
 export const maxDuration = 60
 
@@ -152,6 +153,7 @@ export async function GET(request: Request) {
   // Upsert missing calls per task. Idempotent: existing vapi_call_ids are skipped.
   let inserted = 0
   const perBusiness: Record<string, number> = {}
+  const newCallIds: string[] = []
   for (const t of tasks) {
     const rows = t.calls
       .filter((c) => !!c.id && c.status === 'ended')
@@ -174,8 +176,21 @@ export async function GET(request: Request) {
     if (n > 0) {
       inserted += n
       perBusiness[t.businessId] = n
+      for (const r of data ?? []) if (r?.id) newCallIds.push(r.id as string)
     }
   }
 
-  return NextResponse.json({ status: 'ok', agentsChecked: tasks.length, inserted, perBusiness })
+  // Run post-call side-effects (owner alert SMS + missed-call win-back) for the
+  // calls we just ingested. This is the live replacement for the dead push
+  // webhook: runCallSideEffects claims `side_effects_at` so nothing double-fires,
+  // and it internally skips demo / non-active accounts. Only newly-inserted ids
+  // are processed (ignoreDuplicates means `data` excludes pre-existing rows), so
+  // a call is never re-processed on a later cron cycle.
+  let sideEffectsRun = 0
+  if (newCallIds.length) {
+    await Promise.allSettled(newCallIds.map((id) => runCallSideEffects(supabase, id)))
+    sideEffectsRun = newCallIds.length
+  }
+
+  return NextResponse.json({ status: 'ok', agentsChecked: tasks.length, inserted, sideEffectsRun, perBusiness })
 }
