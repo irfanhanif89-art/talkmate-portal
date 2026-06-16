@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { injectKbBlock, type KbEntry } from '@/lib/kb-block'
+import { injectKbBlock, injectIdentityBlock, type KbEntry, type IdentityContext } from '@/lib/kb-block'
 import { resolveBusinessId } from '@/lib/resolve-business'
 
 // Performs the sync given a resolved businessId. Shared with the cron
@@ -29,7 +29,7 @@ export async function performKbSync(
   // Pull business + Vapi config
   const { data: business } = await admin
     .from('businesses')
-    .select('id, vapi_agent_id')
+    .select('id, vapi_agent_id, identity_block_enabled, owner_name, agent_name, name')
     .eq('id', businessId)
     .limit(1)
     .maybeSingle()
@@ -96,7 +96,32 @@ export async function performKbSync(
   }
   const currentPrompt = agent.model?.systemPrompt ?? ''
 
-  const { next: updatedPrompt, changed } = injectKbBlock(currentPrompt, typedEntries)
+  const { next: kbPrompt, changed: kbChanged } = injectKbBlock(currentPrompt, typedEntries)
+
+  // Session 4A Round 2 — identity/transfer/call-flow block, strictly gated.
+  // identity_block_enabled defaults false for every existing agent (incl. GM
+  // Towing + Spectrum), so injectIdentityBlock strips/no-ops for them and the
+  // prompt stays byte-identical. Only flag-on + owner_name set injects a block.
+  const identityEnabled = (business.identity_block_enabled as boolean | null) ?? false
+  const ownerName = (business.owner_name as string | null) ?? null
+  let callFlow: { question: string }[] = []
+  if (identityEnabled && ownerName) {
+    const { data: cf } = await admin
+      .from('call_flow_questions')
+      .select('question')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+    callFlow = (cf ?? []) as { question: string }[]
+  }
+  const idCtx: IdentityContext = {
+    agentName: (business.agent_name as string | null) ?? null,
+    ownerName,
+    businessName: (business.name as string | null) ?? null,
+    callFlow,
+  }
+  const { next: updatedPrompt, changed: idChanged } = injectIdentityBlock(kbPrompt, idCtx, identityEnabled)
+  const changed = kbChanged || idChanged
 
   if (!changed) {
     // Already in sync — just stamp and exit.
